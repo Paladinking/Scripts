@@ -51,6 +51,8 @@ def call(f, *args, pos = 0):
 old_int = int
 
 def int(s, base = None):
+    if not isinstance(s, str):
+        return old_int(s)
     if not base is None:
         return old_int(s, base)
     if len(s) > 2 and s[0] == '0':
