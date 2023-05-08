@@ -1,2 +1,2 @@
 @echo off
-dir /b %*
+python %~dp0\ls.py %*
