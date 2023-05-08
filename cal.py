@@ -37,8 +37,19 @@ def reduce(f, first, it):
     for val in it:
         first = f(first, val)
     return first
+    
+def foreach(f, it):
+    for val in it:
+        f(val)
 
 fold = reduce
+
+def reduce_through(f, val, it):
+    for v in it:
+        f(val, v)
+    return val
+
+fold_through = reduce_through
 
 def index(i):
     return lambda x : x[i]
@@ -73,6 +84,9 @@ def store(name):
 
 def get(name):
     return variables[name]
+    
+def do(*data, ret=0):
+    return data[ret]
 
 def main():
     arg = ""
