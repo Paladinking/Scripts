@@ -76,6 +76,14 @@ def int(s, base = None):
             return old_int(s, 8)
     return old_int(s, 10) 
 
+def average(lst):
+    return sum(lst) / len(lst)
+
+def factors(n):
+        step = 2 if n%2 else 1
+        return set(reduce(list.__add__, [],
+                    ([i, n//i] for i in range(1, int(sqrt(n))+1, step) if n % i == 0)))
+
 variables = dict()
 
 def store(name):
@@ -110,7 +118,6 @@ def main():
             _ = res
             res = eval(part)
     print(res)
-
 
 if __name__ == "__main__":
     main()
