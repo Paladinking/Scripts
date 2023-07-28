@@ -3,6 +3,13 @@ import sys
 import subprocess
 
 if __name__ == "__main__":
+    try:
+        index = sys.argv.index('--color')
+        sys.argv = sys.argv[:index] + sys.argv[index + 1:]
+    except:
+        pass
+    if len(sys.argv) == 1:
+        sys.argv.append('.')
     res = subprocess.run(['dir', '/w', *sys.argv[1:]], shell = True, stdout = subprocess.PIPE, stderr = subprocess.PIPE)
     stdout = res.stdout.decode('cp437')
     if stdout:        
