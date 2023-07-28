@@ -17,7 +17,8 @@ if %errorlevel% EQU 0 (
 echo %1| findstr /i /l /x qsearch >nul
 if %errorlevel% EQU 0 (
 	if [%3] EQU [] (
-		findstr /i /n "\<%2\>" C:\Users\axelh\Scripts\xkcd-titles.txt
+		set query=%2
+		findstr /i /n "\<%query:"=%\>" C:\Users\axelh\Scripts\xkcd-titles.txt
 	) else (
 		findstr /i /n /l /c:"%query:~8%" C:\Users\axelh\Scripts\xkcd-titles.txt
 	)
@@ -42,9 +43,9 @@ if 1%1 EQU +1%1 (
 )
 
 if [%2] EQU [] (
-	set FIND="\<%1\>"
+	set FIND="\<%query:"=%\>"
 ) else (
-	set FIND=/l /c:"%query%"
+	set FIND=/l /c:"%query:"=%"
 )
 
 for /f "delims=:" %%i in ('findstr /i /n /x %FIND% C:\Users\axelh\Scripts\xkcd-titles.txt') do (
