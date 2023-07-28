@@ -74,7 +74,13 @@ def int(s, base = None):
             return old_int(s, 2)
         elif s[1] == 'o' or s[1] == 'O':
             return old_int(s, 8)
-    return old_int(s, 10) 
+    return old_int(s, 10)
+
+int.from_bytes = old_int.from_bytes
+int.to_bytes = old_int.to_bytes
+int.as_integer_ratio = old_int.as_integer_ratio
+int.bit_count = old_int.bit_count
+int.bit_length = old_int.bit_length
 
 def average(lst):
     return sum(lst) / len(lst)
