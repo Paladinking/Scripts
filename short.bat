@@ -1,9 +1,17 @@
 @echo off
-if [%1] EQU [] (
+if "%~1" EQU "" (
 	call :print "%cd%"
-) else (
-	call :print "%~1"
+	exit /b
 )
+
+if "%~1" EQU "-p" (
+	for /f "tokens=*" %%i in ('findstr .') do (
+		call :print "%%~i"
+	)
+	exit /b
+)
+	
+call :print "%~1"
 exit /B
 
 :print
