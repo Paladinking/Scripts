@@ -79,7 +79,10 @@ def int(s, base = None):
 int.from_bytes = old_int.from_bytes
 int.to_bytes = old_int.to_bytes
 int.as_integer_ratio = old_int.as_integer_ratio
-int.bit_count = old_int.bit_count
+try:
+	int.bit_count = old_int.bit_count
+except:
+	pass
 int.bit_length = old_int.bit_length
 
 def average(lst):
