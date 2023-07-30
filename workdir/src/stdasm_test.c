@@ -1,14 +1,8 @@
-typedef unsigned long long size_t;
+#include "test.h"
+
 #ifdef __GNUC__
 #define main entry_main
 #endif
-
-extern size_t strlen(const char* buf);
-extern void memcopy(const void* src, void* dest, int len);
-extern int strcmp(const char* a, const char* b);
-
-unsigned GetStdHandle(unsigned);
-int WriteConsoleA(unsigned, const char*, unsigned, unsigned*, void*);
 
 const char* TEST_NAMES[3] = {
 	"strcmp test", "memcopy test", "strlen test"
@@ -16,11 +10,6 @@ const char* TEST_NAMES[3] = {
 const size_t TEST_NAME_SIZE[3] = {
 	11, 12, 11
 };
-
-#define FAIL_TEST(n, i, s) WriteConsoleA(handle, "Failed ", 7, 0, 0); \
-		WriteConsoleA(handle, TEST_NAMES[n], TEST_NAME_SIZE[n], 0, 0); \
-		WriteConsoleA(handle, " "#i": ", sizeof(#i) + 2, 0, 0); \
-		WriteConsoleA(handle, s, sizeof(s), 0, 0); return 1
 
 int main() {
 	const unsigned handle = GetStdHandle(0xfffffff5);
@@ -43,6 +32,7 @@ int main() {
 	if (strcmp("Word", "") <= 0) {
 		FAIL_TEST(0, 6, "Not greater\n");
 	}
+	SUCCES_TEST(0);
 
 	char buffer[10];
 	memcopy("abcdefghi", buffer, 10);
@@ -74,6 +64,7 @@ int main() {
 			FAIL_TEST(1, 4, "Not equal\n");
 		}
 	}
+	SUCCES_TEST(1);
 	
 	if (strlen("") != 0) {
 		FAIL_TEST(2, 1, "Not correct length\n");
@@ -89,6 +80,6 @@ int main() {
 		FAIL_TEST(2, 3, "Not correct length\n");
 	}
 	
-	WriteConsoleA(handle, "Passed all tests\n", 17, 0, 0);
+	SUCCES_TEST(2);
 	return 0;
 }
