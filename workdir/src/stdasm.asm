@@ -4,6 +4,7 @@ default rel
 section .text
 
 global strlen
+global strcmp
 global memcopy
 
 ; stdcall DWORD strlen(BYTE* string)
@@ -34,3 +35,24 @@ memcopy:
 	jmp memcopy
 memcopy_exit:
 	ret
+
+; Compare two null-terminated strings
+; Destroys: rcx, rdx, r8, r9, rax
+strcmp:
+	mov r8b, BYTE [rcx]
+	mov r9b, BYTE [rdx]
+	mov al, r8b
+	sub al, r9b
+	jne strcmp_end
+	cmp r8b, 0
+	je strcmp_end
+	cmp r9b, 0
+	je strcmp_end
+	inc rcx
+	inc rdx
+	jmp strcmp
+strcmp_end:
+	movsx eax, al
+	ret
+	
+	
