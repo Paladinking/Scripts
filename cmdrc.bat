@@ -4,3 +4,4 @@ doskey notepad++="C:\Program files (x86)\Notepad++\notepad++.exe" $*
 doskey ls=ls --color $*
 doskey kill=taskkill /IM $*
 doskey fkill=taskkill /F /IM $*
+doskey path-set=path-add RESET $*
