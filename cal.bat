@@ -1,6 +1,7 @@
 @echo off & python -x %~f0 %* & exit /B
 import math
 import sys
+import collections
 from math import sin, cos, pi, sqrt, log
 
 old_bin = bin
@@ -38,7 +39,9 @@ def reduce(f, first, it):
     for val in it:
         first = f(first, val)
     return first
-    
+
+consume = collections.deque(maxlen=0).extend
+
 def foreach(f, it):
     for val in it:
         f(val)
@@ -55,10 +58,13 @@ fold_through = reduce_through
 def index(i):
     return lambda x : x[i]
 
+def callb(f, *args):
+    return lambda x: f(*args, x)
+
 def call(f, *args, pos = 0):
     first = args[0:pos]
     second = args[pos:]
-    return lambda x : f(*first, x, *second)
+    return lambda x: f(*first, x, *second)
 
 old_int = int
 
@@ -102,9 +108,12 @@ def store(name):
 
 def get(name):
     return variables[name]
-    
+
 def do(*data, ret=0):
     return data[ret]
+
+class Void:
+    pass
 
 def main():
     if len(sys.argv) < 2:
@@ -126,7 +135,8 @@ def main():
         for part in parts[1:]:
             _ = res
             res = eval(part)
-    print(res)
+    if not res is Void:
+        print(res)
 
 if __name__ == "__main__":
     main()
