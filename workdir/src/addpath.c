@@ -135,7 +135,7 @@ int main() {
 	if (req_size == 0) {
 		err_code = GetLastError();
 		if (err_code == ERROR_ENVVAR_NOT_FOUND) {
-			path_buffer[0] == '\0';
+			path_buffer[0] = '\0';
 			err_code = 0;
 		} else {
 			WriteFile(err, "Corrupt PATH\n", 13, NULL, NULL);
