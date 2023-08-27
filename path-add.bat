@@ -38,15 +38,9 @@ if "%~1" EQU "" (
 goto :loop
 
 :add_path
-C:\Users\axelh\Scripts\workdir\bin\addpath.exe "%~1" > nul
-(
-for /f tokens^=^*^ eol^= %%i in ('C:\Users\axelh\Scripts\workdir\bin\addpath.exe "%~1"') do (
-	path %%i
-)
-
+call pathc.bat add -b "%~1"
 if [%errorlevel%] EQU [0] (
 	echo Added "%~1" to path
-)
 )
 
 exit /b 0
