@@ -112,6 +112,17 @@ def get(name):
 def do(*data, ret=0):
     return data[ret]
 
+def gdb_wide(s):
+    out = ''
+    i = 0
+    while i < len(s):
+        if s[i] == '\\':
+            out += chr(int(s[i + 1:i + 4], base=8))
+            i += 4
+        else:
+            raise ValueError('Invalid gdb wide string')
+    return out
+
 class Void:
     pass
 
