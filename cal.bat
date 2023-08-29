@@ -2,11 +2,20 @@
 import math
 import sys
 import collections
-from math import sin, cos, pi, sqrt, log
+import builtins
+from math import sin, cos, pi, sqrt, log, factorial
 
 old_bin = bin
 old_hex = hex
 old_log = log
+
+def use(lib):
+    imported = builtins.__import__(lib)
+    globals()[lib] = imported
+    return imported
+
+def libdir(lib):
+    return dir(use(lib))
 
 def ln(x):
     return old_log(x)
@@ -35,12 +44,18 @@ def hex(v, n = None):
 def hexf(v, n = None):
     return "0x" + hex(v, n)
 
+def mapping(f):
+	return lambda x: map(f, x)
+
 def reduce(f, first, it):
     for val in it:
         first = f(first, val)
     return first
 
 consume = collections.deque(maxlen=0).extend
+
+def forall(f):
+	return lambda x: foreach(f, x)
 
 def foreach(f, it):
     for val in it:
