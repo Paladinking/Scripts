@@ -8,9 +8,11 @@ nasm -fwin64 src/chkstk.asm -o build/chkstk.a && echo  build/chkstk.a
 @endlocal
 @setlocal
 echo MSVC
+cl /c /Fo:build\dynamic_string.obj src/dynamic_string.c /GS- /link /NODEFAULTLIB
 call :cl_build bin/short.exe build/short.obj build/stdasm.obj build/args.obj Kernel32.lib /link /NODEFAULTLIB /entry:main
 call :cl_build bin/addpath.exe src/addpath.c Kernel32.lib Shell32.lib chkstk.obj build/args.obj /GS- /link /NODEFAULTLIB /entry:main
-call :cl_build bin/pathc.exe src/pathc.c Kernel32.lib Shell32.lib chkstk.obj build/args.obj /GS- /link /NODEFAULTLIB /entry:main
+call :cl_build bin/pathc.exe src/pathc.c Kernel32.lib Shell32.lib chkstk.obj /GS- /link /NODEFAULTLIB /entry:main
+call :cl_build bin/parse-template.exe src/parse-template.c build/dynamic_string.obj Kernel32.lib Shell32.lib chkstk.obj /GS- /link /NODEFAULTLIB /entry:main
 call :cl_build bin/regget.exe src/regget.c build/args.obj Kernel32.lib Advapi32.lib /GS- /link /NODEFAULTLIB /entry:main
 call :cl_build bin/envget.exe src/envget.c Advapi32.lib Userenv.lib Kernel32.lib /GS- /link /NODEFAULTLIB /entry:main
 call :cl_build test/stdasm_test.exe build/stdasm.obj Kernel32.lib chkstk.obj src/stdasm_test.c /GS- /link /NODEFAULTLIB /entry:main
@@ -33,6 +35,20 @@ exit /b
 
 :msvc_end
 @endlocal
+for %%f in (script\*.template) do (
+	bin\parse-template.exe %%f script\translations bin\%%~nf
+)
+for %%f in (script\*.bat) do (
+	copy %%f bin\%%~nf.bat
+)
+for %%f in (script\*.ps1) do (
+	copy %%f bin\%%~nf.ps1
+)
+for %%f in (script\*.txt) do (
+	copy %%f bin\%%~nf.txt
+)
+
+
 exit /b
 @setlocal
 echo MINGW
