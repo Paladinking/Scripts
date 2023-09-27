@@ -47,6 +47,9 @@ for %%f in (script\*.ps1) do (
 for %%f in (script\*.txt) do (
 	copy %%f bin\%%~nf.txt
 )
+for %%f in (script\*.exe) do (
+	copy %%f bin\%%~nf.exes
+)
 
 
 exit /b
