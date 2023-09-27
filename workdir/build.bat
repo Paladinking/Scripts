@@ -1,3 +1,10 @@
+if not exist build (
+	mkdir build
+)
+if not exist bin (
+	mkdir bin
+)
+
 @echo off
 @setlocal
 echo NASM
