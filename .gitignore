@@ -2,3 +2,9 @@
 *.a
 *.exe
 paths.txt
+workdir/bin
+/*.bat
+/*.ps1
+/*.txt
+workdir/build
+
