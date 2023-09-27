@@ -17,7 +17,7 @@ BOOL equals(LPCWSTR a, LPCWSTR b) {
 		if (a[index] != b[index]) {
 			return FALSE;
 		}
-		if (a[index] == L'\0' || b[index] == '\0') {
+		if (a[index] == L'\0' || b[index] == L'\0') {
 			return TRUE;
 		}
 		++index;
@@ -169,20 +169,29 @@ typedef enum _OpStatus {
 LPWSTR expanded = NULL;
 DWORD expanded_capacity = 0;
 
-OpStatus expand_path(LPCWSTR path, LPWSTR* dest) {
+OpStatus expand_path(LPWSTR path, LPWSTR* dest) {
 	HANDLE heap = GetProcessHeap();
+	if (path[0] == L'"') {
+		++path;
+		DWORD index = 1;
+		while (path[index] != L'"' && path[index] != L'\0') {
+			++index;
+		}
+		path[index] = L'\0';
+	}
 	DWORD expanded_size = GetFullPathName(path, expanded_capacity, expanded, NULL);
 	if (expanded_size == 0) {
 		return OP_INVALID_PATH;
 	}
 	if (expanded_size > expanded_capacity) {
 		HeapFree(heap, 0, expanded);
-		expanded = HeapAlloc(heap, 0, expanded_size * sizeof(WCHAR));
+		expanded = HeapAlloc(heap, 0, (expanded_size + 1) * sizeof(WCHAR));
 		if (expanded == NULL) {
 			return OP_OUT_OF_MEMORY;
 		}
-		expanded_capacity = expanded_size;
-		if (!GetFullPathName(path, expanded_capacity, expanded, NULL)) {
+		expanded_capacity = expanded_size + 1;
+		DWORD res = GetFullPathName(path, expanded_capacity, expanded, NULL);
+		if (!res) {
 			return OP_INVALID_PATH;
 		}
 	}

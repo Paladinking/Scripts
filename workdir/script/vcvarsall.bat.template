@@ -1,0 +1,14 @@
+@echo off
+if "%~1" EQU "/clean_env" (
+	call "{{VCVARS_PATH}}\vcvarsall.bat" /clean_env
+	exit /b 0
+)
+if defined VSCMD_VER (
+	exit /b 1
+)
+
+if "%~1" EQU "" (
+	call "{{VCVARS_PATH}}\vcvarsall.bat" amd64
+) else (
+	call "{{VCVARS_PATH}}\vcvarsall.bat" %*
+)
