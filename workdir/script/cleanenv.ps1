@@ -1,6 +1,7 @@
 $saved_env = @{
 	USERPROFILE = $env:USERPROFILE ;
 	SystemRoot = $env:SystemRoot ;
+	SystemDrive = $env:SystemDrive ;
 	ComSpec = $env:ComSpec ;
 	CommonProgramFiles = $env:CommonProgramFiles ;
 	"CommonProgramFiles(x86)" = ${env:CommonProgramFiles(x86)}

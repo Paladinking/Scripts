@@ -1,5 +1,5 @@
 $bat_cmd = 'vcvarsall.bat ' + $args[0] + ' > nul && set'
-
+$env:SystemDrive = $env:SystemRoot.Substring(0, 2)
 $cmd_env = $(cmd /C "$bat_cmd") -Split "`r`n"
 
 $msvc_env = @{
