@@ -52,9 +52,16 @@ for %%a in (%EXES%) do (
 
 call :echo_standard SCRIPTS
 
-for %%f in (script\*.template) do (
-	call :run_verbose bin\parse-template.exe %%f script\translations bin\%%~nf
-	echo  bin\%%~nf
+if not exist script\translations (
+	echo  File script\translations missing
+	echo  The following keys are needed: NPP_PATH, PASS_PATH and VCVARS_PATH
+) else (
+	for %%f in (script\*.template) do (
+		call :run_verbose bin\parse-template.exe %%f script\translations bin\%%~nf
+		if "!errorlevel!" EQU "0" (
+			echo  bin\%%~nf
+		)
+	)
 )
 
 set FILE_COUNT=0
