@@ -7,3 +7,4 @@ workdir/bin
 /*.ps1
 /*.txt
 workdir/build
+workdir/script/translations
