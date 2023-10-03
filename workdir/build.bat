@@ -29,17 +29,29 @@ for %%a in (%NASM_INPUTS%) do (
 
 
 call :echo_standard MSVC
-set CL_FLAGS=/Fo:build\ /GS-
+set CL_FLAGS=/Fo:build\ /GS- /GL /O1
 if %VERBOSITY% LEQ 2 (
 	set CL_FLAGS=%CL_FLAGS% /nologo
 )
-set LINK_FLAGS=/link /NODEFAULTLIB /SUBSYSTEM:CONSOLE
+set LINK_FLAGS=/link /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG
 set OBJECTS="src/dynamic_string.c"
 set EXES="build\short.obj build\stdasm.obj build\args.obj Kernel32.lib"^
 	"src\addpath.c Kernel32.lib Shell32.lib chkstk.obj build/args.obj"^
 	"src\pathc.c Kernel32.lib Shell32.lib chkstk.obj"^
-	"src\parse-template.c build/dynamic_string.obj Kernel32.lib Shell32.lib chkstk.obj"^
+	"src\parse-template.c build/dynamic_string.obj build/memcp.lib Kernel32.lib Shell32.lib chkstk.obj"^
 	"src\regget.c build\args.obj Kernel32.lib Advapi32.lib"
+
+set LIB_CMD=lib /MACHINE:X64 /DEF /EXPORT:memcpy=memcpy /NAME:ntdll.dll /OUT:build\memcp.lib
+if %VERBOSITY% LEQ 2 (
+	set LIB_CMD=%LIB_CMD% /nologo
+)
+if %VERBOSITY% LEQ 1 (
+	echo %LIB_CMD% > nul
+) else (
+	call :run_verbose %LIB_CMD%
+)
+call :echo_standard " build\memcp.lib"
+call :run_verbose del build\memcp.exp
 
 for %%a in (%OBJECTS%) do (
 	call :compile_obj %%~a
