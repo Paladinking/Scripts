@@ -5,16 +5,13 @@
 bool DynamicStringAppend(DynamicString* s, const char c) {
 	if (s->capacity == s->length + 1) {
 		HANDLE heap = GetProcessHeap();
-		s->capacity = s->capacity * 2;
-		char* new_buffer = HeapAlloc(heap, 0, s->capacity);
-		if (new_buffer == NULL) {
+		unsigned capacity = s->capacity * 2;
+		char* buffer = HeapReAlloc(heap, 0, s->buffer, capacity);
+		if (buffer == NULL) {
 			return false;
 		}
-		for (unsigned i = 0; i <= s->length; ++i) {
-			new_buffer[i] = s->buffer[i];
-		}
-		HeapFree(heap, 0, s->buffer);
-		s->buffer = new_buffer;
+		s->buffer = buffer;
+		s->capacity = capacity;
 	}
 	s->buffer[s->length] = c;
 	s->length += 1;

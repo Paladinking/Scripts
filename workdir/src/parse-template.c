@@ -47,9 +47,8 @@ void sort(MapEntry* map, const unsigned start, const unsigned len) {
 		return;
 	}
 	MapEntry* parts = HeapAlloc(heap, 0, len * sizeof(MapEntry));
-	for (unsigned i = 0; i < len; ++i) {
-		parts[i] = map[start + i];
-	}
+	memcpy(parts, map + start, len * sizeof(MapEntry));
+
 	size_t start_1 = 0;
 	size_t start_2 = len / 2;
 	const size_t len_1 = len / 2;
