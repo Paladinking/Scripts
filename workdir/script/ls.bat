@@ -1,4 +1,4 @@
-@echo off & python -x %~f0 %* & exit /B
+@echo off && (for /f "tokens=*" %%i in ('where git 2^>nul') do (if exist "%%~dpi..\usr\bin\ls.exe" ("%%~dpi..\usr\bin\ls.exe" --color %*) else (python -x %~f0 %*) )) || python -x %~f0 %* & exit /B
 import sys
 import subprocess
 

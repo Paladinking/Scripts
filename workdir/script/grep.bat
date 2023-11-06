@@ -1,4 +1,11 @@
 @echo off
+for /f "tokens=*" %%i in ('where git 2^>nul') do (
+	if exist "%%~dpi..\usr\bin\grep.exe" (
+		"%%~dpi..\usr\bin\grep.exe" %*
+		exit /b
+	)
+)
+
 @setlocal EnableDelayedExpansion
 
 set RECURSIVE=FALSE
