@@ -29,11 +29,11 @@ for %%a in (%NASM_INPUTS%) do (
 
 
 call :echo_standard MSVC
-set CL_FLAGS=/Fo:build\ /GS- /GL /O1
+set CL_FLAGS=/Fo:build\ /GS- /GL /O1 /favor:AMD64
 if %VERBOSITY% LEQ 2 (
 	set CL_FLAGS=%CL_FLAGS% /nologo
 )
-set LINK_FLAGS=/link /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG
+set LINK_FLAGS=/link /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /EMITPOGOPHASEINFO
 set OBJECTS="src/dynamic_string.c"
 set EXES="build\short.obj build\stdasm.obj build\args.obj Kernel32.lib"^
 	"src\addpath.c Kernel32.lib Shell32.lib chkstk.obj build/args.obj"^
@@ -46,7 +46,7 @@ if %VERBOSITY% LEQ 2 (
 	set LIB_CMD=%LIB_CMD% /nologo
 )
 if %VERBOSITY% LEQ 1 (
-	echo %LIB_CMD% > nul
+	%LIB_CMD% > nul
 ) else (
 	call :run_verbose %LIB_CMD%
 )
