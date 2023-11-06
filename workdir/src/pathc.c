@@ -154,6 +154,7 @@ int WriteFileWide(HANDLE out, LPCWSTR ptr, int size) {
 		code_point, 0, ptr, size, print_buffer, out_req_size, NULL, NULL
 	);
 	if (out_req_size == 0) {
+		HeapFree(heap, 0, print_buffer);
 		return 0;
 	}
 	int status = WriteFile(out, print_buffer, out_req_size, NULL, NULL);
