@@ -4,6 +4,7 @@
 #endif
 #include <windows.h>
 #include <tlhelp32.h>
+#include "path_utils.h"
 
 
 DWORD GetParentProcessId() {
@@ -36,16 +37,16 @@ DWORD GetParentProcessId() {
 }
 
 /* Contains the following asm:
-       sub rsp, 72
-       mov rax, rcx
-       lea rcx, [var]
-       lea rdx, [val]
-       call rax
-       add rsp, 72
-       ret
-   var:
-       db 0, 0, ... Space for 50 chars in variable name
-   val:
+		sub rsp, 72
+    	mov rax, rcx
+    	lea rcx, [var]
+    	lea rdx, [val]
+    	call rax
+    	add rsp, 72
+    	ret
+    var:
+    	db 0, 0, ... Space for 50 chars in variable name
+	val:
 */
 const unsigned char INJECT_BASE[] = {72, 131, 236, 72, 72, 137, 200, 72, 141, 13, 14, 0, 0, 0, 72, 141, 21, 57, 0, 0, 0, 255, 208, 72, 131, 196, 72, 195, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 const unsigned VAR_START = 28;
@@ -94,7 +95,7 @@ int SetProcessEnvironmentVariable(LPCSTR var, LPCSTR val, DWORD processId) {
         CloseHandle(hProcess);
 		return 3;
 	}
-	
+
 	HANDLE hThread = CreateRemoteThread(hProcess, NULL, 0, func, loadLibraryAddr, 0, NULL);
     if (hThread == NULL) {
         VirtualFreeEx(hProcess, func, 0, MEM_RELEASE);
@@ -108,14 +109,6 @@ int SetProcessEnvironmentVariable(LPCSTR var, LPCSTR val, DWORD processId) {
 	CloseHandle(hThread);
 	CloseHandle(hProcess);
 	return 0;
-}
-
-
-WCHAR to_upper(const WCHAR c) {
-	if (c >= L'a' && c <= L'z') {
-		return c + L'A' - L'a';
-	}
-	return c;
 }
 
 BOOL equals(LPCWSTR a, LPCWSTR b) {
@@ -146,124 +139,20 @@ DWORD find_flag(LPWSTR* argv, int* argc, LPCWSTR flag, LPCWSTR long_flag) {
 	return count;
 }
 
-LPWSTR contains(LPWSTR path, LPCWSTR dir) {
-	WCHAR dir_endc = L'\0';
-	if (dir[0] == L'"') {
-		dir_endc = L'"';
-		++dir;
-	}
-	
-	while (1) {
-		if (path[0] == L'\0') {
-			return NULL;
-		}
-		LPWSTR pos = path;
-		WCHAR endc = L';';
-		if (path[0] == L'"') {
-			endc = L'"';
-			++path;
-		}
-		for(unsigned i = 0; TRUE; ++path,++i) {
-			if (dir[i] == L'\0' || dir[i] == dir_endc) {
-				if (path[0] == L'\0' || path[0] == endc) {
-					return pos;
-				}
-				if (path[0] == L'\\' && (path[1] == L'\0' || path[1] == endc)) {
-					return pos;
-				}
-				break;
-			}
-			if (path[0] == L'\0' || path[0] == endc) {
-				if (dir[i] == L'\0' || dir[i] == dir_endc) {
-					return pos;
-				}
-				if (dir[i] == L'\\' && (dir[i + 1] == L'\0' || dir[i + 1] == dir_endc)) {
-					return pos;
-				}
-				break;
-			}
-			if (to_upper(path[0]) != to_upper(dir[i])) {
-				break;
-			}	
-		}
-		while (path[0] != L';') {
-			if (path[0] == L'\0') {
-				return NULL;
-			}
-			++path;
-		}
-		++path;
-	}
-}
 
-typedef enum _PathStatus {
-	PATH_VALID, PATH_NEEDS_QUOTES, PATH_INVALID
-} PathStatus;
-
-PathStatus validate(LPWSTR path) {
-	int index = 0;
-	BOOL needs_quotes = FALSE;
-	BOOL has_quotes = FALSE;
-	while (path[index] != L'\0') {
-		if (path[index] == L';') {
-			needs_quotes = TRUE;
-		}
-		if (path[index] < L' ') {
-			return PATH_INVALID;
-		}
-		for (int j = 0; j < 5; ++j) {
-			if (path[index] == L"?|<>*"[j]) {
-				return PATH_INVALID;
-			}
-		}
-		if (path[index] == L'/') {
-			path[index] = L'\\';
-		}
-		
-		if (path[index] == L'\\' && (path[index + 1] == L'\\' || path[index + 1] == L'/')) {
-			return PATH_INVALID;
-		}
-		if (path[index] == L':' && ((has_quotes && index != 2) || (!has_quotes && index != 1))) {
-			return PATH_INVALID;
-		} else if (path[index] == L'"') {
-			if (index != 0 && path[index + 1] != L'\0') {
-				return PATH_INVALID;
-			}
-			if (index == 0) {
-				has_quotes = TRUE;
-			} else if (!has_quotes) {
-				return PATH_INVALID;
-			}
-		}
-		++index;
-	}
-	if (has_quotes && path[index - 1] != L'"') {
-		return PATH_INVALID;
-	}
-	if (index >= 2 && path[1] == L':') {
-		if (!((path[0] >= L'a' && path[0] <= L'z') || (path[0] >= L'A' && path[0] <= L'Z'))) {
-			return PATH_INVALID;
-		}
-		if (path[2] != L'\\') {
-			return PATH_INVALID;
-		}
-	}
-	return needs_quotes && !has_quotes ? PATH_NEEDS_QUOTES : PATH_VALID;
-}
-
-LPSTR WideStringToNarrow(LPCWSTR string, int *size) {
+LPSTR WideStringToNarrow(LPCWSTR string, DWORD *size) {
 	HANDLE heap = GetProcessHeap();
 	UINT code_point = 65001; // Utf-8
 	DWORD out_req_size = WideCharToMultiByte(
-		code_point, 0, string, *size, NULL, 0, NULL, NULL
+		code_point, 0, string, *size, NULL, 0, NULL, NULL 
 	);
 
-	LPSTR buffer = HeapAlloc(heap, 0, out_req_size);
+	LPSTR buffer = HeapAlloc(heap, 0, out_req_size + 1);
 	if (buffer == NULL) {
 		return NULL;
 	}
 	out_req_size = WideCharToMultiByte(
-		code_point, 0, string, *size, buffer, out_req_size, NULL, NULL
+		code_point, 0, string, *size, buffer, out_req_size, NULL, NULL 
 	);
 
 	if (out_req_size == 0) {
@@ -271,6 +160,7 @@ LPSTR WideStringToNarrow(LPCWSTR string, int *size) {
 		return NULL;
 	}
 	*size = out_req_size;
+	buffer[out_req_size] = '\0';
 	return buffer;
 }
 
@@ -296,44 +186,7 @@ int WriteFileWide(HANDLE out, LPCWSTR ptr, int size) {
 }
 
 
-typedef enum _OpStatus {
-	OP_SUCCES, OP_NO_CHANGE, OP_INVALID_PATH, OP_MISSSING_ARG, OP_OUT_OF_MEMORY
-} OpStatus;
-
-LPWSTR expanded = NULL;
-DWORD expanded_capacity = 0;
-
-OpStatus expand_path(LPWSTR path, LPWSTR* dest) {
-	HANDLE heap = GetProcessHeap();
-	if (path[0] == L'"') {
-		++path;
-		DWORD index = 1;
-		while (path[index] != L'"' && path[index] != L'\0') {
-			++index;
-		}
-		path[index] = L'\0';
-	}
-	DWORD expanded_size = GetFullPathName(path, expanded_capacity, expanded, NULL);
-	if (expanded_size == 0) {
-		return OP_INVALID_PATH;
-	}
-	if (expanded_size > expanded_capacity) {
-		HeapFree(heap, 0, expanded);
-		expanded = HeapAlloc(heap, 0, (expanded_size + 1) * sizeof(WCHAR));
-		if (expanded == NULL) {
-			return OP_OUT_OF_MEMORY;
-		}
-		expanded_capacity = expanded_size + 1;
-		DWORD res = GetFullPathName(path, expanded_capacity, expanded, NULL);
-		if (!res) {
-			return OP_INVALID_PATH;
-		}
-	}
-	*dest = expanded;
-	return OP_SUCCES;
-}
-
-OpStatus path_add(
+OpStatus paths_add(
 	int argc, 
 	LPWSTR* argv,
 	LPWSTR* path_buffer,
@@ -346,98 +199,20 @@ OpStatus path_add(
 	if (argc < 2) {
 		return OP_MISSSING_ARG;
 	}
-	HANDLE heap = GetProcessHeap();
-	BOOL added_any = FALSE;
+	OpStatus status = OP_NO_CHANGE;
 
 	for (int arg = 1; arg < argc; ++arg) {
-		LPWSTR path;
-		if (expand) {
-			OpStatus status = expand_path(argv[arg], &path);
-			if (status != OP_SUCCES) {
-				return status;
-			}
-		} else {
-			path = argv[arg];
+		OpStatus res = path_add(argv[arg], path_buffer, path_size, &path_capacaty, before, expand);
+		if (res == OP_SUCCES) {
+			status = OP_SUCCES;
+		} else if (res != OP_NO_CHANGE) {
+			return res;
 		}
-		
-		DWORD status = validate(path);
-		if (status == PATH_INVALID) {
-			return OP_INVALID_PATH;
-		}
-		if (contains(*path_buffer, path)) {
-			continue;
-		}
-		added_any = TRUE;
-		DWORD size = 0;
-		while (path[size]) {
-			++size;
-		}
-		DWORD extra_size = status == PATH_NEEDS_QUOTES ? 2 : 0;
-
-		int offset;
-		if (before) {
-			++extra_size;
-			if (*path_size + size + extra_size + 1 > path_capacaty) {
-				path_capacaty = *path_size + size + extra_size + 1;
-				LPWSTR new_buffer = HeapAlloc(heap, 0, path_capacaty * sizeof(WCHAR));
-				if (new_buffer == NULL) {
-					return OP_OUT_OF_MEMORY;
-				}
-				for (unsigned i = 0; i <= *path_size; ++i) {
-					new_buffer[i + size + extra_size] = (*path_buffer)[i];
-				}
-				HeapFree(heap, 0, *path_buffer);
-				*path_buffer = new_buffer;
-			} else {
-				for (int i = *path_size; i >= 0; --i) {
-					(*path_buffer)[i + size + extra_size] = (*path_buffer)[i];
-				}
-			}
-			(*path_buffer)[size + extra_size - 1] = L';';
-			offset = 0;
-		} else {
-			if ((*path_buffer)[*path_size - 1] != L';') {
-				++extra_size;
-			}
-			if (*path_size + size + extra_size + 1 > path_capacaty) {
-				path_capacaty = *path_size + size + extra_size + 1;
-				LPWSTR new_buffer = HeapAlloc(heap, 0, path_capacaty * sizeof(WCHAR));
-				if (new_buffer == NULL) {
-					return OP_OUT_OF_MEMORY;
-				}
-				for (unsigned i = 0; i < *path_size; ++i) {
-					new_buffer[i] = (*path_buffer)[i];
-				}
-				HeapFree(heap, 0, *path_buffer);
-				*path_buffer = new_buffer;
-			}
-			offset = *path_size;
-			if ((*path_buffer)[*path_size - 1] != L';') {
-				(*path_buffer)[*path_size] = L';';
-				++offset;
-			}
-			(*path_buffer)[*path_size + size + extra_size] = L'\0';
-		}
-		if (status == PATH_NEEDS_QUOTES) {
-			(*path_buffer)[offset] = L'"';
-			++offset;
-		}
-		for (unsigned i = 0; i < size; ++i) {
-			(*path_buffer)[offset + i] = path[i];
-		}
-		if (status == PATH_NEEDS_QUOTES) {
-			(*path_buffer)[offset + size] = L'"';
-		}
-		*path_size = *path_size + size + extra_size;
 	}
-	if (!added_any) {
-		return OP_NO_CHANGE;
-	}
-	return OP_SUCCES;
+	return status;
 }
 
-
-OpStatus path_remove(
+OpStatus paths_remove(
 	int argc, 
 	LPWSTR* argv,
 	LPWSTR* path_buffer,
@@ -454,41 +229,12 @@ OpStatus path_remove(
 	}
 	BOOL removed_any = FALSE;
 	for (int arg = 1; arg < argc; ++arg) {
-		LPWSTR path;
-		if (expand) {
-			OpStatus status = expand_path(argv[arg], &path);
-			if (status != OP_SUCCES) {
-				return status;
-			}
-		} else {
-			path = argv[arg];
+		OpStatus status = path_remove(argv[arg], path_buffer, path_size, expand);
+		if (status == OP_SUCCES) {
+			removed_any = TRUE;
+		} else if (status != OP_NO_CHANGE) {
+			return status;
 		}
-
-		DWORD status = validate(path);
-		if (status == PATH_INVALID) {
-			return OP_INVALID_PATH;
-		}
-		LPWSTR pos = contains(*path_buffer, path);
-		if (pos == NULL) {
-			continue;
-		}
-		removed_any = TRUE;
-		DWORD index = (DWORD)(pos - *path_buffer);
-		WCHAR endc = pos[0] == L'"' ? L'"' : L';';
-		DWORD len = 0;
-		while (pos[len] != endc && pos[len] != L'\0') {
-			++len;
-		}
-		while (pos[len] != L';' && pos[len] != L'\0') {
-			++len;
-		}
-		if (pos[len] == ';') {
-			++len;
-		}
-		for (unsigned i = index; i + len <= *path_size; ++i) {
-			(*path_buffer)[i] = (*path_buffer)[i + len];
-		}
-		*path_size -= len;
 	}
 	if (!removed_any) {
 		return OP_NO_CHANGE;
@@ -554,19 +300,19 @@ int pathc(int argc, LPWSTR* argv, HANDLE out, HANDLE err) {
 	OpStatus status;
 
 	if (operation == OPERATION_ADD) {
-		status = path_add(
+		status = paths_add(
 			argc - 1, argv + 1, &path_buffer, &path_size, path_capacaty, before, expand
 		);
 	} else if (operation == OPERATION_REMOVE){
-		status = path_remove(
+		status = paths_remove(
 			argc - 1, argv + 1, &path_buffer, &path_size, path_capacaty, before, expand
 		);
 	} else {
-		status = path_remove(
+		status = paths_remove(
 			argc - 1, argv + 1, &path_buffer, &path_size, path_capacaty, FALSE, expand
 		);
 		if (status <= OP_NO_CHANGE) {
-			status = path_add(
+			status = paths_add(
 				argc - 1, argv + 1, &path_buffer, &path_size, path_capacaty, before, expand
 			);
 		}
@@ -627,5 +373,6 @@ int main() {
 	HeapFree(heap, 0, expanded);
 	HeapFree(heap, 0, path_buffer);
 	LocalFree(argv);
+	ExitProcess(status);
 	return status;
 }
