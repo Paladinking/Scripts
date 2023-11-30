@@ -3,6 +3,113 @@
 #define main entry_main
 #endif
 #include <windows.h>
+#include <tlhelp32.h>
+
+
+DWORD GetParentProcessId() {
+    // Get the current process ID
+    DWORD currentProcessId = GetCurrentProcessId();
+
+    // Create a snapshot of the system processes
+    HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (hSnapshot == INVALID_HANDLE_VALUE) {
+        return 0;
+    }
+
+    PROCESSENTRY32 pe32;
+    pe32.dwSize = sizeof(PROCESSENTRY32);
+
+    // Iterate through the processes to find the parent process
+    if (Process32First(hSnapshot, &pe32)) {
+        do {
+            if (pe32.th32ProcessID == currentProcessId) {
+                // Found the current process in the snapshot, return its parent process ID
+                CloseHandle(hSnapshot);
+                return pe32.th32ParentProcessID;
+            }
+        } while (Process32Next(hSnapshot, &pe32));
+    }
+
+    // Process not found or unable to retrieve information
+    CloseHandle(hSnapshot);
+    return 0;
+}
+
+/* Contains the following asm:
+       sub rsp, 72
+       mov rax, rcx
+       lea rcx, [var]
+       lea rdx, [val]
+       call rax
+       add rsp, 72
+       ret
+   var:
+       db 0, 0, ... Space for 50 chars in variable name
+   val:
+*/
+const unsigned char INJECT_BASE[] = {72, 131, 236, 72, 72, 137, 200, 72, 141, 13, 14, 0, 0, 0, 72, 141, 21, 57, 0, 0, 0, 255, 208, 72, 131, 196, 72, 195, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+const unsigned VAR_START = 28;
+const unsigned VAL_START = 78;
+
+LPVOID get_setter_func(LPCSTR var, LPCSTR val, HANDLE process) {
+	unsigned var_len = strlen(var);
+	unsigned val_len = strlen(val) + 1;
+	if (var_len >= 50) {
+		return NULL;
+	}
+	unsigned char* func = VirtualAllocEx(process, NULL, sizeof(INJECT_BASE) + val_len, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+	if (func == NULL) {
+		return NULL;
+	}
+	if (!WriteProcessMemory(process, func, INJECT_BASE, sizeof(INJECT_BASE), NULL)) {
+        VirtualFreeEx(process, func, 0, MEM_RELEASE);
+        return NULL;
+    }
+	if (!WriteProcessMemory(process, func + VAR_START, var, var_len, NULL)) {
+        VirtualFreeEx(process, func, 0, MEM_RELEASE);
+        return NULL;
+    }
+	if (!WriteProcessMemory(process, func + VAL_START, val, val_len, NULL)) {
+        VirtualFreeEx(process, func, 0, MEM_RELEASE);
+        return NULL;
+    }
+	return func;
+}
+
+int SetProcessEnvironmentVariable(LPCSTR var, LPCSTR val, DWORD processId) {
+	HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, processId);
+    if (hProcess == NULL) {
+        return 1;
+    }
+
+	LPTHREAD_START_ROUTINE func = get_setter_func(var, val, hProcess);
+	if (func == NULL) {
+		CloseHandle(hProcess);
+		return 2;
+	}
+
+	LPVOID loadLibraryAddr = (LPVOID)GetProcAddress(GetModuleHandle(L"kernel32.dll"), "SetEnvironmentVariableA");
+	if (loadLibraryAddr == NULL) {
+		VirtualFreeEx(hProcess, func, 0, MEM_RELEASE);
+        CloseHandle(hProcess);
+		return 3;
+	}
+	
+	HANDLE hThread = CreateRemoteThread(hProcess, NULL, 0, func, loadLibraryAddr, 0, NULL);
+    if (hThread == NULL) {
+        VirtualFreeEx(hProcess, func, 0, MEM_RELEASE);
+        CloseHandle(hProcess);
+        return 4;
+    }
+
+	WaitForSingleObject(hThread, INFINITE);
+
+	VirtualFreeEx(hProcess, func, 0, MEM_RELEASE);
+	CloseHandle(hThread);
+	CloseHandle(hProcess);
+	return 0;
+}
+
 
 WCHAR to_upper(const WCHAR c) {
 	if (c >= L'a' && c <= L'z') {
@@ -101,6 +208,9 @@ PathStatus validate(LPWSTR path) {
 		if (path[index] == L';') {
 			needs_quotes = TRUE;
 		}
+		if (path[index] < L' ') {
+			return PATH_INVALID;
+		}
 		for (int j = 0; j < 5; ++j) {
 			if (path[index] == L"?|<>*"[j]) {
 				return PATH_INVALID;
@@ -139,6 +249,29 @@ PathStatus validate(LPWSTR path) {
 		}
 	}
 	return needs_quotes && !has_quotes ? PATH_NEEDS_QUOTES : PATH_VALID;
+}
+
+LPSTR WideStringToNarrow(LPCWSTR string, int *size) {
+	HANDLE heap = GetProcessHeap();
+	UINT code_point = 65001; // Utf-8
+	DWORD out_req_size = WideCharToMultiByte(
+		code_point, 0, string, *size, NULL, 0, NULL, NULL
+	);
+
+	LPSTR buffer = HeapAlloc(heap, 0, out_req_size);
+	if (buffer == NULL) {
+		return NULL;
+	}
+	out_req_size = WideCharToMultiByte(
+		code_point, 0, string, *size, buffer, out_req_size, NULL, NULL
+	);
+
+	if (out_req_size == 0) {
+		HeapFree(heap, 0, buffer);
+		return NULL;
+	}
+	*size = out_req_size;
+	return buffer;
 }
 
 int WriteFileWide(HANDLE out, LPCWSTR ptr, int size) {
@@ -390,7 +523,8 @@ int pathc(int argc, LPWSTR* argv, HANDLE out, HANDLE err) {
 	}
 	BOOL expand = !find_flag(argv, &argc, L"-n", L"--no-expand");
 	BOOL before = find_flag(argv, &argc, L"-b", L"--before");
-	
+	BOOL update = find_flag(argv, &argc, L"-u", L"--update");
+
 	HANDLE heap = GetProcessHeap();
 
 	path_capacaty = 2000;
@@ -449,8 +583,31 @@ int pathc(int argc, LPWSTR* argv, HANDLE out, HANDLE err) {
 		WriteFile(err, "Out of memory\n", 14, NULL, NULL);
 		return 3;
 	}
-	WriteFileWide(out, path_buffer, path_size);
-	WriteFile(out, "\n", 1, NULL, NULL);
+	if (update) {
+		if (status == OP_NO_CHANGE) {
+			return 1;
+		}
+		DWORD id = GetParentProcessId();
+		if (id == 0) {
+			WriteFile(err, "Could not get parent\n", 22, NULL, NULL);
+			return 4;
+		}
+		LPSTR narrow_path = WideStringToNarrow(path_buffer, &path_size);
+		if (narrow_path == NULL) {
+			// Should only fail for OUT_OF_MEMORY
+			WriteFile(err, "Out of memory\n", 14, NULL, NULL);
+			return 3;
+		}
+		int res = SetProcessEnvironmentVariable("PATH", narrow_path, id);
+		if (res != 0) {
+			WriteFile(err, "Failed setting PATH\n", 20, NULL, NULL);
+			return 5;
+		}
+	} else {
+		WriteFileWide(out, path_buffer, path_size);
+		WriteFile(out, "\n", 1, NULL, NULL);
+	}
+	
 	if (status == OP_NO_CHANGE) {
 		return 1;
 	}

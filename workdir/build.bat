@@ -37,11 +37,12 @@ set LINK_FLAGS=/link /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /EMITPOGOPHASEINFO
 set OBJECTS="src/dynamic_string.c"
 set EXES="build\short.obj build\stdasm.obj build\args.obj Kernel32.lib"^
 	"src\addpath.c Kernel32.lib Shell32.lib chkstk.obj build/args.obj"^
-	"src\pathc.c Kernel32.lib Shell32.lib chkstk.obj"^
-	"src\parse-template.c build/dynamic_string.obj build/memcp.lib Kernel32.lib Shell32.lib chkstk.obj"^
+	"src\pathc.c Kernel32.lib Shell32.lib chkstk.obj build\ntutils.lib"^
+	"src\parse-template.c build/dynamic_string.obj build/ntutils.lib Kernel32.lib Shell32.lib chkstk.obj"^
 	"src\regget.c build\args.obj Kernel32.lib Advapi32.lib"
 
-set LIB_CMD=lib /MACHINE:X64 /DEF /EXPORT:memcpy=memcpy /NAME:ntdll.dll /OUT:build\memcp.lib
+set LIB_CMD=lib /MACHINE:X64 /DEF /OUT:build\ntutils.lib /NAME:ntdll.dll ^
+	 /EXPORT:memcpy=memcpy /EXPORT:strlen=strlen
 if %VERBOSITY% LEQ 2 (
 	set LIB_CMD=%LIB_CMD% /nologo
 )
@@ -50,8 +51,8 @@ if %VERBOSITY% LEQ 1 (
 ) else (
 	call :run_verbose %LIB_CMD%
 )
-call :echo_standard " build\memcp.lib"
-call :run_verbose del build\memcp.exp
+call :echo_standard " build\ntutils.lib"
+call :run_verbose del build\ntutils.exp
 
 for %%a in (%OBJECTS%) do (
 	call :compile_obj %%~a
