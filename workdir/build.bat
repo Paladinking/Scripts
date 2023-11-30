@@ -37,12 +37,12 @@ set LINK_FLAGS=/link /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /EMITPOGOPHASEINFO
 set OBJECTS="src/dynamic_string.c"
 set EXES="build\short.obj build\stdasm.obj build\args.obj Kernel32.lib"^
 	"src\addpath.c Kernel32.lib Shell32.lib chkstk.obj build/args.obj"^
-	"src\pathc.c Kernel32.lib Shell32.lib chkstk.obj build\ntutils.lib"^
+	"src\pathc.c src\path_utils.c Kernel32.lib Shell32.lib chkstk.obj build\ntutils.lib"^
 	"src\parse-template.c build/dynamic_string.obj build/ntutils.lib Kernel32.lib Shell32.lib chkstk.obj"^
 	"src\regget.c build\args.obj Kernel32.lib Advapi32.lib"
 
 set LIB_CMD=lib /MACHINE:X64 /DEF /OUT:build\ntutils.lib /NAME:ntdll.dll ^
-	 /EXPORT:memcpy=memcpy /EXPORT:strlen=strlen
+	 /EXPORT:memcpy=memcpy /EXPORT:strlen=strlen /EXPORT:memmove=memmove
 if %VERBOSITY% LEQ 2 (
 	set LIB_CMD=%LIB_CMD% /nologo
 )
@@ -150,7 +150,7 @@ exit /b
 echo MINGW
 gcc src/stdasm_test.c build/stdasm.obj build/chkstk.a -lKernel32 --entry=entry_main -nostdlib -o test/stdasm_test-gcc.exe && echo  test/stdasm_test-gcc.exe
 gcc src/envget.c -o bin/envget-gcc.exe -lUserenv && echo bin/envget-gcc.exe
-gcc src/pathc.c -o bin/pathc-gcc.exe -lKernel32 -lShell32 build/chkstk.a -nostdlib --entry=entry_main
+gcc src/pathc.c src/path_utils.c build/ntutils.lib -o bin/pathc-gcc.exe -lKernel32 -lShell32 build/chkstk.a -nostdlib --entry=entry_main -g
 @endlocal
 
 
