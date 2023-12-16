@@ -7,6 +7,10 @@
 #include "path_utils.h"
 #include "string_conv.h"
 
+#define PRINTF_W(format, ...) do {WCHAR buf[4096]; _snwprintf_s(buf, 4096, _TRUNCATE, format, __VA_ARGS__); WriteConsoleW(GetStdHandle(STD_OUTPUT_HANDLE), buf, wcslen(buf), NULL, NULL);} while (0)
+
+#define PRINTF(format, ...) do {char buf[4096]; _snprintf_s(buf, 4096, _TRUNCATE, format, __VA_ARGS__); WriteConsoleA(GetStdHandle(STD_OUTPUT_HANDLE), buf, strlen(buf), NULL, NULL);} while (0)
+
 DWORD GetParentProcessId() {
     // Get the current process ID
     DWORD currentProcessId = GetCurrentProcessId();
@@ -36,7 +40,7 @@ DWORD GetParentProcessId() {
     return 0;
 }
 
-LPSTR read_paths_file(LPWSTR binpath, DWORD* count) {
+LPSTR read_paths_file(LPCWSTR name, LPCWSTR ext, LPCWSTR binpath, DWORD* count) {
 	HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
 	HANDLE heap = GetProcessHeap();
 
@@ -47,10 +51,11 @@ LPSTR read_paths_file(LPWSTR binpath, DWORD* count) {
 		return NULL;
 	}
 	WCHAR path_file[256];
-	status = _wmakepath_s(path_file, 256, drive, dir, L"paths", L".txt");
+	status = _wmakepath_s(path_file, 256, drive, dir, name, ext);
 	if (status != 0) {
 		return NULL;
 	}
+
 	HANDLE hPaths = CreateFile(path_file, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
 	if (hPaths == INVALID_HANDLE_VALUE) {
 		return NULL;
@@ -92,12 +97,104 @@ LPSTR read_paths_file(LPWSTR binpath, DWORD* count) {
 	return buffer;
 }
 
-PathBuffer path_buffer = {NULL, 0, 0};
 WideBuffer add_buffer = {NULL, 0, 0};
 
-OpStatus add_paths(LPSTR paths, DWORD count, LPSTR name) {
+EnvBuffer environment = {NULL, 0, 0};
+
+OpStatus parse_env_file(LPSTR file, DWORD count, LPSTR file_name, DWORD file_name_len) {
 	HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
 	HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
+	HANDLE heap = GetProcessHeap();
+	LPSTR line = file;
+	OpStatus res = OP_NO_CHANGE;
+	for (unsigned i = 0; i < count; ++i) {
+		if (*line == '\n') {
+			++line;
+		}
+		LPSTR line_name = NULL;
+		if (line[0] == '!' && line[1] == '!') {
+			DWORD len = strlen(line + 2);
+			NarrowStringToWide(line + 2, len, &add_buffer);
+			WideBuffer* var = read_envvar(add_buffer.ptr, &environment);
+			if (var != NULL && var->size > 0) {
+				return res;
+			}
+		}
+		if (line[0] == '*' && line[1] == '*') {
+			line = line + 2;
+			DWORD len = strlen(line);
+			WriteFile(out, line, len, NULL, NULL);
+			WriteFile(out, "\n", 1, NULL, NULL);
+			line = line + len + 1;
+			continue;
+		}
+		if ((line_name = strchr(line, '|')) != NULL ||
+			(line_name = strchr(line, '>')) != NULL ||
+			(line_name = strchr(line, '<')) != NULL)
+		{
+			DWORD len = line_name - line;
+			DWORD name_len = strlen(line_name + 1);
+			NarrowStringToWide(line_name + 1, name_len, &add_buffer);
+			WideBuffer* var = read_envvar(add_buffer.ptr, &environment);
+			if (var == NULL) {
+				WriteConsole(err, L"Invalid environment variable ", 29, NULL, NULL);
+				WriteConsole(err, add_buffer.ptr, add_buffer.size, NULL, NULL);
+				WriteConsole(err, L"\n", 1, NULL, NULL);
+			} else if (*line_name == '|') {
+				NarrowStringToWide(line, len, &add_buffer);
+				OpStatus status = path_add(add_buffer.ptr, var, TRUE, FALSE);
+				if (status > OP_NO_CHANGE) {
+					WriteConsole(err, L"Error while parsing file ", 25, NULL, NULL);
+					WriteConsoleA(err, file_name, file_name_len, NULL, NULL);
+					WriteConsole(err, L": ", 2, NULL, NULL);
+					WriteConsoleA(err, line, strlen(line), NULL, NULL);
+					WriteConsole(err, L"\n", 1, NULL, NULL);
+					if (status != OP_INVALID_PATH) {
+						return status;
+					}
+				} else if (status == OP_SUCCESS) {
+					res = OP_SUCCESS;
+				}
+			} else if (*line_name == '>') {
+				NarrowStringToWide(line, len, &add_buffer);
+				WideBuffer temp = add_buffer;
+				add_buffer = *var;
+				*var = temp;
+				res = OP_SUCCESS;
+			} else {
+				NarrowStringToWide(line, len, &add_buffer);
+				WideBuffer* to_save = read_envvar(add_buffer.ptr, &environment);
+				if (to_save == NULL) {
+					WriteConsole(err, L"Invalid environment variable ", 32, NULL, NULL);
+					WriteConsole(err, add_buffer.ptr, add_buffer.size, NULL, NULL);
+					WriteConsole(err, L"\n", 1, NULL, NULL);
+				} else {
+					if (var->capacity < to_save->size + 1) {
+						LPWSTR buf = HeapAlloc(heap, 0, (to_save->size + 1) * sizeof(WCHAR));
+						if (buf == NULL) {
+							return OP_OUT_OF_MEMORY;
+						}
+						var->capacity = to_save->size + 1;
+						var->size = to_save->size;
+						HeapFree(heap, 0, var->ptr);
+						var->ptr = buf;
+					}
+					memcpy(var->ptr, to_save->ptr, (to_save->size + 1) * sizeof(WCHAR));
+					res = OP_SUCCESS;
+				}
+			}
+			line = line + len + name_len + 2;
+		} else {
+			line = line + strlen(line) + 1;
+		}
+	}
+	return res;
+}
+
+OpStatus add_paths(LPSTR paths, DWORD count, LPSTR name, LPCWSTR binpath) {
+	HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+	HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
+	HANDLE heap = GetProcessHeap();
 	LPSTR line = paths;
 	DWORD name_len = strlen(name);
 	OpStatus res = OP_NO_CHANGE;
@@ -113,34 +210,68 @@ OpStatus add_paths(LPSTR paths, DWORD count, LPSTR name) {
 				len -= 2;
 			}
 			NarrowStringToWide(line, len, &add_buffer);
-			OpStatus status = path_add(add_buffer.ptr, &path_buffer, TRUE, FALSE);
+			OpStatus status = path_add(add_buffer.ptr, &environment.vars[0].val, TRUE, FALSE);
 			if (status > OP_NO_CHANGE) {
-				WriteFile(out, "Failed adding ", 14, NULL, NULL);
-				WriteFile(out, line, len, NULL, NULL);
-				WriteFile(out, " to Path\n", 9, NULL, NULL);
-				return status;
-			} else if (status != OP_NO_CHANGE) {
+				WriteFile(err, "Failed adding ", 14, NULL, NULL);
+				WriteFile(err, line, len, NULL, NULL);
+				WriteFile(err, " to Path\n", 9, NULL, NULL);
+				if (status != OP_INVALID_PATH) {
+					return status;
+				}
+			} else if (status == OP_SUCCESS) {
 				WriteFile(out, "Added ", 6, NULL, NULL);
 				WriteFile(out, line, len, NULL, NULL);
 				WriteFile(out, " to Path\n", 9, NULL, NULL);
-				res = status;
+				res = OP_SUCCESS;
 			}
 			line = line_name + name_len + 2;
 		} else if ((line_name = strchr(line, '<')) != NULL && _stricmp(line_name + 1, name) == 0) {
 			*line_name = '\0';
-			OpStatus status = add_paths(paths, count, line);
-			if (status > OP_NO_CHANGE) {
-				return status;
-			} else if (status != OP_NO_CHANGE) {
-				res = status;
-			}
+			OpStatus status = add_paths(paths, count, line, binpath);
 			*line_name = '<';
+			if (status == OP_SUCCESS) {
+				res = OP_SUCCESS;
+			} else if (status > OP_INVALID_PATH) {
+				return status;
+			}
+			line = line_name + name_len + 2;
+		} else if ((line_name = strchr(line, '>')) != NULL && _stricmp(line_name + 1, name) == 0) {
+			DWORD len = line_name - line;
+			NarrowStringToWide(line, len, &add_buffer);
+			LPWSTR ext = add_buffer.ptr + add_buffer.size;
+			while (ext > add_buffer.ptr && *ext != L'.') {
+				--ext;
+			}
+			if (ext == add_buffer.ptr) {
+				ext = NULL;
+			} else {
+				*ext = L'\0';
+				ext += 1;
+			}
+			DWORD lines;
+			LPSTR file = read_paths_file(add_buffer.ptr, ext, binpath, &lines);
+			if (ext != NULL) {
+				*(ext - 1) = L'.';
+			}
+			if (file == NULL) {
+				WriteConsole(err, L"Could not open ", 15, NULL, NULL);
+				WriteConsole(err, add_buffer.ptr, add_buffer.size, NULL, NULL);
+				WriteConsole(err, L"\n", 1, NULL, NULL);
+			} else {
+				OpStatus status = parse_env_file(file, lines, line, len);
+				if (status == OP_SUCCESS) {
+					res = OP_SUCCESS;
+				} else if (status > OP_INVALID_PATH) {
+					return status;
+				}
+				HeapFree(heap, 0, file);
+			}
 			line = line_name + name_len + 2;
 		} else {
 			line = line + strlen(line) + 1;
 		}
 	}
-	return OP_SUCCESS;
+	return res;
 }
 
 int main() {
@@ -155,19 +286,26 @@ int main() {
 	}
 	HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
 	HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
+	environment.capacity = 4;
+	environment.size = 0;
+	environment.vars = HeapAlloc(heap, 0, 4 * sizeof(EnvVar));
+	if (environment.vars == NULL) {
+		status = 6;
+		goto end;
+	}
 
 	DWORD lines;
-	LPSTR paths_data = read_paths_file(argv[0], &lines);
+	LPSTR paths_data = read_paths_file(L"Paths", L"txt", argv[0], &lines);
 	if (paths_data == NULL) {
 		WriteConsole(err, L"Failed reading file\n", 20, NULL, NULL);
 		status = 2;
 		goto end;
 	}
-	
-	if (!get_path_envvar(2000, 4, &path_buffer)) {
+
+
+	if (read_envvar(L"Path", &environment) == NULL) {
 		WriteConsole(err, L"Could not get Path\n", 19, NULL, NULL);
 		status = 3;
-		HeapFree(heap, 0, path_buffer.ptr);
 		goto end;
 	}
 	DWORD arg_capacity = 20;
@@ -179,45 +317,49 @@ int main() {
 	for (DWORD i = 1; i < argc; ++i) {
 		DWORD len = wcslen(argv[i]);
 		if (!WideStringToNarrow(argv[i], len, &buffer)) {
-			// WRITE ERROR
 			continue;
 		}
-		OpStatus res = add_paths(paths_data, lines, buffer.ptr);
+		OpStatus res = add_paths(paths_data, lines, buffer.ptr, argv[0]);
 		if (res == OP_SUCCESS) {
 			changed = TRUE;
 		} else if (res != OP_NO_CHANGE) {
 			status = res;
-			HeapFree(heap, 0, add_buffer.ptr);
+			
 			HeapFree(heap, 0, buffer.ptr);
 			HeapFree(heap, 0, paths_data);
-			HeapFree(heap, 0, path_buffer.ptr);
 			goto end;
 		}
-		if (add_paths(paths_data, lines, buffer.ptr) == OP_SUCCESS) {
-			changed = TRUE;
-		}
 	}
-	HeapFree(heap, 0, add_buffer.ptr);
 	HeapFree(heap, 0, buffer.ptr);
 	HeapFree(heap, 0, paths_data);
 	if (!changed) {
 		status = 1;
-		HeapFree(heap, 0, path_buffer.ptr);
 		goto end;
 	}
 	DWORD id = GetParentProcessId();
 	if (id == 0) {
 		WriteConsole(err, L"Could not get parent process\n", 29, NULL, NULL);
 		status = 4;
-		HeapFree(heap, 0, path_buffer.ptr);
 		goto end;
 	}
-	if (SetProcessEnvironmentVariable(L"PATH", path_buffer.ptr, id) != 0) {
-		WriteConsole(err, L"Failed setting Path\n", 20, NULL, NULL);
-		status = 5;
+
+	for (DWORD i = 0; i < environment.size; ++i) {
+		LPCWSTR name = environment.vars[i].name;
+		LPCWSTR val = environment.vars[i].val.ptr;
+		if (SetEnvironmentVariable(name, val)) {
+			if (SetProcessEnvironmentVariable(name, val, id) == 0) {
+				continue;
+			}
+		}
+		WriteConsole(err, L"Could not set ", 14, NULL, NULL);
+		WriteConsole(err, name, wcslen(name), NULL, NULL);
+		WriteConsole(err, L" to ", 4, NULL, NULL);
+		WriteConsole(err, val, environment.vars[i].val.size, NULL, NULL);
+		WriteConsole(err, L"\n", 1, NULL, NULL);
 	}
-	HeapFree(heap, 0, path_buffer.ptr);
 end:
+	free_env(&environment);
+	HeapFree(heap, 0, add_buffer.ptr);
 	FlushFileBuffers(out);
 	FlushFileBuffers(err);
 	HeapFree(heap, 0, expanded);

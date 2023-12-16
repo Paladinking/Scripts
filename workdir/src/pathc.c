@@ -168,8 +168,8 @@ int pathc(int argc, LPWSTR* argv, HANDLE out, HANDLE err) {
 
 	HANDLE heap = GetProcessHeap();
 
-	DWORD capacity = 2000;
-	if (!get_path_envvar(capacity, argc - 1, &path_buffer)) {
+	path_buffer.capacity = 2000;
+	if (!get_envvar(L"Path", 20 * (argc - 1), &path_buffer)) {
 		WriteFile(err, "Could not get Path\n", 19, NULL, NULL);
 		return 6;
 	}
