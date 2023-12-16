@@ -1,0 +1,31 @@
+Usage: path-add.exe [ARG]...
+Goes through paths.txt and adds all matching lines.
+
+Lines in paths.txt can have 3 different formats:
+ 1. {PATH}|{NAME}
+  If {NAME} matches an input argument, {PATH} will be added to PATH environment variable.
+  Note that | is a literal and should be present in the file.
+ 2. {CHILD}<{NAME}
+  If {NAME} matches an input argument, add {CHILD} next in argument list.
+  This can (but does not have to) cause infinite recursion for bad input, causing the program to run out of memory.
+ 3. {FILE}>{NAME}
+  If {NAME} matches an input argument, parse {FILE} for environment variables.
+
+All other lines are ignored.
+
+Lines in an environment variable file given by format 3 in paths.txt can have 5 different formats:
+ 1. !!{VAR}
+  Stop parsing file if {VAR} is defined.
+ 2. **{TEXT}
+  {TEXT} is printed to the console.
+ 3. {PATH}|{VAR}
+  {PATH} will be prepended to the environment variable {VAR}, separated by semi-colons.
+ 4. {VALUE}>{VAR}
+  The environment variable {VAR} will be set to {VALUE}.
+  Just >{VAR} is allowed and will delete the environment variable {VAR}.
+ 5. {TO_SAVE}<{VAR}
+  The environment variable {VAR} will be set to the value in {TO_SAVE}.
+  This is usefull for saving and restoring environment variables.
+  
+
+All other lines are again ignored.

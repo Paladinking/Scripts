@@ -1,33 +1,111 @@
 #define UNICODE
 #include "path_utils.h"
 
-BOOL get_path_envvar(DWORD capacity, DWORD hint, PathBuffer* res) {
-	res->ptr = NULL;
+BOOL get_envvar(LPCWSTR name, DWORD hint, WideBuffer* res) {
 	HANDLE heap = GetProcessHeap();
-	LPWSTR path_buffer = HeapAlloc(heap, 0, capacity * sizeof(WCHAR));
-	if (path_buffer == NULL) {
-		return FALSE;
+	BOOL free = FALSE;
+	if (res->ptr == NULL) {
+		free = TRUE;
+		res->ptr = HeapAlloc(heap, 0, (res->capacity + hint) * sizeof(WCHAR));
+		if (res->ptr == NULL) {
+			return FALSE;
+		}
+		res->capacity = res->capacity + hint;
 	}
-	DWORD size = GetEnvironmentVariable(L"Path", path_buffer, capacity);
+
+	DWORD size = GetEnvironmentVariable(name, res->ptr, res->capacity);
 	if (size == 0) {
+		int err = GetLastError();
+		if (err == ERROR_ENVVAR_NOT_FOUND || err == 0) {
+			res->size = 0;
+			res->ptr[0] = '\0';
+			return TRUE;
+		}
+		if (free) {
+			HeapFree(heap, 0, res->ptr);
+			res->ptr = NULL;
+			res->capacity = 0;
+			res->size = 0;
+		}
 		return FALSE;
 	}
-	if (size > capacity) {
-		HeapFree(heap, 0, path_buffer);
-		capacity = size + 20 * hint;
-		path_buffer = HeapAlloc(heap, 0, capacity * sizeof(WCHAR));
+
+
+	if (size > res->capacity) {
+		if (free) {
+			HeapFree(heap, 0, res->ptr);
+			res->ptr = NULL;
+			res->capacity = 0;
+			res->size = 0;
+		}
+		DWORD capacity = size + hint;
+		LPWSTR path_buffer = HeapAlloc(heap, 0, capacity * sizeof(WCHAR));
 		if (path_buffer == NULL) {
 			return FALSE;
 		}
-		size = GetEnvironmentVariable(L"Path", path_buffer, capacity);
+		size = GetEnvironmentVariable(name, path_buffer, capacity);
 		if (size == 0) {
+			HeapFree(heap, 0, path_buffer);
 			return FALSE;
 		}
+		if (!free) {
+			HeapFree(heap, 0, res->ptr);
+		}
+		res->ptr = path_buffer;
+		res->capacity = capacity;
 	}
-	res->ptr = path_buffer;
 	res->size = size;
-	res->capacity = capacity;
+
 	return TRUE;
+}
+
+WideBuffer* read_envvar(LPCWSTR name, EnvBuffer* env) {
+	for (DWORD i = 0; i < env->size; ++i) {
+		if (_wcsicmp(name, env->vars[i].name) == 0) {
+			return &(env->vars[i].val);
+		}
+	}
+	HANDLE heap = GetProcessHeap();
+	if (env->size == env->capacity) {
+		EnvVar* buf = HeapAlloc(heap, 0, env->capacity * 2 * sizeof(EnvVar));
+		if (buf == NULL) {
+			return NULL;
+		}
+		memcpy(buf, env->vars, env->size * sizeof(EnvVar));
+		env->vars = buf;
+		env->capacity = env->capacity * 2;
+	}
+
+	env->vars[env->size].val.ptr = NULL;
+	env->vars[env->size].val.capacity = 100;
+	env->vars[env->size].val.size = 0;
+	if (get_envvar(name, 0, &(env->vars[env->size].val))) {
+		DWORD len = (wcslen(name) + 1) * sizeof(WCHAR);
+		LPWSTR new_name = HeapAlloc(heap, 0, len);
+		if (new_name == NULL) {
+			return NULL;
+		}
+		memcpy(new_name, name, len);
+		env->vars[env->size].name = new_name;
+		env->size += 1;
+		return &(env->vars[env->size - 1].val);
+	}
+	
+	return NULL;
+}
+
+void free_env(EnvBuffer* env) {
+	HANDLE heap = GetProcessHeap();
+	for (DWORD i = 0; i < env->size; ++i) {
+		HeapFree(heap, 0, env->vars[i].val.ptr);
+		HeapFree(heap, 0, (LPWSTR)env->vars[i].name);
+		env->vars[i].val.ptr = NULL;
+		env->vars[i].val.capacity = 0;
+		env->vars[i].val.size = 0;
+	}
+	HeapFree(heap, 0, env->vars);
+	env->capacity = 0;
+	env->size = 0;
 }
 
 LPWSTR contains(LPWSTR path, LPCWSTR dir) {
@@ -202,11 +280,11 @@ OpStatus path_add(LPWSTR arg, PathBuffer* path_buffer, BOOL before, BOOL expand)
 				return OP_OUT_OF_MEMORY;
 			}
 			path_buffer->capacity = capacity;
-			memcpy(new_buffer + size + extra_size, path_buffer->ptr, path_buffer->size * sizeof(WCHAR));
+			memcpy(new_buffer + size + extra_size, path_buffer->ptr, (path_buffer->size + 1) * sizeof(WCHAR));
 			HeapFree(heap, 0, path_buffer->ptr);
 			path_buffer->ptr = new_buffer;
 		} else {
-			memmove((path_buffer->ptr) + size + extra_size, path_buffer->ptr, path_buffer->size * sizeof(WCHAR));
+			memmove(path_buffer->ptr + size + extra_size, path_buffer->ptr, (path_buffer->size + 1) * sizeof(WCHAR));
 		}
 		(path_buffer->ptr)[size + extra_size - 1] = L';';
 		offset = 0;
@@ -285,17 +363,17 @@ OpStatus expand_path(LPWSTR path, LPWSTR* dest) {
     	add rsp, 72
     	ret
     var:
-    	db 0, 0, ... Space for 50 chars in variable name
+    	db 0, 0, ... Space for 50 WCHARs in variable name
 	val:
 */
-const unsigned char INJECT_BASE[] = {72, 131, 236, 72, 72, 137, 200, 72, 141, 13, 14, 0, 0, 0, 72, 141, 21, 57, 0, 0, 0, 255, 208, 72, 131, 196, 72, 195, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+const unsigned char INJECT_BASE[] = {72, 131, 236, 72, 72, 137, 200, 72, 141, 13, 14, 0, 0, 0, 72, 141, 21, 107, 0, 0, 0, 255, 208, 72, 131, 196, 72, 195, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 const unsigned VAR_START = 28;
-const unsigned VAL_START = 78;
+const unsigned VAL_START = 128;
 
 LPVOID get_setter_func(LPCWSTR var, LPCWSTR val, HANDLE process) {
 	unsigned var_len = wcslen(var) * sizeof(WCHAR);
 	unsigned val_len = (wcslen(val) + 1) * sizeof(WCHAR);
-	if (var_len >= 50) {
+	if (var_len >= 100) {
 		return NULL;
 	}
 	unsigned char* func = VirtualAllocEx(process, NULL, sizeof(INJECT_BASE) + val_len, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
