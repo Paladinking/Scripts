@@ -100,6 +100,7 @@ LPSTR read_paths_file(LPCWSTR name, LPCWSTR ext, LPCWSTR binpath, DWORD* count) 
 WideBuffer add_buffer = {NULL, 0, 0};
 
 EnvBuffer environment = {NULL, 0, 0};
+WCHAR gBinpath[260];
 
 OpStatus parse_env_file(LPSTR file, DWORD count, LPSTR file_name, DWORD file_name_len) {
 	HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -249,7 +250,7 @@ OpStatus add_paths(LPSTR paths, DWORD count, LPSTR name, LPCWSTR binpath) {
 				ext += 1;
 			}
 			DWORD lines;
-			LPSTR file = read_paths_file(add_buffer.ptr, ext, binpath, &lines);
+			LPSTR file = read_paths_file(add_buffer.ptr, ext, gBinpath, &lines);
 			if (ext != NULL) {
 				*(ext - 1) = L'.';
 			}
@@ -284,6 +285,12 @@ int main() {
 		status = 1;
 		goto end;
 	}
+	
+	DWORD mod_res = GetModuleFileName(NULL, gBinpath, 260);
+	if (mod_res == 260 || mod_res == 0) {
+		status = 8;
+		goto end;
+	}
 	HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
 	HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
 	environment.capacity = 4;
@@ -295,7 +302,7 @@ int main() {
 	}
 
 	DWORD lines;
-	LPSTR paths_data = read_paths_file(L"Paths", L"txt", argv[0], &lines);
+	LPSTR paths_data = read_paths_file(L"Paths", L"txt", gBinpath, &lines);
 	if (paths_data == NULL) {
 		WriteConsole(err, L"Failed reading file\n", 20, NULL, NULL);
 		status = 2;

@@ -36,7 +36,6 @@ if %VERBOSITY% LEQ 2 (
 set LINK_FLAGS=/link /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /EMITPOGOPHASEINFO
 set OBJECTS="src/dynamic_string.c"
 set EXES="build\short.obj build\stdasm.obj build\args.obj Kernel32.lib"^
-	"src\addpath.c Kernel32.lib Shell32.lib chkstk.obj build/args.obj"^
 	"src\pathc.c src\path_utils.c Kernel32.lib Shell32.lib chkstk.obj build\ntutils.lib"^
 	"src\parse-template.c build/dynamic_string.obj build/ntutils.lib Kernel32.lib Shell32.lib chkstk.obj"^
 	"src\regget.c build\args.obj Kernel32.lib Advapi32.lib"^
