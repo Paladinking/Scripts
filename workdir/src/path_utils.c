@@ -196,11 +196,12 @@ OpStatus path_add(LPWSTR arg, PathBuffer* path_buffer, BOOL before, BOOL expand)
 	int offset;
 	if (before) {
 		if (path_buffer->size + size + extra_size + 1 > path_buffer->capacity) {
-			path_buffer->capacity = path_buffer->size + size + extra_size + 1;
-			LPWSTR new_buffer = HeapAlloc(heap, 0, path_buffer->capacity * sizeof(WCHAR));
+			DWORD capacity = path_buffer->size + size + extra_size + 1;
+			LPWSTR new_buffer = HeapAlloc(heap, 0, capacity * sizeof(WCHAR));
 			if (new_buffer == NULL) {
 				return OP_OUT_OF_MEMORY;
 			}
+			path_buffer->capacity = capacity;
 			memcpy(new_buffer + size + extra_size, path_buffer->ptr, path_buffer->size * sizeof(WCHAR));
 			HeapFree(heap, 0, path_buffer->ptr);
 			path_buffer->ptr = new_buffer;
@@ -214,11 +215,12 @@ OpStatus path_add(LPWSTR arg, PathBuffer* path_buffer, BOOL before, BOOL expand)
 			++extra_size;
 		}
 		if (path_buffer->size + size + extra_size + 1 > path_buffer->capacity) {
-			path_buffer->capacity = path_buffer->size + size + extra_size + 1;
-			LPWSTR new_buffer = HeapAlloc(heap, 0, path_buffer->capacity * sizeof(WCHAR));
+			DWORD capacity = path_buffer->size + size + extra_size + 1;
+			LPWSTR new_buffer = HeapAlloc(heap, 0, capacity * sizeof(WCHAR));
 			if (new_buffer == NULL) {
 				return OP_OUT_OF_MEMORY;
 			}
+			path_buffer->capacity = capacity;
 			memcpy(new_buffer, path_buffer->ptr, path_buffer->size * sizeof(WCHAR));
 			HeapFree(heap, 0, path_buffer->ptr);
 			path_buffer->ptr = new_buffer;
