@@ -1,30 +1,40 @@
+#pragma once
 #include <windows.h>
 #ifndef UNICODE
 #error Unicode required
 #endif
 
-WCHAR to_upper(const WCHAR c);
+typedef struct _PathBuffer {
+	LPWSTR ptr;
+	DWORD size;
+	DWORD capacity;
+} PathBuffer;
+
+BOOL get_path_envvar(DWORD capacity, DWORD hint, PathBuffer* res);
 
 typedef enum _PathStatus {
 	PATH_VALID, PATH_NEEDS_QUOTES, PATH_INVALID
 } PathStatus;
 
 /* 
- Makes sure a path is a valid Windows path.
- Replaces L'/' with L'\'
+ Makes sure a path is (probably) a valid Windows path.
+ Replaces L'/' with L'\'.
+ Does not check weird cases like CON.
 */
 PathStatus validate(LPWSTR path);
 
 typedef enum _OpStatus {
-	OP_SUCCES, OP_NO_CHANGE, OP_INVALID_PATH, OP_MISSSING_ARG, OP_OUT_OF_MEMORY
+	OP_SUCCESS, OP_NO_CHANGE, OP_INVALID_PATH, OP_MISSSING_ARG, OP_OUT_OF_MEMORY
 } OpStatus;
 
 OpStatus expand_path(LPWSTR path, LPWSTR* dest);
 
-OpStatus path_add(LPWSTR arg, LPWSTR* path_buffer, DWORD* path_size, DWORD* path_capacaty, BOOL before, BOOL expand);
+OpStatus path_add(LPWSTR arg, PathBuffer* path, BOOL before, BOOL expand);
 
-OpStatus path_remove(LPWSTR arg, LPWSTR* path_buffer, DWORD* path_size, BOOL expand);
+OpStatus path_remove(LPWSTR arg, PathBuffer* path, BOOL expand);
 
 LPWSTR contains(LPWSTR path, LPCWSTR dir);
 
 extern LPWSTR expanded;
+
+int SetProcessEnvironmentVariable(LPCWSTR var, LPCWSTR val, DWORD processId);

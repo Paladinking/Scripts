@@ -36,81 +36,6 @@ DWORD GetParentProcessId() {
     return 0;
 }
 
-/* Contains the following asm:
-		sub rsp, 72
-    	mov rax, rcx
-    	lea rcx, [var]
-    	lea rdx, [val]
-    	call rax
-    	add rsp, 72
-    	ret
-    var:
-    	db 0, 0, ... Space for 50 chars in variable name
-	val:
-*/
-const unsigned char INJECT_BASE[] = {72, 131, 236, 72, 72, 137, 200, 72, 141, 13, 14, 0, 0, 0, 72, 141, 21, 57, 0, 0, 0, 255, 208, 72, 131, 196, 72, 195, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-const unsigned VAR_START = 28;
-const unsigned VAL_START = 78;
-
-LPVOID get_setter_func(LPCSTR var, LPCSTR val, HANDLE process) {
-	unsigned var_len = strlen(var);
-	unsigned val_len = strlen(val) + 1;
-	if (var_len >= 50) {
-		return NULL;
-	}
-	unsigned char* func = VirtualAllocEx(process, NULL, sizeof(INJECT_BASE) + val_len, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-	if (func == NULL) {
-		return NULL;
-	}
-	if (!WriteProcessMemory(process, func, INJECT_BASE, sizeof(INJECT_BASE), NULL)) {
-        VirtualFreeEx(process, func, 0, MEM_RELEASE);
-        return NULL;
-    }
-	if (!WriteProcessMemory(process, func + VAR_START, var, var_len, NULL)) {
-        VirtualFreeEx(process, func, 0, MEM_RELEASE);
-        return NULL;
-    }
-	if (!WriteProcessMemory(process, func + VAL_START, val, val_len, NULL)) {
-        VirtualFreeEx(process, func, 0, MEM_RELEASE);
-        return NULL;
-    }
-	return func;
-}
-
-int SetProcessEnvironmentVariable(LPCSTR var, LPCSTR val, DWORD processId) {
-	HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, processId);
-    if (hProcess == NULL) {
-        return 1;
-    }
-
-	LPTHREAD_START_ROUTINE func = get_setter_func(var, val, hProcess);
-	if (func == NULL) {
-		CloseHandle(hProcess);
-		return 2;
-	}
-
-	LPVOID loadLibraryAddr = (LPVOID)GetProcAddress(GetModuleHandle(L"kernel32.dll"), "SetEnvironmentVariableA");
-	if (loadLibraryAddr == NULL) {
-		VirtualFreeEx(hProcess, func, 0, MEM_RELEASE);
-        CloseHandle(hProcess);
-		return 3;
-	}
-
-	HANDLE hThread = CreateRemoteThread(hProcess, NULL, 0, func, loadLibraryAddr, 0, NULL);
-    if (hThread == NULL) {
-        VirtualFreeEx(hProcess, func, 0, MEM_RELEASE);
-        CloseHandle(hProcess);
-        return 4;
-    }
-
-	WaitForSingleObject(hThread, INFINITE);
-
-	VirtualFreeEx(hProcess, func, 0, MEM_RELEASE);
-	CloseHandle(hThread);
-	CloseHandle(hProcess);
-	return 0;
-}
-
 BOOL equals(LPCWSTR a, LPCWSTR b) {
 	int index = 0;
 	while (TRUE) {
@@ -140,30 +65,6 @@ DWORD find_flag(LPWSTR* argv, int* argc, LPCWSTR flag, LPCWSTR long_flag) {
 }
 
 
-LPSTR WideStringToNarrow(LPCWSTR string, DWORD *size) {
-	HANDLE heap = GetProcessHeap();
-	UINT code_point = 65001; // Utf-8
-	DWORD out_req_size = WideCharToMultiByte(
-		code_point, 0, string, *size, NULL, 0, NULL, NULL 
-	);
-
-	LPSTR buffer = HeapAlloc(heap, 0, out_req_size + 1);
-	if (buffer == NULL) {
-		return NULL;
-	}
-	out_req_size = WideCharToMultiByte(
-		code_point, 0, string, *size, buffer, out_req_size, NULL, NULL 
-	);
-
-	if (out_req_size == 0) {
-		HeapFree(heap, 0, buffer);
-		return NULL;
-	}
-	*size = out_req_size;
-	buffer[out_req_size] = '\0';
-	return buffer;
-}
-
 int WriteFileWide(HANDLE out, LPCWSTR ptr, int size) {
 	HANDLE heap = GetProcessHeap();
 	UINT code_point = GetConsoleOutputCP();
@@ -189,9 +90,7 @@ int WriteFileWide(HANDLE out, LPCWSTR ptr, int size) {
 OpStatus paths_add(
 	int argc, 
 	LPWSTR* argv,
-	LPWSTR* path_buffer,
-	DWORD* path_size, 
-	DWORD path_capacaty,
+	PathBuffer* path_buffer,
 	BOOL before,
 	BOOL expand
 ) {
@@ -202,9 +101,9 @@ OpStatus paths_add(
 	OpStatus status = OP_NO_CHANGE;
 
 	for (int arg = 1; arg < argc; ++arg) {
-		OpStatus res = path_add(argv[arg], path_buffer, path_size, &path_capacaty, before, expand);
-		if (res == OP_SUCCES) {
-			status = OP_SUCCES;
+		OpStatus res = path_add(argv[arg], path_buffer, before, expand);
+		if (res == OP_SUCCESS) {
+			status = OP_SUCCESS;
 		} else if (res != OP_NO_CHANGE) {
 			return res;
 		}
@@ -215,9 +114,7 @@ OpStatus paths_add(
 OpStatus paths_remove(
 	int argc, 
 	LPWSTR* argv,
-	LPWSTR* path_buffer,
-	DWORD* path_size, 
-	DWORD path_capacaty,
+	PathBuffer* path_buffer,
 	BOOL before,
 	BOOL expand
 ) {
@@ -229,8 +126,8 @@ OpStatus paths_remove(
 	}
 	BOOL removed_any = FALSE;
 	for (int arg = 1; arg < argc; ++arg) {
-		OpStatus status = path_remove(argv[arg], path_buffer, path_size, expand);
-		if (status == OP_SUCCES) {
+		OpStatus status = path_remove(argv[arg], path_buffer, expand);
+		if (status == OP_SUCCESS) {
 			removed_any = TRUE;
 		} else if (status != OP_NO_CHANGE) {
 			return status;
@@ -239,16 +136,14 @@ OpStatus paths_remove(
 	if (!removed_any) {
 		return OP_NO_CHANGE;
 	}
-	return OP_SUCCES;
+	return OP_SUCCESS;
 }
 
 typedef enum _OperationType {
 	OPERATION_ADD, OPERATION_REMOVE, OPERATION_MOVE
 } OperationType;
 
-LPWSTR path_buffer = NULL;
-DWORD path_size = 0;
-DWORD path_capacaty = 0;
+PathBuffer path_buffer = {NULL, 0, 0};
 
 int pathc(int argc, LPWSTR* argv, HANDLE out, HANDLE err) {
 	if (argc < 2) {
@@ -273,47 +168,29 @@ int pathc(int argc, LPWSTR* argv, HANDLE out, HANDLE err) {
 
 	HANDLE heap = GetProcessHeap();
 
-	path_capacaty = 2000;
-	path_buffer = HeapAlloc(heap, 0, path_capacaty * sizeof(WCHAR));
-	path_size = GetEnvironmentVariable(L"Path", path_buffer, path_capacaty);
+	DWORD capacity = 2000;
+	if (!get_path_envvar(capacity, argc - 1, &path_buffer)) {
+		WriteFile(err, "Could not get Path\n", 19, NULL, NULL);
+		return 6;
+	}
 
-	if (path_size == 0) {
-		int err_code = GetLastError();
-		if (err_code == ERROR_ENVVAR_NOT_FOUND) {
-			path_buffer[0] = L'\0';
-		} else {
-			WriteFile(err, "Could not get Path\n", 19, NULL, NULL);
-			return err_code;
-		}
-	}
-	if (path_size > path_capacaty) {
-		HeapFree(heap, 0, path_buffer);
-		path_capacaty = path_size + 20 * (argc - 1);
-		path_buffer = HeapAlloc(heap, 0, path_capacaty * sizeof(WCHAR));
-		path_size = GetEnvironmentVariable(L"Path", path_buffer, path_capacaty);
-		if (path_size == 0) {
-			int err_code = GetLastError();
-			WriteFile(err, "Could not get Path\n", 19, NULL, NULL);
-			return err_code;
-		}
-	}
 	OpStatus status;
 
 	if (operation == OPERATION_ADD) {
 		status = paths_add(
-			argc - 1, argv + 1, &path_buffer, &path_size, path_capacaty, before, expand
+			argc - 1, argv + 1, &path_buffer, before, expand
 		);
 	} else if (operation == OPERATION_REMOVE){
 		status = paths_remove(
-			argc - 1, argv + 1, &path_buffer, &path_size, path_capacaty, before, expand
+			argc - 1, argv + 1, &path_buffer, before, expand
 		);
 	} else {
 		status = paths_remove(
-			argc - 1, argv + 1, &path_buffer, &path_size, path_capacaty, FALSE, expand
+			argc - 1, argv + 1, &path_buffer, FALSE, expand
 		);
 		if (status <= OP_NO_CHANGE) {
 			status = paths_add(
-				argc - 1, argv + 1, &path_buffer, &path_size, path_capacaty, before, expand
+				argc - 1, argv + 1, &path_buffer, before, expand
 			);
 		}
 	}
@@ -338,19 +215,13 @@ int pathc(int argc, LPWSTR* argv, HANDLE out, HANDLE err) {
 			WriteFile(err, "Could not get parent\n", 22, NULL, NULL);
 			return 4;
 		}
-		LPSTR narrow_path = WideStringToNarrow(path_buffer, &path_size);
-		if (narrow_path == NULL) {
-			// Should only fail for OUT_OF_MEMORY
-			WriteFile(err, "Out of memory\n", 14, NULL, NULL);
-			return 3;
-		}
-		int res = SetProcessEnvironmentVariable("PATH", narrow_path, id);
+		int res = SetProcessEnvironmentVariable(L"PATH", path_buffer.ptr, id);
 		if (res != 0) {
 			WriteFile(err, "Failed setting PATH\n", 20, NULL, NULL);
 			return 5;
 		}
 	} else {
-		WriteFileWide(out, path_buffer, path_size);
+		WriteFileWide(out, path_buffer.ptr, path_buffer.size);
 		WriteFile(out, "\n", 1, NULL, NULL);
 	}
 	
@@ -371,7 +242,7 @@ int main() {
 	FlushFileBuffers(out);
 	FlushFileBuffers(err);
 	HeapFree(heap, 0, expanded);
-	HeapFree(heap, 0, path_buffer);
+	HeapFree(heap, 0, path_buffer.ptr);
 	LocalFree(argv);
 	ExitProcess(status);
 	return status;
