@@ -1,14 +1,11 @@
 #pragma once
 #include <windows.h>
+#include "string_conv.h"
 #ifndef UNICODE
 #error Unicode required
 #endif
 
-typedef struct _PathBuffer {
-	LPWSTR ptr;
-	DWORD size;
-	DWORD capacity;
-} PathBuffer;
+typedef WideBuffer PathBuffer;
 
 BOOL get_path_envvar(DWORD capacity, DWORD hint, PathBuffer* res);
 
