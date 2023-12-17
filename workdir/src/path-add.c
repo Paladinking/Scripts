@@ -6,10 +6,7 @@
 #include <tlhelp32.h>
 #include "path_utils.h"
 #include "string_conv.h"
-
-#define PRINTF_W(format, ...) do {WCHAR buf[4096]; _snwprintf_s(buf, 4096, _TRUNCATE, format, __VA_ARGS__); WriteConsoleW(GetStdHandle(STD_OUTPUT_HANDLE), buf, wcslen(buf), NULL, NULL);} while (0)
-
-#define PRINTF(format, ...) do {char buf[4096]; _snprintf_s(buf, 4096, _TRUNCATE, format, __VA_ARGS__); WriteConsoleA(GetStdHandle(STD_OUTPUT_HANDLE), buf, strlen(buf), NULL, NULL);} while (0)
+#include "printf.h"
 
 DWORD GetParentProcessId() {
     // Get the current process ID
@@ -124,8 +121,7 @@ OpStatus parse_env_file(LPSTR file, DWORD count, LPSTR file_name, DWORD file_nam
 		if (line[0] == '*' && line[1] == '*') {
 			line = line + 2;
 			DWORD len = strlen(line);
-			WriteFile(out, line, len, NULL, NULL);
-			WriteFile(out, "\n", 1, NULL, NULL);
+			_printf_h(out, "%.*s\n", len, line);
 			line = line + len + 1;
 			continue;
 		}
@@ -138,18 +134,12 @@ OpStatus parse_env_file(LPSTR file, DWORD count, LPSTR file_name, DWORD file_nam
 			NarrowStringToWide(line_name + 1, name_len, &add_buffer);
 			WideBuffer* var = read_envvar(add_buffer.ptr, &environment);
 			if (var == NULL) {
-				WriteConsole(err, L"Invalid environment variable ", 29, NULL, NULL);
-				WriteConsole(err, add_buffer.ptr, add_buffer.size, NULL, NULL);
-				WriteConsole(err, L"\n", 1, NULL, NULL);
+				_wprintf_h(err, L"Invalid environment variable %.*s\n", add_buffer.size, add_buffer.ptr);
 			} else if (*line_name == '|') {
 				NarrowStringToWide(line, len, &add_buffer);
 				OpStatus status = path_add(add_buffer.ptr, var, TRUE, FALSE);
 				if (status > OP_NO_CHANGE) {
-					WriteConsole(err, L"Error while parsing file ", 25, NULL, NULL);
-					WriteConsoleA(err, file_name, file_name_len, NULL, NULL);
-					WriteConsole(err, L": ", 2, NULL, NULL);
-					WriteConsoleA(err, line, strlen(line), NULL, NULL);
-					WriteConsole(err, L"\n", 1, NULL, NULL);
+					_wprintf_h(err, L"Error while parsing file %.*S: %S\n", file_name_len, file_name, line);
 					if (status != OP_INVALID_PATH) {
 						return status;
 					}
@@ -166,9 +156,7 @@ OpStatus parse_env_file(LPSTR file, DWORD count, LPSTR file_name, DWORD file_nam
 				NarrowStringToWide(line, len, &add_buffer);
 				WideBuffer* to_save = read_envvar(add_buffer.ptr, &environment);
 				if (to_save == NULL) {
-					WriteConsole(err, L"Invalid environment variable ", 32, NULL, NULL);
-					WriteConsole(err, add_buffer.ptr, add_buffer.size, NULL, NULL);
-					WriteConsole(err, L"\n", 1, NULL, NULL);
+					_wprintf_h(err, L"Invalid environment variable %.*s\n", add_buffer.size, add_buffer.ptr);
 				} else {
 					if (var->capacity < to_save->size + 1) {
 						LPWSTR buf = HeapAlloc(heap, 0, (to_save->size + 1) * sizeof(WCHAR));
@@ -213,16 +201,12 @@ OpStatus add_paths(LPSTR paths, DWORD count, LPSTR name, LPCWSTR binpath) {
 			NarrowStringToWide(line, len, &add_buffer);
 			OpStatus status = path_add(add_buffer.ptr, &environment.vars[0].val, TRUE, FALSE);
 			if (status > OP_NO_CHANGE) {
-				WriteFile(err, "Failed adding ", 14, NULL, NULL);
-				WriteFile(err, line, len, NULL, NULL);
-				WriteFile(err, " to Path\n", 9, NULL, NULL);
+				_printf_h(err, "Failed adding %.*s to Path\n", len, line);
 				if (status != OP_INVALID_PATH) {
 					return status;
 				}
 			} else if (status == OP_SUCCESS) {
-				WriteFile(out, "Added ", 6, NULL, NULL);
-				WriteFile(out, line, len, NULL, NULL);
-				WriteFile(out, " to Path\n", 9, NULL, NULL);
+				_printf_h(out, "Added %.*s to Path\n", len, line);
 				res = OP_SUCCESS;
 			}
 			line = line_name + name_len + 2;
@@ -255,9 +239,7 @@ OpStatus add_paths(LPSTR paths, DWORD count, LPSTR name, LPCWSTR binpath) {
 				*(ext - 1) = L'.';
 			}
 			if (file == NULL) {
-				WriteConsole(err, L"Could not open ", 15, NULL, NULL);
-				WriteConsole(err, add_buffer.ptr, add_buffer.size, NULL, NULL);
-				WriteConsole(err, L"\n", 1, NULL, NULL);
+				_wprintf_h(err, L"Could not open %.*s\n", add_buffer.size, add_buffer.ptr);
 			} else {
 				OpStatus status = parse_env_file(file, lines, line, len);
 				if (status == OP_SUCCESS) {
@@ -358,11 +340,7 @@ int main() {
 				continue;
 			}
 		}
-		WriteConsole(err, L"Could not set ", 14, NULL, NULL);
-		WriteConsole(err, name, wcslen(name), NULL, NULL);
-		WriteConsole(err, L" to ", 4, NULL, NULL);
-		WriteConsole(err, val, environment.vars[i].val.size, NULL, NULL);
-		WriteConsole(err, L"\n", 1, NULL, NULL);
+		_wprintf_h(err, L"Could not set %s to %s\n", name, val);
 	}
 end:
 	free_env(&environment);
