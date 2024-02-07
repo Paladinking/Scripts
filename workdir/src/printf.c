@@ -1,15 +1,16 @@
 #define UNICODE
 #include "printf.h"
 #include <stdarg.h>
-#ifdef __GNUC__
+#ifdef __cplusplus
+extern "C" {
+#endif
 extern int _vscprintf(const char *format, va_list argptr);
 extern int _vscwprintf(const wchar_t *format,va_list argptr);
 extern int _vsnprintf(char *buffer, size_t count, const char *format, va_list argptr);
 extern int _vsnwprintf(wchar_t *buffer, size_t count, const wchar_t *format, va_list argptr);
+#ifdef __cplusplus
+}
 #endif
-
-#define _printf(fmt, ...) _printf_h(GetStdHandle(STD_OUTPUT_HANDLE), fmt, __VA_ARGS__)
-#define _wprintf(fmt, ...) _wprintf_h(GetStdHandle(STD_OUTPUT_HANDLE), fmt, __VA_ARGS__)
 
 int _printf_h(HANDLE dest, const char* fmt, ...) {
 	va_list args;
@@ -24,7 +25,7 @@ int _printf_h(HANDLE dest, const char* fmt, ...) {
 		WriteConsoleA(dest, buf, count, NULL, NULL);
 	} else {
 		HANDLE heap = GetProcessHeap();
-		char *buf = HeapAlloc(heap, 0, count);
+		char *buf = (char*) HeapAlloc(heap, 0, count);
 		if (buf == NULL) {
 			return -1;
 		}
@@ -49,7 +50,7 @@ int _wprintf_h(HANDLE dest, const wchar_t* fmt, ...) {
 		WriteConsoleW(dest, buf, count, NULL, NULL);
 	} else {
 		HANDLE heap = GetProcessHeap();
-		wchar_t *buf = HeapAlloc(heap, 0, count * sizeof(wchar_t));
+		wchar_t *buf = (wchar_t*) HeapAlloc(heap, 0, count * sizeof(wchar_t));
 		if (buf == NULL) {
 			return -1;
 		}
