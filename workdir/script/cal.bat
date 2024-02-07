@@ -154,6 +154,14 @@ def gdb_wide(s):
             raise ValueError('Invalid gdb wide string')
     return out
 
+def c_array(data):
+    if hasattr(data, "read"):
+        data = data.read()
+        return "{" + str([c for c in data])[1:-1] + "}"
+    return "{" + str([c for c in data])[1:-1] + "}"
+
+
+
 class Void:
     def __init__(*args, **kwars):
         pass
