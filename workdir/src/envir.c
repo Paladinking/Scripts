@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <tlhelp32.h>
 #include "printf.h"
+#include "args.h"
 
 /* CREATE_PROG asm in FASM
 format binary
@@ -25,6 +26,7 @@ func:
     add rsp, 48
     ret
 */
+
 const unsigned char CREATE_PROG[] = {72, 131, 236, 48, 83, 72, 137, 203, 72, 49, 210, 72, 141, 74, 255, 73, 199, 192, 4, 0, 0, 0, 77, 49, 201, 72, 199, 68, 36, 32, 8, 2, 0, 0, 72, 141, 67, 8, 72, 137, 68, 36, 40, 255, 19, 91, 72, 131, 196, 48, 195};
 
 typedef struct _CreateStruct {
@@ -228,22 +230,43 @@ typedef enum _Action {
     STACK_PUSH, STACK_POP, STACK_SAVE, STACK_LOAD, STACK_CLEAR, STACK_SIZE, STACK_ID
 } Action;
 
+const char* help_message  = "usage: envir [--help] <commnand>\n\n"
+                            "Saves or loads the environment from/to a stack local to the current terminal.\n\n"
+                            "The following commands are available:\n\n"
+                            "  push           Push the current environment onto the environment stack\n"
+                            "  pop            Pop the top of the environment stack into the current environment\n"
+                            "  save           Overwrite the top of the environment stack with the current environment,\n"
+                            "                  does the same as push if the environment stack is empty\n"
+                            "  load, l        Load the top of the environment stack into the current environment\n"
+                            "                  without removing it\n"
+                            "  clear, c       Remove all entries from the stack\n"
+                            "  size           Print the size of the stack\n"
+                            "  id, i          Print the id of the stack\n\n"
+                            "The size of the stack is limited to 64 entries, after that push will fail.\n"
+                            "The id in generated based on the process id of the parent process.\n";
+
 int main() {
     LPWSTR args = GetCommandLine();
     HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
 	int argc;
 	int status = 0;
-	LPWSTR* argv = CommandLineToArgvW(args, &argc);
+	LPWSTR* argv = parse_command_line(args, &argc);
 
     HANDLE hProcess = NULL;
     HANDLE mapping = NULL;
     unsigned char* data = NULL;
 
 	if (argc < 2) {
-		_wprintf_h(err, L"Missing argument\n");
+		_printf_h(err, "Missing argument\n");
+        _printf_h(err, "usage: envir [--help] <command>\n");
         status = 1;
         goto end;
 	}
+    if (find_flag(argv, &argc, L"-h", L"--help")) {
+        _printf(help_message);
+        goto end;
+    }
+    
     Action action;
     if (wcscmp(argv[1], L"push") == 0) {
         action = STACK_PUSH;
@@ -260,21 +283,21 @@ int main() {
     } else if (wcscmp(argv[1], L"id") == 0 || wcscmp(argv[1], L"i") == 0) {
         action = STACK_ID;  
     } else {
-        _wprintf_h(err, L"Invalid operation\n");
+        _printf_h(err, "Invalid operation\n");
         status = 2;
         goto end;
     }
     
     DWORD parent = GetParentProcessId();
     if (parent == 0) {
-        _wprintf_h(err, L"Could not get parent process\n");
+        _printf_h(err, "Could not get parent process\n");
         status = 3;
         goto end;
     }
 
     hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, parent);
     if (hProcess == NULL) {
-        _wprintf_h(err, L"Could not get parent process\n");
+        _printf_h(err, "Could not get parent process\n");
         status = 3;
         goto end;
     }
@@ -282,7 +305,7 @@ int main() {
     char file_name[100];
     _snprintf_s(file_name, 100, 100, "Env-Stack-File-%d", parent);
     if (action == STACK_ID) {
-        _wprintf(L"%S\n", file_name);
+        _printf("%s\n", file_name);
         goto end;
     }
     
@@ -290,13 +313,13 @@ int main() {
     BOOL created = FALSE;
     if (mapping == NULL) {
         if (!create_mapping_file(file_name, hProcess)) {
-            _wprintf_h(err, L"Could not create environment stack\n");
+            _printf_h(err, "Could not create environment stack\n");
             status = 4;
             goto end;
         }
         mapping = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, file_name);
         if (mapping == NULL) {
-            _wprintf_h(err, L"Could access environment stack\n");
+            _printf_h(err, "Could access environment stack\n");
             status = 5;
             goto end;
         }
@@ -304,7 +327,7 @@ int main() {
     }
     data = MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, 0);
     if (data == NULL) {
-        _wprintf_h(err, L"Could not access environment stack\n");
+        _printf_h(err, "Could not access environment stack\n");
         status = 5;
         goto end;
     }
@@ -313,19 +336,23 @@ int main() {
     }
     size_t env_stack_length;
     memcpy(&env_stack_length, data, 8);
-    
-    
+    if (env_stack_length > 64) {
+        _printf_h(err, "Corrupt environment stack\n");
+        status = 7;
+        goto end;
+    }
+
     if (action == STACK_SAVE || action == STACK_PUSH) {
         if (action == STACK_PUSH || env_stack_length == 0) {
             if (env_stack_length == 64) {
-                _wprintf_h(err, L"Stack is full\n");
+                _printf_h(err, "Stack is full\n");
                 status = 1;
                 goto end;
             }
             env_stack_length += 1;
         }     
         if (!store_environment(file_name, hProcess, 8 * env_stack_length)) {
-            _wprintf_h(err, L"Failed storing environment\n");
+            _printf_h(err, "Failed storing environment\n");
             status = 6;
             goto end;
         }
@@ -336,13 +363,13 @@ int main() {
             goto end;
         }
         if (!load_environment(file_name, hProcess, 8 * env_stack_length)) {
-            _wprintf_h(err, L"Failed loading environment\n");
+            _printf_h(err, "Failed loading environment\n");
             status = 6;
             goto end;
         }
         if (action == STACK_POP) {
             if (!free_environment(file_name, hProcess, 8 * env_stack_length)) {
-                _wprintf_h(err, L"Failed freeing environment\n");
+                _printf_h(err, "Failed freeing environment\n");
                 status = 6;
                 goto end;
             }
@@ -351,14 +378,14 @@ int main() {
     } else if (action == STACK_CLEAR) {
         while (env_stack_length > 0) {
             if (!free_environment(file_name, hProcess, 8 * env_stack_length)) {
-                _wprintf_h(err, L"Failed freeing environment\n");
+                _printf_h(err, "Failed freeing environment\n");
                 status = 6;
                 goto end;
             }
             env_stack_length -= 1;
         }
     } else if (action == STACK_SIZE) {
-        _wprintf(L"Stack size: %llu\n", env_stack_length);
+        _printf("Stack size: %llu\n", env_stack_length);
     }
 
     memcpy(data, &env_stack_length, 8);
@@ -372,6 +399,6 @@ end:
     if (hProcess != NULL) {
         CloseHandle(hProcess);
     }
-    LocalFree(argv);
+    HeapFree(GetProcessHeap(), 0, argv);
     return status;
 }
