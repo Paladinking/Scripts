@@ -7,6 +7,7 @@
 #include "path_utils.h"
 #include "string_conv.h"
 #include "printf.h"
+#include "args.h"
 
 DWORD GetParentProcessId() {
     // Get the current process ID
@@ -256,17 +257,53 @@ OpStatus add_paths(LPSTR paths, DWORD count, LPSTR name, LPCWSTR binpath) {
 	}
 	return res;
 }
+const char* help_message = "usage: path-add [NAME]...\n"
+                           "Goes through paths.txt and adds all matching lines.\n"
+                           "The paths.txt file should be located next to the path-add binary.\n"
+                           "\n"
+                           "Lines in paths.txt can have 3 different formats:\n"
+                           " 1. {PATH}|{NAME}\n"
+                           "  If {NAME} matches an input argument, {PATH} will be added to PATH environment variable.\n"
+                           "  Note that | is a literal and should be present in the file.\n"
+                           " 2. {CHILD}<{NAME}\n"
+                           "  If {NAME} matches an input argument, add {CHILD} next in argument list.\n"
+                           "  This can (but does not have to) cause infinite recursion for bad input, causing the program to run out of memory.\n"
+                           " 3. {FILE}>{NAME}\n"
+                           "  If {NAME} matches an input argument, parse {FILE} for environment variables.\n"
+                           "\n"
+                           "All other lines are ignored.\n"
+                           "\n"
+                           "Lines in an environment variable file given by format 3 in paths.txt can have 5 different formats:\n"
+                           " 1. !!{VAR}\n"
+                           "  Stop parsing file if {VAR} is defined.\n"
+                           " 2. **{TEXT}\n"
+                           "  {TEXT} is printed to the console.\n"
+                           " 3. {PATH}|{VAR}\n"
+                           "  {PATH} will be prepended to the environment variable {VAR}, separated by semi-colons.\n"
+                           " 4. {VALUE}>{VAR}\n"
+                           "  The environment variable {VAR} will be set to {VALUE}.\n"
+                           "  Just >{VAR} is allowed and will delete the environment variable {VAR}.\n"
+                           " 5. {TO_SAVE}<{VAR}\n"
+                           "  The environment variable {VAR} will be set to the value in {TO_SAVE}.\n"
+                           "  This is usefull for saving and restoring environment variables.\n"
+                           "\n"
+                           "All other lines are again ignored.\n";
 
 int main() {
 	HANDLE heap = GetProcessHeap();
 	LPWSTR args = GetCommandLine();
 	int argc;
 	int status = 0;
-	LPWSTR* argv = CommandLineToArgvW(args, &argc);
+	LPWSTR* argv = parse_command_line(args, &argc);
 	if (argc < 2) {
 		status = 1;
 		goto end;
 	}
+    
+    if (find_flag(argv, &argc, L"--help", L"-h")) {
+        _printf(help_message);
+        goto end;
+    }
 	
 	DWORD mod_res = GetModuleFileName(NULL, gBinpath, 260);
 	if (mod_res == 260 || mod_res == 0) {
@@ -348,7 +385,7 @@ end:
 	FlushFileBuffers(out);
 	FlushFileBuffers(err);
 	HeapFree(heap, 0, expanded);
-	LocalFree(argv);
+	HeapFree(heap, 0, argv);
 	ExitProcess(status);
 	return status;
 }
