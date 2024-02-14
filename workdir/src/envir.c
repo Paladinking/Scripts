@@ -3,79 +3,52 @@
 #include <tlhelp32.h>
 #include "printf.h"
 #include "args.h"
+#include "path_utils.h"
 
 /* CREATE_PROG asm in FASM
 format binary
-use64           ; 0                   8
-; rcx: ptr to => (CreateFileMappingA, Null-terminated name string)
-func:
-    sub rsp, 48
-    push rbx
-    mov rbx, rcx
-	
-    xor rdx, rdx                    ; lpFileMappingAttributes = Null
-    lea rcx, [rdx - 1]              ; hFile = INVALID_HANDLE_VALUE (-1)
-    mov r8, 0x04                    ; flProtect = PAGE_READWRITE
-    xor r9, r9                      ; dwMaximumSizeHigh = 0
-    mov QWORD [rsp + 32], 512 + 8   ; dwMaximumSizeLow = 512 + 8
-    lea rax, [rbx + 8]
-    mov QWORD [rsp + 40], rax       ; lpName = name
-    call QWORD [rbx]                ; CreateFileMappingA(...)
-
-    pop rbx
-    add rsp, 48
-    ret
-*/
-
-const unsigned char CREATE_PROG[] = {72, 131, 236, 48, 83, 72, 137, 203, 72, 49, 210, 72, 141, 74, 255, 73, 199, 192, 4, 0, 0, 0, 77, 49, 201, 72, 199, 68, 36, 32, 8, 2, 0, 0, 72, 141, 67, 8, 72, 137, 68, 36, 40, 255, 19, 91, 72, 131, 196, 48, 195};
-
-typedef struct _CreateStruct {
-    FARPROC create;
-    char name[100];
-} CreateStruct;
-
-/* STORE_PROG asm in FASM
-format binary
-use64	        ; 0                 8              16           24               32                      40            44
-; rcx: ptr to => (OpenFileMappingA, MapViewOfFile, CloseHandle, UnmapViewOfFile, GetEnvironmentStringsW, DWORD offset, Null-terminated name string)
+use64           ; 0                   8,            16             24,          32
+; rcx: ptr to => (CreateFileMappingA, CreateMutexA, MappingHandle, MutexHandle, Null-terminated name string)
 func:
     sub rsp, 64
     push rbx
     mov rbx, rcx
-	
-    mov rcx, 0xf001f          ; dwDesiredAccess = FILE_MAP_ALL_ACCESS
-    xor rdx, rdx              ; bInheritHandle = FALSE
-    lea r8, [rbx + 44]        ; lpName = name
-    call QWORD [rbx]          ; OpenFileMappingA(...)
-    mov QWORD [rsp + 48], rax
 
-    mov rcx, rax              ; hFileMappingObject = OpenFileMappingA(...)
-    mov rdx, 0xf001f          ; dwDesiredAccess = FILE_MAP_ALL_ACCESS
-    xor r8, r8                ; dwFileOffsetHigh = 0
-    xor r9, r9                ; dwFileOffsetLow = 0
-    mov QWORD [rsp + 32], r8  ; dwNumberOfBytesToMap = 0
-    call QWORD [rbx + 8]      ; MapViewOfFile(...)
-    mov QWORD [rsp + 56] , rax
-	
-    call QWORD [rbx + 32]     ; GetEnvironmentStringsW(...)
-    mov rcx, QWORD [rsp + 56]
-    mov edx, DWORD [rbx + 40]
-    mov QWORD [rcx + rdx], rax
+    xor rdx, rdx                    ; lpFileMappingAttributes = NULL
+    lea rcx, [rdx - 1]              ; hFile = INVALID_HANDLE_VALUE (-1)
+    mov r8, 0x4000004               ; flProtect = PAGE_READWRITE | SEC_RESERVE
+    xor r9, r9                      ; dwMaximumSizeHigh = 0
+    mov QWORD [rsp + 32], 16777216  ; dwMaximumSizeLow = 16 MB
+    lea rax, [rbx + 32]
+    mov QWORD [rsp + 40], rax       ; lpName = name
+    call QWORD [rbx]                ; CreateFileMappingA(...)
+	mov QWORD [rbx + 16], rax
 
-    call QWORD [rbx + 24]     ; UnmapViewOfFile(...)
-
-    mov rcx, QWORD [rsp + 48] ; hObject = OpenFileMappingA(...)
-    call QWORD [rbx + 16]     ; CloseHandle(...)
+	mov DWORD [rbx + 42], "Lock"
+	xor rcx, rcx					; lpMutexAttributes = NULL
+	xor rdx, rdx					; bInitialOwner = FALSE
+	lea r8, [rbx + 32]				; lpName = Name
+	call QWORD [rbx + 8]			; CreateMutexA(...)
+	mov QWORD [rbx + 24], rax
 
     pop rbx
     add rsp, 64
     ret
 */
-const unsigned char STORE_PROG[] = {72, 131, 236, 64, 83, 72, 137, 203, 72, 199, 193, 31, 0, 15, 0, 72, 49, 210, 76, 141, 67, 44, 255, 19, 72, 137, 68, 36, 48, 72, 137, 193, 72, 199, 194, 31, 0, 15, 0, 77, 49, 192, 77, 49, 201, 76, 137, 68, 36, 32, 255, 83, 8, 72, 137, 68, 36, 56, 255, 83, 32, 72, 139, 76, 36, 56, 139, 83, 40, 72, 137, 4, 17, 255, 83, 24, 72, 139, 76, 36, 48, 255, 83, 16, 91, 72, 131, 196, 64, 195};
 
-/* LOAD_PROG / FREE_PROG asm in FASM
+const unsigned char CREATE_PROG[] = {72, 131, 236, 64, 83, 72, 137, 203, 72, 49, 210, 72, 141, 74, 255, 73, 199, 192, 4, 0, 0, 4, 77, 49, 201, 72, 199, 68, 36, 32, 0, 0, 0, 1, 72, 141, 67, 32, 72, 137, 68, 36, 40, 255, 19, 72, 137, 67, 16, 199, 67, 42, 76, 111, 99, 107, 72, 49, 201, 72, 49, 210, 76, 141, 67, 32, 255, 83, 8, 72, 137, 67, 24, 91, 72, 131, 196, 64, 195};
+
+typedef struct _CreateStruct {
+    FARPROC create;
+    FARPROC mutex;
+    HANDLE hFile;
+    HANDLE hMutex;
+    char name[100];
+} CreateStruct;
+
+/* LOAD_PROG asm in FASM
 format binary
-use64            ; 0                 8              16           24               32                      40            44
+use64            ; 0                 8              16          24               32                      40            44
 ; rcx: ptr to => (OpenFileMappingA, MapViewOfFile, CloseHandle, UnmapViewOfFile, SetEnvironmentStringsW, DWORD offset, Null-terminated name string)
 func:
     sub rsp, 64
@@ -97,8 +70,8 @@ func:
     mov QWORD [rsp + 56], rax
 
     mov edx, DWORD [rbx + 40]
-    mov rcx, QWORD [rax + rdx]; NewEnvironment = MapViewOfFile(...)[offset]
-    call QWORD [rbx + 32]     ; SetEnvironmentStringsW(...) / FreeEnvironmentStringsW(...)
+    lea rcx, QWORD [rax + rdx]; NewEnvironment = MapViewOfFile(...) + offset
+    call QWORD [rbx + 32]     ; SetEnvironmentStringsW(...)
 
     mov rcx, QWORD [rsp + 56] ; lpBaseAddress = MapViewOfFile(...)
     call QWORD [rbx + 24]     ; UnmapViewOfFile(...)
@@ -110,11 +83,9 @@ func:
     add rsp, 64
     ret
 */
-const unsigned char LOAD_PROG[] = {72, 131, 236, 64, 83, 72, 137, 203, 72, 199, 193, 31, 0, 15, 0, 72, 49, 210, 76, 141, 67, 44, 255, 19, 72, 137, 68, 36, 48, 72, 137, 193, 72, 199, 194, 31, 0, 15, 0, 77, 49, 192, 77, 49, 201, 76, 137, 68, 36, 32, 255, 83, 8, 72, 137, 68, 36, 56, 139, 83, 40, 72, 139, 12, 16, 255, 83, 32, 72, 139, 76, 36, 56, 255, 83, 24, 72, 139, 76, 36, 48, 255, 83, 16, 91, 72, 131, 196, 64, 195} ;
-// Due to FreeEnvironmentStringsW and SetEnvironmentStringsW having the same signature, FREE_PROG and LOAD_PROG are identical
-#define FREE_PROG LOAD_PROG
+const unsigned char LOAD_PROG[] = {72, 131, 236, 64, 83, 72, 137, 203, 72, 199, 193, 31, 0, 15, 0, 72, 49, 210, 76, 141, 67, 44, 255, 19, 72, 137, 68, 36, 48, 72, 137, 193, 72, 199, 194, 31, 0, 15, 0, 77, 49, 192, 77, 49, 201, 76, 137, 68, 36, 32, 255, 83, 8, 72, 137, 68, 36, 56, 139, 83, 40, 72, 141, 12, 16, 255, 83, 32, 72, 139, 76, 36, 56, 255, 83, 24, 72, 139, 76, 36, 48, 255, 83, 16, 91, 72, 131, 196, 64, 195} ;
 
-typedef struct _EnvStruct {
+typedef struct _LoadStruct {
     FARPROC open;
     FARPROC map;
     FARPROC close;
@@ -122,7 +93,48 @@ typedef struct _EnvStruct {
     FARPROC envfunc;
     DWORD offset;
     char name[100];
-} EnvStruct;
+} LoadStruct;
+/* FREE_PROG asm in FASM
+format binary
+use64	        ; 0            8              16
+; rcx: ptr to => (CloseHandle, MappingHandle, MutexHandle)
+func:
+	sub rsp, 64
+	push rbx
+	mov rbx, rcx
+	
+	mov rcx, QWORD [rbx + 8]  ; hObject = MappingHandle
+	call QWORD [rbx]		  ; CloseHandle(...)
+
+	mov rcx, QWORD [rbx + 16] ; hObject = MutexHandle
+	call QWORD [rbx]		  ; CloseHandle(...)
+
+	pop rbx
+	add rsp, 64
+	ret
+*/
+const unsigned char FREE_PROG[] = {72, 131, 236, 64, 83, 72, 137, 203, 72, 139, 75, 8, 255, 19, 72, 139, 75, 16, 255, 19, 91, 72, 131, 196, 64, 195};
+
+typedef struct _FreeStruct {
+    FARPROC close;
+    HANDLE hFile;
+    HANDLE hMutex;
+} FreeStruct;
+
+#define MAX_CAPACITY 16777216 // 16 MB
+                     
+typedef struct _StackHeader {
+    HANDLE file_handle; // Handle created by original process.
+    HANDLE mutex_handle; // Handle created by original process.
+    size_t stack_size; // Number of elements in the environment stack.
+    size_t stack_usage; // Number of bytes of the mapping used.
+    size_t stack_capacity; // Number of bytes of the mapping commited.
+    void* reserved; // Potential future use.
+    size_t stack[64]; // Offsets to environment strings.
+} StackHeader;
+
+//header + 10 kb (should be enough to fit one environment strings instance).
+#define INITIAL_COMMIT_SIZE (sizeof(StackHeader) + 10240)
 
 DWORD GetParentProcessId() {
     // Get the current process ID
@@ -153,7 +165,7 @@ DWORD GetParentProcessId() {
     return 0;
 }
 
-BOOL call_prog(HANDLE hProcess, const unsigned char* prog, size_t prog_size, const void* data, size_t data_size) {
+BOOL call_prog(HANDLE hProcess, const unsigned char* prog, size_t prog_size, void* data, size_t data_size) {
     unsigned char* mem = VirtualAllocEx(hProcess, NULL, prog_size + data_size, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     if (mem == NULL) {
         return FALSE;
@@ -166,39 +178,28 @@ BOOL call_prog(HANDLE hProcess, const unsigned char* prog, size_t prog_size, con
         return FALSE;
     }
     WaitForSingleObject(hThread, INFINITE);
+    ReadProcessMemory(hProcess, mem + prog_size, data, data_size, NULL);
     VirtualFreeEx(hProcess, mem, 0, MEM_RELEASE);
     CloseHandle(hThread);
     return TRUE;
 }
 
-BOOL create_mapping_file(char* name, HANDLE hProcess) {
+BOOL create_mapping_file(char* name, HANDLE hProcess, HANDLE* hFile, HANDLE* hMutex) {
     HMODULE kernel = LoadLibraryA("Kernel32.dll");
     CreateStruct d;
     d.create = GetProcAddress(kernel, "CreateFileMappingA");
+    d.mutex = GetProcAddress(kernel, "CreateMutexA");
     memcpy(d.name, name, 100);
     BOOL res = call_prog(hProcess, CREATE_PROG, sizeof(CREATE_PROG), &d, sizeof(CreateStruct));
     FreeLibrary(kernel);
+    *hFile = d.hFile;
+    *hMutex = d.hMutex;
     return res;
 }
 
-BOOL store_environment(char* name, HANDLE hProcess, DWORD offset) {
+BOOL load_environment(char* name, DWORD offset, HANDLE hProcess) {
     HMODULE kernel = LoadLibraryA("Kernel32.dll");
-    EnvStruct s;
-    s.open = GetProcAddress(kernel, "OpenFileMappingA");
-    s.map = GetProcAddress(kernel, "MapViewOfFile");
-    s.close = GetProcAddress(kernel, "CloseHandle");
-    s.unmap = GetProcAddress(kernel, "UnmapViewOfFile");
-    s.envfunc = GetProcAddress(kernel, "GetEnvironmentStringsW");
-    s.offset = offset;
-    memcpy(s.name, name, 100);
-    BOOL res = call_prog(hProcess, STORE_PROG, sizeof(STORE_PROG), &s, sizeof(EnvStruct));
-    FreeLibrary(kernel);
-    return res;
-}
-
-BOOL load_environment(char* name, HANDLE hProcess, DWORD offset) {
-    HMODULE kernel = LoadLibraryA("Kernel32.dll");
-    EnvStruct s;
+    LoadStruct s;
     s.open = GetProcAddress(kernel, "OpenFileMappingA");
     s.map = GetProcAddress(kernel, "MapViewOfFile");
     s.close = GetProcAddress(kernel, "CloseHandle");
@@ -206,22 +207,18 @@ BOOL load_environment(char* name, HANDLE hProcess, DWORD offset) {
     s.envfunc = GetProcAddress(kernel, "SetEnvironmentStringsW");
     s.offset = offset;
     memcpy(s.name, name, 100);
-    BOOL res = call_prog(hProcess, LOAD_PROG, sizeof(LOAD_PROG), &s, sizeof(EnvStruct));
+    BOOL res = call_prog(hProcess, LOAD_PROG, sizeof(LOAD_PROG), &s, sizeof(LoadStruct));
     FreeLibrary(kernel);
     return res;
 }
 
-BOOL free_environment(char* name, HANDLE hProcess, DWORD offset) {
+BOOL free_environment(HANDLE hFile, HANDLE hMutex, HANDLE hProcess) {
     HMODULE kernel = LoadLibraryA("Kernel32.dll");
-    EnvStruct s;
-    s.open = GetProcAddress(kernel, "OpenFileMappingA");
-    s.map = GetProcAddress(kernel, "MapViewOfFile");
-    s.close = GetProcAddress(kernel, "CloseHandle");
-    s.unmap = GetProcAddress(kernel, "UnmapViewOfFile");
-    s.envfunc = GetProcAddress(kernel, "FreeEnvironmentStringsW");
-    s.offset = offset;
-    memcpy(s.name, name, 100);
-    BOOL res = call_prog(hProcess, FREE_PROG, sizeof(FREE_PROG), &s, sizeof(EnvStruct));
+    FreeStruct f;
+    f.close = GetProcAddress(kernel, "CloseHandle");
+    f.hFile = hFile;
+    f.hMutex = hMutex;
+    BOOL res = call_prog(hProcess, FREE_PROG, sizeof(FREE_PROG), &f, sizeof(FreeStruct));
     FreeLibrary(kernel);
     return res;
 }
@@ -249,17 +246,19 @@ int main() {
     LPWSTR args = GetCommandLine();
     HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
 	int argc;
-	int status = 0;
+	int status = ERROR_SUCCESS;
 	LPWSTR* argv = parse_command_line(args, &argc);
 
     HANDLE hProcess = NULL;
     HANDLE mapping = NULL;
+    HANDLE mutex = NULL;
+    DWORD wait_res = WAIT_FAILED;
     unsigned char* data = NULL;
 
 	if (argc < 2) {
 		_printf_h(err, "Missing argument\n");
         _printf_h(err, "usage: envir [--help] <command>\n");
-        status = 1;
+        status = ERROR_INVALID_PARAMETER;
         goto end;
 	}
     if (find_flag(argv, &argc, L"-h", L"--help")) {
@@ -284,61 +283,137 @@ int main() {
         action = STACK_ID;  
     } else {
         _printf_h(err, "Invalid operation\n");
-        status = 2;
+        status = ERROR_INVALID_OPERATION;
         goto end;
     }
     
     DWORD parent = GetParentProcessId();
     if (parent == 0) {
         _printf_h(err, "Could not get parent process\n");
-        status = 3;
+        status = ERROR_INVALID_STATE;
         goto end;
     }
 
     hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, parent);
     if (hProcess == NULL) {
+        status = GetLastError();
         _printf_h(err, "Could not get parent process\n");
-        status = 3;
         goto end;
     }
-    
     char file_name[100];
+    char mutex_name[100];
     _snprintf_s(file_name, 100, 100, "Env-Stack-File-%d", parent);
+    _snprintf_s(mutex_name, 100, 100, "Env-Stack-Lock-%d", parent);
     if (action == STACK_ID) {
         _printf("%s\n", file_name);
-        goto end;
     }
     
     mapping = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, file_name);
     BOOL created = FALSE;
+    HANDLE owner_file;
+    HANDLE owner_mutex;
     if (mapping == NULL) {
-        if (!create_mapping_file(file_name, hProcess)) {
+        if (!create_mapping_file(file_name, hProcess, &owner_file, &owner_mutex)) {
+            status = GetLastError();
             _printf_h(err, "Could not create environment stack\n");
-            status = 4;
             goto end;
         }
         mapping = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, file_name);
         if (mapping == NULL) {
+            status = GetLastError();
             _printf_h(err, "Could access environment stack\n");
-            status = 5;
             goto end;
         }
         created = TRUE;
     }
     data = MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, 0);
     if (data == NULL) {
+        status = GetLastError();
         _printf_h(err, "Could not access environment stack\n");
-        status = 5;
         goto end;
     }
-    if (created) {
-        memset(data, 0, 8); // Not realy needed since page-file mappings are zero-initialized, but to be safe.
+    
+    mutex = OpenMutexA(SYNCHRONIZE, FALSE, mutex_name);
+    if (mutex == NULL) {
+        status = GetLastError();
+        _printf_h(err, "Could not access environment mutex\n");
+        goto end;
     }
-    size_t env_stack_length;
-    memcpy(&env_stack_length, data, 8);
+    wait_res = WaitForSingleObject(mutex, INFINITE);
+    if (wait_res != WAIT_OBJECT_0) {
+        if (wait_res == WAIT_ABANDONED) {
+            // Mark stack as corrupted. This might be saved later.
+            ((StackHeader*)data)->stack_size = 0xffffffffffffffff;
+        } else {
+            status = GetLastError();
+            _printf_h(err, "Could not lock environment stack\n");
+            goto end;
+        }
+    }
+
+    if (created) {
+        if (!VirtualAlloc(data, INITIAL_COMMIT_SIZE, MEM_COMMIT, PAGE_READWRITE)) {
+            status = GetLastError();
+            _printf_h(err, "Out of memory\n");
+            goto end;
+        }
+        StackHeader* header = (StackHeader*)data;
+        header->file_handle = owner_file;
+        header->mutex_handle = owner_mutex;
+        header->stack_size = 0;
+        header->stack_usage = sizeof(StackHeader);
+        header->stack_capacity = INITIAL_COMMIT_SIZE;
+    }
+    
+    char stack_name[100];
+    BOOL rename_file = TRUE;
+    DWORD env_res = GetEnvironmentVariableA("ENV_STACK_FILE_NAME", stack_name, 100);
+    if (env_res > 0 && env_res < 100) {
+        if (strcmp(file_name, stack_name) != 0) {
+            char lock_name[100];
+            memcpy(lock_name, stack_name, 100);
+            memcpy(lock_name + 10, "Lock", 4);
+            HANDLE old_mutex = OpenMutexA(SYNCHRONIZE, FALSE, lock_name);
+            if (old_mutex != NULL) {
+                // NOTE: mutex is not released if WAIT_ABANDONED is returned.
+                // This will cause it to be abandoned again, making sure no other process uses it.
+                DWORD old_wait_res = WaitForSingleObject(old_mutex, 2000); // Max 2 seconds
+                if (old_wait_res == WAIT_OBJECT_0) {
+                    HANDLE old_mapping = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, stack_name);
+                    if (old_mapping != NULL) {
+                        unsigned char* old_data = MapViewOfFile(old_mapping, FILE_MAP_ALL_ACCESS, 0, 0, 0);
+                        if (old_data != NULL) {
+                            // To avoid aliasing issues, data is not cast to StackHeader*...
+                            StackHeader* old_header = (StackHeader*) old_data;
+                            if (old_header->stack_size <= 64) {
+                                size_t usage = old_header->stack_usage;
+                                if (usage < INITIAL_COMMIT_SIZE) {
+                                    usage = INITIAL_COMMIT_SIZE;
+                                }
+                                if (VirtualAlloc(data, usage, MEM_COMMIT, PAGE_READWRITE)) {
+                                    memcpy(data, old_data, old_header->stack_usage);
+                                    memcpy(data + offsetof(StackHeader, stack_capacity), &usage, sizeof(size_t));
+                                }
+                            }
+                            UnmapViewOfFile(old_data);
+                        }
+                        CloseHandle(old_mapping);
+                    }
+                    ReleaseMutex(old_mutex);
+                }
+                CloseHandle(old_mutex);
+            }
+        } else {
+            rename_file = FALSE;
+        }
+    }
+
+    StackHeader* header = (StackHeader*)data;
+    size_t env_stack_length = header->stack_size;
+
     if (env_stack_length > 64) {
+        status = ERROR_INVALID_STATE;
         _printf_h(err, "Corrupt environment stack\n");
-        status = 7;
         goto end;
     }
 
@@ -346,50 +421,83 @@ int main() {
         if (action == STACK_PUSH || env_stack_length == 0) {
             if (env_stack_length == 64) {
                 _printf_h(err, "Stack is full\n");
-                status = 1;
+                status = ERROR_INVALID_FUNCTION;
                 goto end;
             }
+            header->stack[env_stack_length] = header->stack_usage;
             env_stack_length += 1;
-        }     
-        if (!store_environment(file_name, hProcess, 8 * env_stack_length)) {
-            _printf_h(err, "Failed storing environment\n");
-            status = 6;
-            goto end;
         }
+        wchar_t* env = GetEnvironmentStringsW();
+        size_t len = 2;
+        while (env[len - 2] != L'\0' || env[len - 1] != L'\0') {
+            ++len;
+        }
+        len = len * sizeof(wchar_t);
+        size_t stack_usage = header->stack[env_stack_length - 1];
+        if (header->stack_capacity - stack_usage < len) {
+            size_t to_alloc = len < 4096 ? 4096 : len; // VirtualAlloc commits whole pages anyway.
+            if (header->stack_capacity + to_alloc > MAX_CAPACITY) {
+                _printf_h(err, "Memory usage exceded capacity\n");
+                status = ERROR_NOT_ENOUGH_MEMORY;
+                goto end;
+            }
+            if (!VirtualAlloc(data + header->stack_capacity, to_alloc, MEM_COMMIT, PAGE_READWRITE)) {
+                status = GetLastError();
+                _printf_h(err, "Out of memory\n");
+                goto end;
+            }
+            header->stack_capacity += to_alloc;
+        }
+        memcpy(data + header->stack[env_stack_length - 1], env, len);
+        header->stack_usage = stack_usage + len;
+        FreeEnvironmentStringsW(env);
     } else if (action == STACK_LOAD || action == STACK_POP) {
         if (env_stack_length == 0) {
-            _wprintf_h(err, L"Stack is empty\n");
-            status = 1;
+            _printf_h(err, "Stack is empty\n");
+            status = ERROR_INVALID_FUNCTION;
             goto end;
         }
-        if (!load_environment(file_name, hProcess, 8 * env_stack_length)) {
+        if (!load_environment(file_name, header->stack[env_stack_length - 1], hProcess)) {
+            status = GetLastError();
             _printf_h(err, "Failed loading environment\n");
-            status = 6;
+            header->stack_size = 0xffffffffffffffff;
             goto end;
         }
         if (action == STACK_POP) {
-            if (!free_environment(file_name, hProcess, 8 * env_stack_length)) {
-                _printf_h(err, "Failed freeing environment\n");
-                status = 6;
-                goto end;
-            }
             env_stack_length -= 1;
+            header->stack_usage = header->stack[env_stack_length];
         }
     } else if (action == STACK_CLEAR) {
-        while (env_stack_length > 0) {
-            if (!free_environment(file_name, hProcess, 8 * env_stack_length)) {
-                _printf_h(err, "Failed freeing environment\n");
-                status = 6;
-                goto end;
-            }
-            env_stack_length -= 1;
+        if (!free_environment(header->file_handle, header->mutex_handle, hProcess)) {
+            status = GetLastError();
+            _printf_h(err, "Failed clearing environment\n");
+            header->stack_size = 0xffffffffffffffff;
+            goto end;
         }
+        env_stack_length = 0;
+        header->stack_usage = sizeof(StackHeader);
     } else if (action == STACK_SIZE) {
         _printf("Stack size: %llu\n", env_stack_length);
+    } else if (action == STACK_ID) {
+        _printf("Stack size: %llu\n", header->stack_size);
+        _printf("Stack usage: %llu\n", header->stack_usage);
+        _printf("Stack capacity: %llu\n", header->stack_capacity);
     }
 
-    memcpy(data, &env_stack_length, 8);
+    header->stack_size = env_stack_length;
+    if (action == STACK_CLEAR || action == STACK_LOAD || action == STACK_POP || rename_file) {
+        wchar_t wide_name[100];
+        _snwprintf_s(wide_name, 100, 100, L"Env-Stack-File-%d", parent);
+        SetProcessEnvironmentVariable(L"ENV_STACK_FILE_NAME", wide_name, parent);
+    }
 end:
+    if (mutex != NULL) {
+        if (wait_res == WAIT_OBJECT_0 || wait_res == WAIT_ABANDONED) {
+            ReleaseMutex(mutex);
+        }
+        CloseHandle(mutex);
+    }
+
     if (data != NULL) {
         UnmapViewOfFile(data);
     }

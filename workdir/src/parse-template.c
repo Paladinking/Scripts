@@ -4,6 +4,7 @@
 #endif
 #include <windows.h>
 #include "dynamic_string.h"
+#include "args.h"
 
 LPSTR buffer = NULL;
 
@@ -255,7 +256,7 @@ int main() {
 	int status = 0;
 	int argc;
 	HANDLE template_file = INVALID_HANDLE_VALUE;
-	LPWSTR* argv = CommandLineToArgvW(args, &argc);
+	LPWSTR* argv = parse_command_line(args, &argc);
 	HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
 	HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
 	if (argc < 4) {

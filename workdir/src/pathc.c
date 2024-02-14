@@ -5,6 +5,7 @@
 #include <windows.h>
 #include <tlhelp32.h>
 #include "path_utils.h"
+#include "args.h"
 
 
 DWORD GetParentProcessId() {
@@ -47,21 +48,6 @@ BOOL equals(LPCWSTR a, LPCWSTR b) {
 		}
 		++index;
 	}
-}
-
-DWORD find_flag(LPWSTR* argv, int* argc, LPCWSTR flag, LPCWSTR long_flag) {
-	DWORD count = 0;
-	for (int i = 1; i < *argc; ++i) {
-		if (equals(argv[i], flag) || equals(argv[i], long_flag)) {
-			count += 1;
-			for (int j = i + 1; j < *argc; ++j) {
-				argv[j - 1] = argv[j];
-			}
-			--(*argc);
-			--i;
-		}
-	}
-	return count;
 }
 
 
@@ -158,7 +144,7 @@ int pathc(int argc, LPWSTR* argv, HANDLE out, HANDLE err) {
 		operation = OPERATION_REMOVE;
 	} else if (equals(argv[1], L"m") || equals(argv[1], L"move")) {
 		operation = OPERATION_MOVE;
-	}else {
+	} else {
 		WriteFile(err, "Invalid operation type\n", 23, NULL, NULL);
 		return 2;
 	}
@@ -235,7 +221,7 @@ int main() {
 	HANDLE heap = GetProcessHeap();
 	LPWSTR args = GetCommandLine();
 	int argc;
-	LPWSTR* argv = CommandLineToArgvW(args, &argc);
+	LPWSTR* argv = parse_command_line(args, &argc);
 	HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
 	HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
 	int status = pathc(argc, argv, out, err);
@@ -243,7 +229,7 @@ int main() {
 	FlushFileBuffers(err);
 	HeapFree(heap, 0, expanded);
 	HeapFree(heap, 0, path_buffer.ptr);
-	LocalFree(argv);
+	HeapFree(heap, 0, argv);
 	ExitProcess(status);
 	return status;
 }

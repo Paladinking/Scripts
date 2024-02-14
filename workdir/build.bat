@@ -23,8 +23,8 @@ call :echo_standard NASM
 set NASM_INPUTS=src\short.asm src\stdasm.asm src\args.asm
 
 for %%a in (%NASM_INPUTS%) do (
-	call :run_verbose nasm -fwin64 %%~a -o build\%%~na.obj
-	call :echo_standard " build\%%~na.obj"
+	call :run_verbose nasm -fwin64 %%~a -o build\%%~na-asm.obj
+	call :echo_standard " build\%%~na-asm.obj"
 )
 
 
@@ -34,13 +34,13 @@ if %VERBOSITY% LEQ 2 (
 	set CL_FLAGS=%CL_FLAGS% /nologo
 )
 set LINK_FLAGS=/link /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /EMITPOGOPHASEINFO
-set OBJECTS="src/dynamic_string.c"
-set EXES="build\short.obj build\stdasm.obj build\args.obj Kernel32.lib"^
-	"src\pathc.c src\path_utils.c Kernel32.lib Shell32.lib chkstk.obj build\ntutils.lib"^
-	"src\parse-template.c build/dynamic_string.obj build/ntutils.lib Kernel32.lib Shell32.lib chkstk.obj"^
-	"src\regget.c build\args.obj Kernel32.lib Advapi32.lib"^
-	"src\path-add.c Kernel32.lib build\ntutils.lib src\path_utils.c src\string_conv.c Shell32.lib src/printf.c"^
-	"src\envir.c Kernel32.lib build\ntutils.lib src/printf.c Shell32.lib"
+set OBJECTS="src\dynamic_string.c"^
+	"src\args.c"
+set EXES="src\pathc.c src\path_utils.c src\args.c Kernel32.lib chkstk.obj build\ntutils.lib"^
+	"src\parse-template.c build\args.obj build\dynamic_string.obj build\ntutils.lib Kernel32.lib chkstk.obj"^
+	"src\regget.c build\args-asm.obj Kernel32.lib Advapi32.lib"^
+	"src\path-add.c Kernel32.lib build\ntutils.lib src\path_utils.c src\string_conv.c build\args.obj src\printf.c"^
+	"src\envir.c Kernel32.lib build\ntutils.lib src\printf.c build\args.obj build\path_utils.obj"
 
 set LIB_CMD=lib /MACHINE:X64 /DEF /OUT:build\ntutils.lib /NAME:ntdll.dll ^
 	 /EXPORT:memcpy=memcpy /EXPORT:strlen=strlen /EXPORT:memmove=memmove^
@@ -49,7 +49,7 @@ set LIB_CMD=lib /MACHINE:X64 /DEF /OUT:build\ntutils.lib /NAME:ntdll.dll ^
 	 /EXPORT:towlower=towlower /EXPORT:_wcsicmp=_wcsicmp /EXPORT:_snwprintf_s=_snwprintf_s^
 	 /EXPORT:_snprintf_s=_snprintf_s /EXPORT:_vscwprintf=_vscwprintf /EXPORT:_vsnprintf:_vsnprintf^
 	 /EXPORT:_vsnwprintf=_vsnwprintf /EXPORT:_vsnprintf=_vsnprintf /EXPORT:_vscprintf=_vscprintf^
-	 /EXPORT:memset=memset /EXPORT:wcscmp=wcscmp
+	 /EXPORT:memset=memset /EXPORT:wcscmp=wcscmp /EXPORT:strcmp=strcmp
 if %VERBOSITY% LEQ 2 (
 	set LIB_CMD=%LIB_CMD% /nologo
 )
