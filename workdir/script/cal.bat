@@ -71,7 +71,7 @@ class ForEvery:
 forevery = ForEvery()
 
 def forall(f):
-	return lambda x: foreach(f, x)
+	return lambda it: foreach(f, it)
 
 def foreach(f, it):
     for val in it:
