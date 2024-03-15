@@ -242,7 +242,7 @@ wchar_t* GetSizedEnvStrings(size_t *size) {
 // Format of envheap file:
 // Array of entries:
 //  Size of entry (including name and size): 8 bytes
-//  Null-terminated name string
+//  Null-terminated wide name string
 //  The environment strings, of given size
 
 DWORD GetEnvFile(wchar_t* buf, size_t len) {
@@ -633,9 +633,9 @@ const char* help_message  = "usage: envir [--help] <commnand> [Args]...\n\n"
 int main() {
     LPWSTR args = GetCommandLine();
     HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
-	int argc;
-	int status = ERROR_SUCCESS;
-	LPWSTR* argv = parse_command_line(args, &argc);
+    int argc;
+    int status = ERROR_SUCCESS;
+    LPWSTR* argv = parse_command_line(args, &argc);
 
     HANDLE hProcess = NULL;
     HANDLE mapping = NULL;
@@ -940,6 +940,7 @@ end:
         CloseHandle(hProcess);
     }
     HeapFree(GetProcessHeap(), 0, argv);
+
     return status;
 }
 
