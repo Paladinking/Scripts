@@ -338,7 +338,88 @@ DWORD FindEnvFileEntry(HANDLE file, const wchar_t* entry, size_t *len, wchar_t**
     }
 }
 
-DWORD WriteEnvFile(const wchar_t* file_name, const wchar_t* entry_name, BOOL replace) {
+DWORD ListEnvFile(const wchar_t* file_name) {
+    HANDLE file = CreateFile(file_name,
+                             GENERIC_READ,
+                             FILE_SHARE_READ | FILE_SHARE_WRITE,
+                             NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file == NULL) {
+        return GetLastError();
+    }
+    BOOL allocated = FALSE;
+    wchar_t buffer[100];
+    wchar_t *buf = buffer;
+    size_t capacity = 100;
+
+    DWORD res = ERROR_SUCCESS;
+    OVERLAPPED o;
+    memset(&o, 0, sizeof(OVERLAPPED));
+    if (!LockFileEx(file, LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, &o)) {
+        CloseHandle(file);
+        return GetLastError();
+    }
+
+    LARGE_INTEGER offset, fp;
+    fp.QuadPart = 0;
+
+    _printf("Saved environment entries:\n");
+    DWORD count;
+    while(1) {
+        size_t entry_size;
+        size_t name_size = 0;
+        if (!ReadFile(file, &entry_size, sizeof(size_t), &count, NULL)) {
+           res = GetLastError();
+           goto end;
+        }
+        if (count != sizeof(size_t)) {
+            break;
+        }
+        wchar_t c;
+        do {
+            if (!ReadFile(file, &c, sizeof(wchar_t), &count, NULL)) {
+                res = GetLastError();
+                goto end;
+            }
+            if (count != sizeof(wchar_t)) {
+                res = ERROR_BAD_LENGTH;
+                goto end;
+            }
+            if (name_size == capacity) {
+                wchar_t* new_buf = HeapAlloc(GetProcessHeap(), 0, 2 * capacity);
+                if (new_buf == NULL) {
+                    res = ERROR_OUTOFMEMORY;
+                    goto end;
+                }
+                memcpy(new_buf, buf, name_size);
+                if (allocated) {
+                    HeapFree(GetProcessHeap(), 0, buf);
+                } else {
+                    allocated = TRUE;
+                }
+                capacity = capacity * 2;
+                buf = new_buf;
+            }
+            buf[name_size] = c;
+            ++name_size;
+        } while (c != L'\0');
+
+        _printf(" %S\n", buf);
+        offset.QuadPart = fp.QuadPart + entry_size;
+        if (!SetFilePointerEx(file, offset, &fp, FILE_BEGIN)) {
+            res = GetLastError();
+            goto end;
+        }
+    }
+end:
+    if (allocated) {
+        HeapFree(GetProcessHeap(), 0, buf);
+    }
+    UnlockFile(file, 0, 0, 1, 0);
+    CloseHandle(file);
+    return res;
+}
+
+DWORD WriteEnvFile(const wchar_t* file_name, const wchar_t* entry_name, BOOL remove, BOOL add) {
     HANDLE file = CreateFile(file_name,
                              GENERIC_READ | GENERIC_WRITE,
                              FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -364,11 +445,12 @@ DWORD WriteEnvFile(const wchar_t* file_name, const wchar_t* entry_name, BOOL rep
 
     res = FindEnvFileEntry(file, entry_name, &entry_size, NULL);
     if (res == ERROR_SUCCESS) {
-        if (!replace) {
-            _printf("Entry already exists\n");
+        if (!remove) {
+            _printf_h(GetStdHandle(STD_ERROR_HANDLE), "Entry already exists\n");
             res = ERROR_SUCCESS;
             goto end;
         }
+        remove = FALSE;
         char buf[1024];
         DWORD count = 0;
         while (1) {
@@ -412,7 +494,15 @@ DWORD WriteEnvFile(const wchar_t* file_name, const wchar_t* entry_name, BOOL rep
             goto end;
         }
     } else if (res != ERROR_HANDLE_EOF) {
-        return res;
+        goto end;
+    }
+
+    if (!add) {
+        if (remove) {
+            _printf_h(GetStdHandle(STD_ERROR_HANDLE), "Entry '%S' not found\n", entry_name);
+        }
+        res = ERROR_SUCCESS;
+        goto end; 
     }
     size_t len;
     wchar_t* env = GetSizedEnvStrings(&len);
@@ -515,7 +605,8 @@ end:
 
 
 typedef enum _Action {
-    STACK_PUSH, STACK_POP, STACK_SAVE, STACK_LOAD, STACK_CLEAR, STACK_SIZE, STACK_ID, STACK_FILE_SAVE, STACK_FILE_LOAD
+    STACK_PUSH, STACK_POP, STACK_SAVE, STACK_LOAD, STACK_CLEAR, STACK_SIZE, STACK_ID,
+    STACK_FILE_LIST, STACK_FILE_SAVE, STACK_FILE_LOAD, STACK_FILE_REMOVE
 } Action;
 
 const char* help_message  = "usage: envir [--help] <commnand>\n\n"
@@ -563,9 +654,9 @@ int main() {
     } else if (wcscmp(argv[1], L"pop") == 0) {
         action = STACK_POP;
     } else if (wcscmp(argv[1], L"save") == 0) {
-        action = argc == 3 ? STACK_FILE_SAVE : STACK_SAVE;
+        action = argc >= 3 ? STACK_FILE_SAVE : STACK_SAVE;
     } else if (wcscmp(argv[1], L"load") == 0 || wcscmp(argv[1], L"l") == 0) {
-        action = argc == 3 ? STACK_FILE_LOAD : STACK_LOAD;
+        action = argc >= 3 ? STACK_FILE_LOAD : STACK_LOAD;
     } else if (wcscmp(argv[1], L"clear") == 0 || wcscmp(argv[1], L"c") == 0) {
         action = STACK_CLEAR;
     } else if (wcscmp(argv[1], L"size") == 0) {
@@ -576,14 +667,22 @@ int main() {
         action = STACK_FILE_SAVE;
     } else if (wcscmp(argv[1], L"fl") == 0) {
         action = STACK_FILE_LOAD;
+    } else if (wcscmp(argv[1], L"remove") == 0 || wcscmp(argv[1], L"r") == 0) {
+        action = STACK_FILE_REMOVE;
+    } else if (wcscmp(argv[1], L"list") == 0) {
+        action = STACK_FILE_LIST;
     } else {
         _printf_h(err, "Invalid operation\n");
         status = ERROR_INVALID_OPERATION;
         goto end;
     }
 
+    BOOL flag = FALSE;
+    if (action == STACK_FILE_SAVE) {
+        flag = find_flag(argv, &argc, L"-f", L"--force") > 0;
+    }
     if (action >= STACK_FILE_SAVE && argc < 3) {
-        _printf_h(err, "Missing argument\n");
+        _printf_h(err, "Missing argument, %d, %d\n", action, STACK_FILE_SAVE);
         status = ERROR_INVALID_PARAMETER;
         goto end;
     } else if ((action < STACK_FILE_SAVE && argc > 2) || argc > 3) {
@@ -723,7 +822,7 @@ int main() {
         goto end;
     }
     
-    if (action == STACK_FILE_SAVE || action == STACK_FILE_LOAD) {
+    if (action >= STACK_FILE_LIST) {
         // The environment file uses file locking. Release the mutex
         // so that it does not get abandoned in case IO hangs and user presses Ctrl-C
         ReleaseMutex(mutex);
@@ -735,12 +834,12 @@ int main() {
             _printf_h(err, "Failed finding environment file\n");
             goto end;
         }
-        if (action == STACK_FILE_SAVE) {
-            if ((status = WriteEnvFile(env_file, argv[2], TRUE)) != 0) {
+        if (action == STACK_FILE_SAVE || action == STACK_FILE_REMOVE) {
+            if ((status = WriteEnvFile(env_file, argv[2], action == STACK_FILE_REMOVE || flag, action == STACK_FILE_SAVE)) != 0) {
                 _printf_h(err, "Failed writing to environment file\n");
                 goto end;
             }
-        } else {
+        } else if (action == STACK_FILE_LOAD) {
             status = ReadEnvFile(env_file, argv[2], hProcess);
             if (status == ERROR_HANDLE_EOF) {
                 _printf_h(err, "Entry '%S' not found\n", argv[2]);
@@ -749,6 +848,8 @@ int main() {
                 _printf_h(err, "Failed loading environment\n");
                 goto end;
             }
+        } else {
+            status = ListEnvFile(env_file);
         }
     } else if (action == STACK_SAVE || action == STACK_PUSH) {
         if (action == STACK_PUSH || env_stack_length == 0) {
