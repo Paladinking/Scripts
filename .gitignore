@@ -2,6 +2,9 @@
 *.a
 *.exe
 paths.txt
+envheap
+.vscode
+test
 workdir/bin
 /*.bat
 /*.ps1
