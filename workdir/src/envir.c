@@ -177,6 +177,7 @@ BOOL call_prog(HANDLE hProcess, const unsigned char* prog, size_t prog_size, voi
     }
     WriteProcessMemory(hProcess, mem, prog, prog_size, NULL);
     WriteProcessMemory(hProcess, mem + prog_size, data, data_size, NULL);
+    FlushInstructionCache(hProcess, mem, prog_size + data_size);
     HANDLE hThread = CreateRemoteThread(hProcess, NULL, 0, (LPTHREAD_START_ROUTINE)mem, mem + prog_size, 0, NULL);
     if (hThread == NULL) {
         VirtualFreeEx(hProcess, mem, 0, MEM_RELEASE);
@@ -609,7 +610,7 @@ typedef enum _Action {
     STACK_FILE_LIST, STACK_FILE_SAVE, STACK_FILE_LOAD, STACK_FILE_REMOVE
 } Action;
 
-const char* help_message  = "usage: envir [--help] <commnand>\n\n"
+const char* help_message  = "usage: envir [--help] <commnand> [Args]...\n\n"
                             "Saves or loads the environment from/to a stack local to the current terminal, or a global environment file.\n\n"
                             "The following commands are available:\n\n"
                             "  push           Push the current environment onto the environment stack\n"
@@ -660,7 +661,7 @@ int main() {
         action = STACK_POP;
     } else if (wcscmp(argv[1], L"save") == 0) {
         action = argc >= 3 ? STACK_FILE_SAVE : STACK_SAVE;
-    } else if (wcscmp(argv[1], L"load") == 0 || wcscmp(argv[1], L"l") == 0) {
+    } else if (wcscmp(argv[1], L"load") == 0) {
         action = argc >= 3 ? STACK_FILE_LOAD : STACK_LOAD;
     } else if (wcscmp(argv[1], L"clear") == 0 || wcscmp(argv[1], L"c") == 0) {
         action = STACK_CLEAR;
@@ -668,10 +669,6 @@ int main() {
         action = STACK_SIZE;
     } else if (wcscmp(argv[1], L"id") == 0 || wcscmp(argv[1], L"i") == 0) {
         action = STACK_ID;  
-    } else if (wcscmp(argv[1], L"fs") == 0 ) {
-        action = STACK_FILE_SAVE;
-    } else if (wcscmp(argv[1], L"fl") == 0) {
-        action = STACK_FILE_LOAD;
     } else if (wcscmp(argv[1], L"remove") == 0 || wcscmp(argv[1], L"r") == 0) {
         action = STACK_FILE_REMOVE;
     } else if (wcscmp(argv[1], L"list") == 0) {
@@ -683,7 +680,7 @@ int main() {
     }
 
     BOOL flag = FALSE;
-    if (action == STACK_FILE_SAVE) {
+    if (action == STACK_FILE_SAVE || action == STACK_CLEAR) {
         flag = find_flag(argv, &argc, L"-f", L"--force") > 0;
     }
     if (action >= STACK_FILE_SAVE && argc < 3) {
@@ -821,7 +818,7 @@ int main() {
     StackHeader* header = (StackHeader*)data;
     size_t env_stack_length = header->stack_size;
 
-    if (env_stack_length > 64 && action != STACK_CLEAR) {
+    if (env_stack_length > 64 && !(action == STACK_CLEAR && flag)) {
         status = ERROR_INVALID_STATE;
         _printf_h(err, "Corrupt environment stack\n");
         goto end;
@@ -920,7 +917,7 @@ int main() {
     }
 
     header->stack_size = env_stack_length;
-    if (action == STACK_CLEAR || action == STACK_LOAD || action == STACK_POP || rename_file) {
+    if (action == STACK_CLEAR || action == STACK_LOAD || action == STACK_POP || action == STACK_FILE_LOAD || rename_file) {
         wchar_t wide_name[100];
         _snwprintf_s(wide_name, 100, 100, L"Env-Stack-File-%d", parent);
         SetProcessEnvironmentVariable(L"ENV_STACK_FILE_NAME", wide_name, parent);
