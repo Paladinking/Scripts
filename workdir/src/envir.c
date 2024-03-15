@@ -133,6 +133,11 @@ typedef struct _StackHeader {
     size_t stack[64]; // Offsets to environment strings.
 } StackHeader;
 
+int __CRTDECL _snwprintf_s(wchar_t* const, size_t, size_t,wchar_t const*, ...);
+int __CRTDECL _snprintf_s(char* const, size_t, size_t, char const*, ...);
+
+
+
 //header + 10 kb (should be enough to fit one environment strings instance).
 #define INITIAL_COMMIT_SIZE (sizeof(StackHeader) + 10240)
 
@@ -223,8 +228,294 @@ BOOL free_environment(HANDLE hFile, HANDLE hMutex, HANDLE hProcess) {
     return res;
 }
 
+wchar_t* GetSizedEnvStrings(size_t *size) {
+    wchar_t* env = GetEnvironmentStringsW();
+    size_t len = 2;
+    while (env[len - 2] != L'\0' || env[len - 1] != L'\0') {
+        ++len;
+    }
+    *size = len * sizeof(wchar_t);
+    return env;
+}
+
+// Format of envheap file:
+// Array of entries:
+//  Size of entry (including name and size): 8 bytes
+//  Null-terminated name string
+//  The environment strings, of given size
+
+DWORD GetEnvFile(wchar_t* buf, size_t len) {
+    wchar_t bin_path[256];
+    DWORD mod_res = GetModuleFileName(NULL, bin_path, 256);
+    if (mod_res >= 256 || mod_res == 0) {
+        return GetLastError();
+    }
+    wchar_t dir[256];
+    wchar_t drive[10];
+    _wsplitpath_s(bin_path, drive, 10, dir, 256, NULL, 0, NULL, 0);
+    DWORD status;
+    if ((status = _wmakepath_s(buf, len, drive, dir, L"envheap", NULL)) != 0) {
+        return status;
+    }
+
+    return ERROR_SUCCESS;
+}
+
+DWORD FindEnvFileEntry(HANDLE file, const wchar_t* entry, size_t *len, wchar_t** data) {
+    HANDLE heap = GetProcessHeap();
+    size_t entry_len = wcslen(entry); 
+    if (entry_len > 200) {
+        return ERROR_INVALID_PARAMETER;
+    }
+    LARGE_INTEGER to_move, file_pointer;
+    to_move.QuadPart = 0;
+    if (!SetFilePointerEx(file, to_move, &file_pointer, FILE_BEGIN)) {
+        return GetLastError();
+    }
+    DWORD read;
+    size_t size;
+    while (1) {
+        if (!ReadFile(file, &size, sizeof(size_t), &read, NULL)) {
+            return GetLastError();
+        }
+        if (read < sizeof(size_t)) {
+            return ERROR_HANDLE_EOF; // End of file
+        }
+        for (size_t i = 0; i <= entry_len; ++i) {
+            wchar_t c;
+            if (!ReadFile(file, &c, sizeof(wchar_t), &read, NULL)) {
+                return GetLastError();
+            }
+            if (read < sizeof(wchar_t)) {
+                return ERROR_HANDLE_EOF;
+            }
+            if (towlower(c) != towlower(entry[i])) {
+                break;
+            }
+            if (i == entry_len) {
+                if (len != NULL) {
+                    *len = size;
+                } else if (data != NULL) {
+                    *data = NULL;
+                }
+                if (len == NULL || data == NULL) {
+                    if (!SetFilePointerEx(file, file_pointer, NULL, FILE_BEGIN)) {
+                        return GetLastError();
+                    }
+                    return ERROR_SUCCESS;
+                }
+                size = size - sizeof(wchar_t) * (entry_len + 1) - sizeof(size_t);
+                size_t total_read = 0;
+
+                char* buf = HeapAlloc(GetProcessHeap(), 0, size);
+                if (buf == NULL) {
+                    return ERROR_OUTOFMEMORY;
+                }
+                while (total_read < size) {
+                    if (!ReadFile(file, buf + total_read, size - total_read, &read, NULL)) {
+                        HeapFree(GetProcessHeap(), 0, buf);
+                        return GetLastError();
+                    }
+                    if (read == 0) {
+                        HeapFree(GetProcessHeap(), 0, buf);
+                        // Cannot return EOF, since that indicates entry not found.
+                        return ERROR_BAD_LENGTH;
+                    }
+                    total_read += read;
+                }
+                if (!SetFilePointerEx(file, file_pointer, NULL, FILE_BEGIN)) {
+                    HeapFree(GetProcessHeap(), 0, buf);
+                    return GetLastError();
+                }
+                *data = (wchar_t*) buf;
+                return ERROR_SUCCESS;
+            }
+        }
+        to_move.QuadPart = file_pointer.QuadPart + size;
+        if (!SetFilePointerEx(file, to_move, &file_pointer, FILE_BEGIN)) {
+            return GetLastError();
+        }
+    }
+}
+
+DWORD WriteEnvFile(const wchar_t* file_name, const wchar_t* entry_name, BOOL replace) {
+    HANDLE file = CreateFile(file_name,
+                             GENERIC_READ | GENERIC_WRITE,
+                             FILE_SHARE_READ | FILE_SHARE_WRITE,
+                             NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file == NULL) {
+        return GetLastError();
+    }
+    OVERLAPPED o;
+    memset(&o, 0, sizeof(OVERLAPPED));
+    if (!LockFileEx(file, LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, &o)) {
+        CloseHandle(file);
+        return GetLastError();
+    }
+
+    size_t entry_size;
+    LARGE_INTEGER offset, file_end;
+    offset.QuadPart = 0;
+    DWORD res;
+    if (!SetFilePointerEx(file, offset, &file_end, FILE_END)) {
+        res = GetLastError();
+        goto end;
+    }
+
+    res = FindEnvFileEntry(file, entry_name, &entry_size, NULL);
+    if (res == ERROR_SUCCESS) {
+        if (!replace) {
+            _printf("Entry already exists\n");
+            res = ERROR_SUCCESS;
+            goto end;
+        }
+        char buf[1024];
+        DWORD count = 0;
+        while (1) {
+            offset.QuadPart = entry_size;
+            LARGE_INTEGER fp;
+            if (!SetFilePointerEx(file, offset, &fp, FILE_CURRENT)) {
+                res = GetLastError();
+                goto end;
+            }
+            if (fp.QuadPart == file_end.QuadPart) {
+                break;
+            }
+            if (fp.QuadPart > file_end.QuadPart) {
+                res = ERROR_BAD_LENGTH;
+                goto end;
+            }
+            if (!ReadFile(file, buf, 1024, &count, NULL)) {
+                res = GetLastError();
+                goto end;
+            }
+            offset.QuadPart = -entry_size - count;
+            LARGE_INTEGER wo;
+            if (!SetFilePointerEx(file, offset, &wo, FILE_CURRENT)) {
+                res = GetLastError();
+                goto end;
+            }
+            DWORD to_write = count;
+            DWORD written = 0;
+            while (written < to_write) {
+                if (!WriteFile(file, buf + written, to_write - written, &count, NULL)) {
+                    res = GetLastError();
+                    goto end;
+                }
+                written += count;
+            }
+        
+        }
+        offset.QuadPart = -((long long)entry_size);
+        if (!SetFilePointerEx(file, offset, &file_end, FILE_CURRENT) || !SetEndOfFile(file)) {
+            res = GetLastError();
+            goto end;
+        }
+    } else if (res != ERROR_HANDLE_EOF) {
+        return res;
+    }
+    size_t len;
+    wchar_t* env = GetSizedEnvStrings(&len);
+
+    size_t name_len = (wcslen(entry_name) + 1) * sizeof(wchar_t);
+
+    offset.QuadPart = 0;
+    if (!SetFilePointerEx(file, offset, NULL, FILE_END)) {
+        res = GetLastError();
+        FreeEnvironmentStringsW(env);
+        goto end;
+    }
+
+    DWORD written = 0;
+    size_t total_len = len + name_len + sizeof(size_t);
+    if (!WriteFile(file, &total_len, sizeof(size_t), &written, NULL) || written != sizeof(size_t)) {
+        res = GetLastError();
+        FreeEnvironmentStringsW(env);
+        goto end;
+    }
+    written = 0;
+    while (written < name_len) {
+        DWORD w;
+        if (!WriteFile(file, ((char*)entry_name) + written, name_len - written, &w, NULL)) {
+            res = GetLastError();
+            FreeEnvironmentStringsW(env);
+            goto end;
+        }
+        written += w;
+    }
+    written = 0;
+    while (written < len) {
+        DWORD w;
+        if (!WriteFile(file, ((char*)env) + written, len - written, &w, NULL)) {
+            res = GetLastError();
+            FreeEnvironmentStringsW(env);
+            goto end;
+
+        }
+        written += w;
+    }
+    res = ERROR_SUCCESS;
+    FreeEnvironmentStringsW(env);
+end: 
+    UnlockFile(file, 0, 0, 1, 0);
+    CloseHandle(file);
+    return res;
+}
+
+
+DWORD ReadEnvFile(const wchar_t* file_name, const wchar_t* entry_name, HANDLE process) {
+    HANDLE file = CreateFile(file_name,
+                             GENERIC_READ,
+                             FILE_SHARE_READ | FILE_SHARE_WRITE,
+                             NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file == NULL) {
+        return GetLastError();
+    }
+    OVERLAPPED o;
+    memset(&o, 0, sizeof(OVERLAPPED));
+    if (!LockFileEx(file, LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, &o)) {
+        CloseHandle(file);
+        return GetLastError();
+    }
+    wchar_t* data;
+    size_t len;
+    DWORD res = FindEnvFileEntry(file, entry_name, &len, &data);
+    UnlockFile(file, 0, 0, 1, 0);
+    CloseHandle(file);
+    if (res != ERROR_SUCCESS) {
+        return res;
+    }
+    len = len - (wcslen(entry_name) + 1) * sizeof(wchar_t) - sizeof(size_t);
+    unsigned char* mem = VirtualAllocEx(process, NULL, len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (mem == NULL) {
+        res = ERROR_OUTOFMEMORY;
+        goto end;
+    }
+
+    if (!WriteProcessMemory(process, mem, data, len, NULL)) {
+        res = GetLastError();
+        VirtualFreeEx(process, mem, 0, MEM_RELEASE);
+        goto end;
+    }
+    HMODULE kernel = LoadLibraryA("Kernel32.dll");
+    FARPROC f = GetProcAddress(kernel, "SetEnvironmentStringsW");
+    HANDLE t = CreateRemoteThread(process, NULL, 0, (LPTHREAD_START_ROUTINE)f, mem, 0, NULL);
+    if (t == NULL) {
+        res = GetLastError();
+        VirtualFreeEx(process, mem, 0, MEM_RELEASE);
+        goto end;
+    }
+    WaitForSingleObject(t, INFINITE);
+    CloseHandle(t);
+    VirtualFreeEx(process, mem, 0, MEM_RELEASE);
+end:
+    HeapFree(GetProcessHeap(), 0, data);
+    return  res;
+}
+
+
 typedef enum _Action {
-    STACK_PUSH, STACK_POP, STACK_SAVE, STACK_LOAD, STACK_CLEAR, STACK_SIZE, STACK_ID
+    STACK_PUSH, STACK_POP, STACK_SAVE, STACK_LOAD, STACK_CLEAR, STACK_SIZE, STACK_ID, STACK_FILE_SAVE, STACK_FILE_LOAD
 } Action;
 
 const char* help_message  = "usage: envir [--help] <commnand>\n\n"
@@ -255,12 +546,12 @@ int main() {
     DWORD wait_res = WAIT_FAILED;
     unsigned char* data = NULL;
 
-	if (argc < 2) {
-		_printf_h(err, "Missing argument\n");
+    if (argc < 2) {
+    	_printf_h(err, "Missing argument\n");
         _printf_h(err, "usage: envir [--help] <command>\n");
         status = ERROR_INVALID_PARAMETER;
         goto end;
-	}
+    }
     if (find_flag(argv, &argc, L"-h", L"--help")) {
         _printf(help_message);
         goto end;
@@ -272,21 +563,35 @@ int main() {
     } else if (wcscmp(argv[1], L"pop") == 0) {
         action = STACK_POP;
     } else if (wcscmp(argv[1], L"save") == 0) {
-        action = STACK_SAVE;
+        action = argc == 3 ? STACK_FILE_SAVE : STACK_SAVE;
     } else if (wcscmp(argv[1], L"load") == 0 || wcscmp(argv[1], L"l") == 0) {
-        action = STACK_LOAD;
+        action = argc == 3 ? STACK_FILE_LOAD : STACK_LOAD;
     } else if (wcscmp(argv[1], L"clear") == 0 || wcscmp(argv[1], L"c") == 0) {
         action = STACK_CLEAR;
     } else if (wcscmp(argv[1], L"size") == 0) {
         action = STACK_SIZE;
     } else if (wcscmp(argv[1], L"id") == 0 || wcscmp(argv[1], L"i") == 0) {
         action = STACK_ID;  
+    } else if (wcscmp(argv[1], L"fs") == 0 ) {
+        action = STACK_FILE_SAVE;
+    } else if (wcscmp(argv[1], L"fl") == 0) {
+        action = STACK_FILE_LOAD;
     } else {
         _printf_h(err, "Invalid operation\n");
         status = ERROR_INVALID_OPERATION;
         goto end;
     }
-    
+
+    if (action >= STACK_FILE_SAVE && argc < 3) {
+        _printf_h(err, "Missing argument\n");
+        status = ERROR_INVALID_PARAMETER;
+        goto end;
+    } else if ((action < STACK_FILE_SAVE && argc > 2) || argc > 3) {
+        _printf_h(err, "Unexpected argument\n");
+        status = ERROR_INVALID_PARAMETER;
+        goto end;
+    }
+
     DWORD parent = GetParentProcessId();
     if (parent == 0) {
         _printf_h(err, "Could not get parent process\n");
@@ -391,7 +696,8 @@ int main() {
                                     usage = INITIAL_COMMIT_SIZE;
                                 }
                                 if (VirtualAlloc(data, usage, MEM_COMMIT, PAGE_READWRITE)) {
-                                    memcpy(data, old_data, old_header->stack_usage);
+                                    size_t offset = 2 * sizeof(HANDLE);
+                                    memcpy(data + offset, old_data + offset, old_header->stack_usage - offset);
                                     memcpy(data + offsetof(StackHeader, stack_capacity), &usage, sizeof(size_t));
                                 }
                             }
@@ -411,13 +717,40 @@ int main() {
     StackHeader* header = (StackHeader*)data;
     size_t env_stack_length = header->stack_size;
 
-    if (env_stack_length > 64) {
+    if (env_stack_length > 64 && action != STACK_CLEAR) {
         status = ERROR_INVALID_STATE;
         _printf_h(err, "Corrupt environment stack\n");
         goto end;
     }
+    
+    if (action == STACK_FILE_SAVE || action == STACK_FILE_LOAD) {
+        // The environment file uses file locking. Release the mutex
+        // so that it does not get abandoned in case IO hangs and user presses Ctrl-C
+        ReleaseMutex(mutex);
+        CloseHandle(mutex);
+        mutex = NULL;
 
-    if (action == STACK_SAVE || action == STACK_PUSH) {
+        wchar_t env_file[256];
+        if ((status = GetEnvFile(env_file, 256)) != 0) {
+            _printf_h(err, "Failed finding environment file\n");
+            goto end;
+        }
+        if (action == STACK_FILE_SAVE) {
+            if ((status = WriteEnvFile(env_file, argv[2], TRUE)) != 0) {
+                _printf_h(err, "Failed writing to environment file\n");
+                goto end;
+            }
+        } else {
+            status = ReadEnvFile(env_file, argv[2], hProcess);
+            if (status == ERROR_HANDLE_EOF) {
+                _printf_h(err, "Entry '%S' not found\n", argv[2]);
+                goto end;
+            } else if (status != 0) {
+                _printf_h(err, "Failed loading environment\n");
+                goto end;
+            }
+        }
+    } else if (action == STACK_SAVE || action == STACK_PUSH) {
         if (action == STACK_PUSH || env_stack_length == 0) {
             if (env_stack_length == 64) {
                 _printf_h(err, "Stack is full\n");
@@ -427,12 +760,8 @@ int main() {
             header->stack[env_stack_length] = header->stack_usage;
             env_stack_length += 1;
         }
-        wchar_t* env = GetEnvironmentStringsW();
-        size_t len = 2;
-        while (env[len - 2] != L'\0' || env[len - 1] != L'\0') {
-            ++len;
-        }
-        len = len * sizeof(wchar_t);
+        size_t len;
+        wchar_t* env = GetSizedEnvStrings(&len);
         size_t stack_usage = header->stack[env_stack_length - 1];
         if (header->stack_capacity - stack_usage < len) {
             size_t to_alloc = len < 4096 ? 4096 : len; // VirtualAlloc commits whole pages anyway.
@@ -510,3 +839,4 @@ end:
     HeapFree(GetProcessHeap(), 0, argv);
     return status;
 }
+
