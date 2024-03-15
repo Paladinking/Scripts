@@ -22,14 +22,14 @@ func:
     lea rax, [rbx + 32]
     mov QWORD [rsp + 40], rax       ; lpName = name
     call QWORD [rbx]                ; CreateFileMappingA(...)
-	mov QWORD [rbx + 16], rax
+    mov QWORD [rbx + 16], rax
 
-	mov DWORD [rbx + 42], "Lock"
-	xor rcx, rcx					; lpMutexAttributes = NULL
-	xor rdx, rdx					; bInitialOwner = FALSE
-	lea r8, [rbx + 32]				; lpName = Name
-	call QWORD [rbx + 8]			; CreateMutexA(...)
-	mov QWORD [rbx + 24], rax
+    mov DWORD [rbx + 42], "Lock"
+    xor rcx, rcx                     ; lpMutexAttributes = NULL
+    xor rdx, rdx                     ; bInitialOwner = FALSE
+    lea r8, [rbx + 32]               ; lpName = Name
+    call QWORD [rbx + 8]             ; CreateMutexA(...)
+    mov QWORD [rbx + 24], rax
 
     pop rbx
     add rsp, 64
@@ -48,7 +48,7 @@ typedef struct _CreateStruct {
 
 /* LOAD_PROG asm in FASM
 format binary
-use64            ; 0                 8              16          24               32                      40            44
+use64           ; 0                 8              16           24               32                      40            44
 ; rcx: ptr to => (OpenFileMappingA, MapViewOfFile, CloseHandle, UnmapViewOfFile, SetEnvironmentStringsW, DWORD offset, Null-terminated name string)
 func:
     sub rsp, 64
@@ -99,19 +99,19 @@ format binary
 use64	        ; 0            8              16
 ; rcx: ptr to => (CloseHandle, MappingHandle, MutexHandle)
 func:
-	sub rsp, 64
-	push rbx
-	mov rbx, rcx
-	
-	mov rcx, QWORD [rbx + 8]  ; hObject = MappingHandle
-	call QWORD [rbx]		  ; CloseHandle(...)
+    sub rsp, 64
+    push rbx
+    mov rbx, rcx
 
-	mov rcx, QWORD [rbx + 16] ; hObject = MutexHandle
-	call QWORD [rbx]		  ; CloseHandle(...)
+    mov rcx, QWORD [rbx + 8]  ; hObject = MappingHandle
+    call QWORD [rbx]		  ; CloseHandle(...)
 
-	pop rbx
-	add rsp, 64
-	ret
+    mov rcx, QWORD [rbx + 16] ; hObject = MutexHandle
+    call QWORD [rbx]		  ; CloseHandle(...)
+
+    pop rbx
+    add rsp, 64
+    ret
 */
 const unsigned char FREE_PROG[] = {72, 131, 236, 64, 83, 72, 137, 203, 72, 139, 75, 8, 255, 19, 72, 139, 75, 16, 255, 19, 91, 72, 131, 196, 64, 195};
 
@@ -399,7 +399,7 @@ DWORD ListEnvFile(const wchar_t* file_name) {
                 capacity = capacity * 2;
                 buf = new_buf;
             }
-            buf[name_size] = c;
+            buf[name_size] = towlower(c);
             ++name_size;
         } while (c != L'\0');
 
@@ -610,17 +610,22 @@ typedef enum _Action {
 } Action;
 
 const char* help_message  = "usage: envir [--help] <commnand>\n\n"
-                            "Saves or loads the environment from/to a stack local to the current terminal.\n\n"
+                            "Saves or loads the environment from/to a stack local to the current terminal, or a global environment file.\n\n"
                             "The following commands are available:\n\n"
                             "  push           Push the current environment onto the environment stack\n"
                             "  pop            Pop the top of the environment stack into the current environment\n"
-                            "  save           Overwrite the top of the environment stack with the current environment,\n"
-                            "                  does the same as push if the environment stack is empty\n"
-                            "  load, l        Load the top of the environment stack into the current environment\n"
-                            "                  without removing it\n"
+                            "  save [Entry]   Save the current environment to global environment file as [Entry].\n"
+                            "                  If [Entry] is not given, overwrite the top of the environment\n"
+                            "                  stack with the current environment, doing the same as push if\n"
+                            "                  environment stack is empty\n"
+                            "  load [Entry]   Load environment [Entry] from global environment file into the current environment.\n"
+                            "                  If [Entry] is not given, load the top of the environment stack into the current\n"
+                            "                  environment without removing it\n"
                             "  clear, c       Remove all entries from the stack\n"
                             "  size           Print the size of the stack\n"
-                            "  id, i          Print the id of the stack\n\n"
+                            "  id, i          Print the id of the stack\n"
+                            "  remove <Entry> Remove global environment entry <Entry>\n"
+                            "  list           List all global environment entries\n\n"
                             "The size of the stack is limited to 64 entries, after that push will fail.\n"
                             "The id in generated based on the process id of the parent process.\n";
 
