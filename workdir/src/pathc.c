@@ -2,11 +2,11 @@
 #ifdef __GNUC__
 #define main entry_main
 #endif
-#include <windows.h>
-#include <tlhelp32.h>
-#include "path_utils.h"
 #include "args.h"
-
+#include "path_utils.h"
+#include "printf.h"
+#include <tlhelp32.h>
+#include <windows.h>
 
 DWORD GetParentProcessId() {
     // Get the current process ID
@@ -25,7 +25,8 @@ DWORD GetParentProcessId() {
     if (Process32First(hSnapshot, &pe32)) {
         do {
             if (pe32.th32ProcessID == currentProcessId) {
-                // Found the current process in the snapshot, return its parent process ID
+                // Found the current process in the snapshot, return its parent
+                // process ID
                 CloseHandle(hSnapshot);
                 return pe32.th32ParentProcessID;
             }
@@ -37,199 +38,167 @@ DWORD GetParentProcessId() {
     return 0;
 }
 
-BOOL equals(LPCWSTR a, LPCWSTR b) {
-	int index = 0;
-	while (TRUE) {
-		if (a[index] != b[index]) {
-			return FALSE;
-		}
-		if (a[index] == L'\0' || b[index] == L'\0') {
-			return TRUE;
-		}
-		++index;
-	}
+OpStatus paths_add(int argc, LPWSTR *argv, PathBuffer *path_buffer, BOOL before,
+                   BOOL expand) {
+
+    if (argc < 2) {
+        return OP_MISSSING_ARG;
+    }
+    OpStatus status = OP_NO_CHANGE;
+
+    for (int arg = 1; arg < argc; ++arg) {
+        OpStatus res = path_add(argv[arg], path_buffer, before, expand);
+        if (res == OP_SUCCESS) {
+            status = OP_SUCCESS;
+        } else if (res != OP_NO_CHANGE) {
+            return res;
+        }
+    }
+    return status;
 }
 
-
-int WriteFileWide(HANDLE out, LPCWSTR ptr, int size) {
-	HANDLE heap = GetProcessHeap();
-	UINT code_point = GetConsoleOutputCP();
-	DWORD out_req_size = WideCharToMultiByte(
-		code_point, 0, ptr, size, NULL, 0, NULL, NULL
-	);
-
-	LPSTR print_buffer = HeapAlloc(heap, 0, out_req_size);
-
-	out_req_size = WideCharToMultiByte(
-		code_point, 0, ptr, size, print_buffer, out_req_size, NULL, NULL
-	);
-	if (out_req_size == 0) {
-		HeapFree(heap, 0, print_buffer);
-		return 0;
-	}
-	int status = WriteFile(out, print_buffer, out_req_size, NULL, NULL);
-	HeapFree(heap, 0, print_buffer);
-	return status;
-}
-
-
-OpStatus paths_add(
-	int argc, 
-	LPWSTR* argv,
-	PathBuffer* path_buffer,
-	BOOL before,
-	BOOL expand
-) {
-
-	if (argc < 2) {
-		return OP_MISSSING_ARG;
-	}
-	OpStatus status = OP_NO_CHANGE;
-
-	for (int arg = 1; arg < argc; ++arg) {
-		OpStatus res = path_add(argv[arg], path_buffer, before, expand);
-		if (res == OP_SUCCESS) {
-			status = OP_SUCCESS;
-		} else if (res != OP_NO_CHANGE) {
-			return res;
-		}
-	}
-	return status;
-}
-
-OpStatus paths_remove(
-	int argc, 
-	LPWSTR* argv,
-	PathBuffer* path_buffer,
-	BOOL before,
-	BOOL expand
-) {
-	if (argc < 2) {
-		return OP_MISSSING_ARG;
-	}
-	if (before) {
-		return OP_INVALID_PATH;
-	}
-	BOOL removed_any = FALSE;
-	for (int arg = 1; arg < argc; ++arg) {
-		OpStatus status = path_remove(argv[arg], path_buffer, expand);
-		if (status == OP_SUCCESS) {
-			removed_any = TRUE;
-		} else if (status != OP_NO_CHANGE) {
-			return status;
-		}
-	}
-	if (!removed_any) {
-		return OP_NO_CHANGE;
-	}
-	return OP_SUCCESS;
+OpStatus paths_remove(int argc, LPWSTR *argv, PathBuffer *path_buffer,
+                      BOOL before, BOOL expand) {
+    if (argc < 2) {
+        return OP_MISSSING_ARG;
+    }
+    if (before) {
+        return OP_INVALID_PATH;
+    }
+    BOOL removed_any = FALSE;
+    for (int arg = 1; arg < argc; ++arg) {
+        OpStatus status = path_remove(argv[arg], path_buffer, expand);
+        if (status == OP_SUCCESS) {
+            removed_any = TRUE;
+        } else if (status != OP_NO_CHANGE) {
+            return status;
+        }
+    }
+    if (!removed_any) {
+        return OP_NO_CHANGE;
+    }
+    return OP_SUCCESS;
 }
 
 typedef enum _OperationType {
-	OPERATION_ADD, OPERATION_REMOVE, OPERATION_MOVE
+    OPERATION_ADD,
+    OPERATION_REMOVE,
+    OPERATION_MOVE
 } OperationType;
 
 PathBuffer path_buffer = {NULL, 0, 0};
 
-int pathc(int argc, LPWSTR* argv, HANDLE out, HANDLE err) {
-	if (argc < 2) {
-		WriteFile(err, "Missing operation type\n", 23, NULL, NULL);
-		return 2;
-	}
+const char *help_message =
+    "usage: pathc [-h | --help] [-n | --no-expand] [-u | --update] [-b | --before] <command> [<args>]\n\n"
+    "Adds or removes a file path to PATH. By default, paths are added at the end of PATH, and the new PATH is printed to stdout.\n"
+    "Does not add paths that already exists in PATH.\n\n"
+    "The following commands are available:\n\n"
+    "  add, a              Add all filepaths in <args> to PATH\n"
+    "  remove, r           Remove all filepaths in <args> from PATH\n"
+    "  move, m             Move all filepaths in <args> as if using add, then remove\n\n"
+    "The following flags can be used:\n\n"
+    "  -h, --help          Displays this help message\n"
+    "  -n, --no-expand     Do not expand relative paths to an absolute path before adding it\n"
+    "  -u, --update        Apply the new PATH to the parent process environment instead of printing it\n"
+    "  -b, --before        Add paths to the beginning of PATH";
 
-	OperationType operation;
-	if (equals(argv[1], L"a") || equals(argv[1], L"add")) {
-		operation = OPERATION_ADD;
-	} else if (equals(argv[1], L"r") || equals(argv[1], L"remove")) {
-		operation = OPERATION_REMOVE;
-	} else if (equals(argv[1], L"m") || equals(argv[1], L"move")) {
-		operation = OPERATION_MOVE;
-	} else {
-		WriteFile(err, "Invalid operation type\n", 23, NULL, NULL);
-		return 2;
-	}
-	BOOL expand = !find_flag(argv, &argc, L"-n", L"--no-expand");
-	BOOL before = find_flag(argv, &argc, L"-b", L"--before");
-	BOOL update = find_flag(argv, &argc, L"-u", L"--update");
+int pathc(int argc, LPWSTR *argv, HANDLE out, HANDLE err) {
+    if (find_flag(argv, &argc, L"-h", L"--help")) {
+        _printf("%s\n", help_message);
+        return 0;
+    }
 
-	HANDLE heap = GetProcessHeap();
+    if (argc < 2) {
+        _printf_h(err, "Missing operation type\nusage: pathc [-h | --help] [-n | --no-expand] [-u | --update] [-b | --before] <command> [<args>]\n");
+        return 2;
+    }
 
-	path_buffer.capacity = 2000;
-	if (!get_envvar(L"Path", 20 * (argc - 1), &path_buffer)) {
-		WriteFile(err, "Could not get Path\n", 19, NULL, NULL);
-		return 6;
-	}
+    OperationType operation;
+    if (wcscmp(argv[1], L"a") == 0 || wcscmp(argv[1], L"add") == 0) {
+        operation = OPERATION_ADD;
+    } else if (wcscmp(argv[1], L"r") == 0 || wcscmp(argv[1], L"remove") == 0) {
+        operation = OPERATION_REMOVE;
+    } else if (wcscmp(argv[1], L"m") == 0 || wcscmp(argv[1], L"move") == 0) {
+        operation = OPERATION_MOVE;
+    } else {
+        _printf_h(err, "Invalid operation type\n");
+        return 2;
+    }
+    BOOL expand = !find_flag(argv, &argc, L"-n", L"--no-expand");
+    BOOL before = find_flag(argv, &argc, L"-b", L"--before");
+    BOOL update = find_flag(argv, &argc, L"-u", L"--update");
 
-	OpStatus status;
+    HANDLE heap = GetProcessHeap();
 
-	if (operation == OPERATION_ADD) {
-		status = paths_add(
-			argc - 1, argv + 1, &path_buffer, before, expand
-		);
-	} else if (operation == OPERATION_REMOVE){
-		status = paths_remove(
-			argc - 1, argv + 1, &path_buffer, before, expand
-		);
-	} else {
-		status = paths_remove(
-			argc - 1, argv + 1, &path_buffer, FALSE, expand
-		);
-		if (status <= OP_NO_CHANGE) {
-			status = paths_add(
-				argc - 1, argv + 1, &path_buffer, before, expand
-			);
-		}
-	}
-	if (status == OP_MISSSING_ARG) {
-		WriteFile(err, "Missing argument\n", 17, NULL, NULL);
-		return 2;
-	}
-	if (status == OP_INVALID_PATH) {
-		WriteFile(err, "Invalid argument\n", 17, NULL, NULL);
-		return 2;
-	}
-	if (status == OP_OUT_OF_MEMORY) {
-		WriteFile(err, "Out of memory\n", 14, NULL, NULL);
-		return 3;
-	}
-	if (update) {
-		if (status == OP_NO_CHANGE) {
-			return 1;
-		}
-		DWORD id = GetParentProcessId();
-		if (id == 0) {
-			WriteFile(err, "Could not get parent\n", 22, NULL, NULL);
-			return 4;
-		}
-		int res = SetProcessEnvironmentVariable(L"PATH", path_buffer.ptr, id);
-		if (res != 0) {
-			WriteFile(err, "Failed setting PATH\n", 20, NULL, NULL);
-			return 5;
-		}
-	} else {
-		WriteFileWide(out, path_buffer.ptr, path_buffer.size);
-		WriteFile(out, "\n", 1, NULL, NULL);
-	}
-	
-	if (status == OP_NO_CHANGE) {
-		return 1;
-	}
-	return 0;
+    path_buffer.capacity = 2000;
+    if (!get_envvar(L"Path", 20 * (argc - 1), &path_buffer)) {
+        _printf_h(err, "Could not get PATH\n");
+        return 6;
+    }
+
+    OpStatus status;
+
+    if (operation == OPERATION_ADD) {
+        status = paths_add(argc - 1, argv + 1, &path_buffer, before, expand);
+    } else if (operation == OPERATION_REMOVE) {
+        status = paths_remove(argc - 1, argv + 1, &path_buffer, before, expand);
+    } else {
+        status = paths_remove(argc - 1, argv + 1, &path_buffer, FALSE, expand);
+        if (status <= OP_NO_CHANGE) {
+            status =
+                paths_add(argc - 1, argv + 1, &path_buffer, before, expand);
+        }
+    }
+    if (status == OP_MISSSING_ARG) {
+        _printf_h(err, "Missing argument\n");
+        return 2;
+    }
+    if (status == OP_INVALID_PATH) {
+        _printf_h(err, "Invalid argument\n");
+        return 2;
+    }
+    if (status == OP_OUT_OF_MEMORY) {
+        _printf_h(err, "Out of memory\n");
+        return 3;
+    }
+    if (update) {
+        if (status == OP_NO_CHANGE) {
+            return 1;
+        }
+        DWORD id = GetParentProcessId();
+        if (id == 0) {
+            _printf_h(err, "Could not get parent\n");
+            return 4;
+        }
+        int res = SetProcessEnvironmentVariable(L"PATH", path_buffer.ptr, id);
+        if (res != 0) {
+            _printf_h(err, "Failed setting PATH\n");
+            return 5;
+        }
+    } else {
+        _printf_h(out, "%.*S\n", path_buffer.size, path_buffer.ptr);
+    }
+
+    if (status == OP_NO_CHANGE) {
+        return 1;
+    }
+    return 0;
 }
 
 int main() {
-	HANDLE heap = GetProcessHeap();
-	LPWSTR args = GetCommandLine();
-	int argc;
-	LPWSTR* argv = parse_command_line(args, &argc);
-	HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
-	HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
-	int status = pathc(argc, argv, out, err);
-	FlushFileBuffers(out);
-	FlushFileBuffers(err);
-	HeapFree(heap, 0, expanded);
-	HeapFree(heap, 0, path_buffer.ptr);
-	HeapFree(heap, 0, argv);
-	ExitProcess(status);
-	return status;
+    HANDLE heap = GetProcessHeap();
+    LPWSTR args = GetCommandLine();
+    int argc;
+    LPWSTR *argv = parse_command_line(args, &argc);
+    HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+    HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
+    int status = pathc(argc, argv, out, err);
+    FlushFileBuffers(out);
+    FlushFileBuffers(err);
+    HeapFree(heap, 0, expanded);
+    HeapFree(heap, 0, path_buffer.ptr);
+    HeapFree(heap, 0, argv);
+    ExitProcess(status);
+    return status;
 }
+
