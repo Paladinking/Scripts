@@ -610,7 +610,7 @@ typedef enum _Action {
     STACK_FILE_LIST, STACK_FILE_SAVE, STACK_FILE_LOAD, STACK_FILE_REMOVE
 } Action;
 
-const char* help_message  = "usage: envir [--help] <commnand> [Args]...\n\n"
+const char* help_message  = "usage: envir [--help] <commnand> [<arg>]\n\n"
                             "Saves or loads the environment from/to a stack local to the current terminal, or a global environment file.\n\n"
                             "The following commands are available:\n\n"
                             "  push           Push the current environment onto the environment stack\n"
