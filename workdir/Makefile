@@ -17,8 +17,6 @@ all: bin\pathc.exe \
 	bin\grep.bat \
 	bin\ls.bat \
 	bin\password.bat \
-#	bin\path-add.bat \
-#	bin\path-add.ps1 \
 	bin\pathc.bat \
 	bin\ports.bat \
 	bin\short.bat \
@@ -28,7 +26,9 @@ all: bin\pathc.exe \
 	bin\wget.bat \
 	bin\xkcd-keywords.txt \
 	bin\xkcd-titles.txt \
-	bin\xkcd.bat
+	bin\xkcd.bat \
+#	bin\path-add.bat \
+#	bin\path-add.ps1
 
 build:
 	-@ if NOT EXIST "build" mkdir "build"
