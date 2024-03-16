@@ -47,8 +47,8 @@ build\path_utils.obj: src\path_utils.c build
 build\string_conv.obj: src\string_conv.c build
 	cl /c $(CLFLAGS) src\string_conv.c
 
-bin\pathc.exe: src\pathc.c build\path_utils.obj build\args.obj build\ntutils.lib bin
-	cl $(CLFLAGS) /Fe:bin\pathc.exe src\pathc.c build\path_utils.obj build\args.obj build\ntutils.lib Kernel32.lib $(LINKFLAGS)
+bin\pathc.exe: src\pathc.c build\path_utils.obj build\args.obj build\printf.obj build\ntutils.lib bin
+	cl $(CLFLAGS) /Fe:bin\pathc.exe src\pathc.c build\printf.obj build\path_utils.obj build\args.obj build\ntutils.lib Kernel32.lib $(LINKFLAGS)
 bin\parse-template.exe: src\parse-template.c build\args.obj build\dynamic_string.obj build\ntutils.lib bin
 	cl $(CLFLAGS) /Fe:bin\parse-template.exe src\parse-template.c build\args.obj build\dynamic_string.obj build\ntutils.lib Kernel32.lib chkstk.obj $(LINKFLAGS)
 bin\path-add.exe: src\path-add.c build\ntutils.lib build\path_utils.obj build\string_conv.obj build\args.obj build\printf.obj bin
