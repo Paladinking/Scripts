@@ -3,6 +3,8 @@ import math
 import sys
 import collections
 import builtins
+import socket
+import struct
 from math import sin, cos, pi, sqrt, log, factorial
 
 old_bin = bin
@@ -161,6 +163,54 @@ def c_array(data):
     return "{" + str([c for c in data])[1:-1] + "}"
 
 
+def send_file(con, name, data=None):
+    if isinstance(con, tuple):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(3)
+        s.connect(con)
+        send_file(s, name, data)
+        s.close()
+        return
+    if isinstance(name, str):
+        b_name = name.encode('utf-8')
+    else:
+        b_name = name
+        name = name_b.decode('utf-8')
+    if isinstance(data, str):
+        data = data.encode('utf-8')
+    elif data is None:
+        with open(name, 'rb') as file:
+            data = file.read()
+    b_name_size = struct.pack('<Q', len(name))
+    b_data_size = struct.pack('<Q', len(data))
+    con.sendall(b_name_size)
+    con.sendall(b_name)
+    con.sendall(b_data_size)
+    con.sendall(data)
+
+def get_file(con, write=True):
+    if isinstance(con, tuple):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind(con)
+        s.listen(1)
+        c, addr = s.accept()
+        res = get_file(c, write)
+        c.close()
+        s.close()
+        return res
+    b_name_size = con.recv(8)
+    name_size = struct.unpack('<Q', b_name_size)[0]
+    name = b''
+    while len(name) < name_size:
+        name += con.recv(min(4096, name_size - len(name)))
+    b_data_size = con.recv(8)
+    data_size = struct.unpack('<Q', b_data_size)[0]
+    data = b''
+    while len(data) < data_size:
+        data += con.recv(min(4096, data_size - len(data)))
+    if write:
+        with open(name.decode('utf-8', errors='ignore'), 'wb') as file:
+            file.write(data)
 
 class Void:
     def __init__(*args, **kwars):
