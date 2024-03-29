@@ -16,7 +16,7 @@ DWORD find_flag(LPWSTR* argv, int* argc, LPCWSTR flag, LPCWSTR long_flag) {
 	return count;
 }
 
-LPWSTR* parse_command_line(const LPCWSTR args, int* argc) {
+LPWSTR* parse_command_line_with(const LPCWSTR args, int* argc, BOOL escape_backslash, BOOL escape_quotes) {
     HANDLE heap = GetProcessHeap();
     *argc = 0;
     size_t i = 0;
@@ -38,7 +38,7 @@ LPWSTR* parse_command_line(const LPCWSTR args, int* argc) {
             } else {
                 *argc += 1;
             }
-        } else if (args[i] == L'\\') {
+        } else if (escape_backslash && args[i] == L'\\') {
             size_t count = 1;
             while (args[i + count] == L'\\') {
                 count += 1;
@@ -91,7 +91,7 @@ LPWSTR* parse_command_line(const LPCWSTR args, int* argc) {
                 ++args_dest;
                 ++i;
                 break;
-            } else if (args[i] == L'\\') {
+            } else if (escape_backslash && args[i] == L'\\') {
                 int count = 1;
                 while (args[i + count] == L'\\') {
                     count += 1;
@@ -131,4 +131,10 @@ LPWSTR* parse_command_line(const LPCWSTR args, int* argc) {
         }
     }
     return argv;
+}
+
+
+
+LPWSTR* parse_command_line(const LPCWSTR args, int* argc) {
+    return parse_command_line_with(args, argc, TRUE, TRUE);
 }

@@ -189,7 +189,7 @@ int main() {
     HANDLE heap = GetProcessHeap();
     LPWSTR args = GetCommandLine();
     int argc;
-    LPWSTR *argv = parse_command_line(args, &argc);
+    LPWSTR *argv = parse_command_line_with(args, &argc, FALSE, TRUE);
     HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
     HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
     int status = pathc(argc, argv, out, err);
