@@ -1,11 +1,14 @@
 
 CLFLAGS=/Fo:build\ /GS- /GL /O1 /favor:AMD64 /nologo
 LINKFLAGS=/link /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main
+LINKFLAGSW=/link /NODEFAULTLIB /SUBSYSTEM:WINDOWS /LTCG /entry:main
 
 all: bin\pathc.exe \
 	bin\parse-template.exe \
 	bin\path-add.exe \
 	bin\envir.exe \
+	bin\search.exe \
+	bin\picker.exe \
 	bin\2to3.bat \
 	bin\cal.bat \
 	bin\cleanenv.bat \
@@ -55,6 +58,10 @@ bin\path-add.exe: src\path-add.c build\ntutils.lib build\path_utils.obj build\st
 	cl $(CLFLAGS) /Fe:bin\path-add.exe src\path-add.c build\ntutils.lib build\path_utils.obj build\string_conv.obj build\args.obj build\printf.obj Kernel32.lib $(LINKFLAGS)
 bin\envir.exe: src\envir.c build\ntutils.lib build\printf.obj build\args.obj build\path_utils.obj bin
 	cl $(CLFLAGS) /Fe:bin\envir.exe src\envir.c build\ntutils.lib build\printf.obj build\args.obj build\path_utils.obj Kernel32.lib $(LINKFLAGS)
+bin\search.exe: src\search.c build\ntutils.lib build\printf.obj build\args.obj bin
+	cl $(CLFLAGS) /Fe:bin\search.exe src\search.c build\ntutils.lib build\printf.obj build\args.obj build\path_utils.obj User32.lib Kernel32.lib $(LINKFLAGS)
+bin\picker.exe: src\picker.c build\printf.obj build\dynamic_string.obj build\ntutils.lib
+	cl $(CLFLAGS) /D _WINDOWS /Fe:bin\picker.exe src\picker.c build\ntutils.lib build\printf.obj build\dynamic_string.obj Kernel32.lib User32.lib Gdi32.lib $(LINKFLAGSW)
 
 build\ntutils.lib: build
 	lib /MACHINE:X64 /DEF /OUT:build\ntutils.lib /NAME:ntdll.dll\
@@ -64,7 +71,8 @@ build\ntutils.lib: build
 	 /EXPORT:towlower=towlower /EXPORT:_wcsicmp=_wcsicmp /EXPORT:_snwprintf_s=_snwprintf_s\
 	 /EXPORT:_snprintf_s=_snprintf_s /EXPORT:_vscwprintf=_vscwprintf /EXPORT:_vsnprintf:_vsnprintf\
 	 /EXPORT:_vsnwprintf=_vsnwprintf /EXPORT:_vsnprintf=_vsnprintf /EXPORT:_vscprintf=_vscprintf\
-	 /EXPORT:memset=memset /EXPORT:wcscmp=wcscmp /EXPORT:strcmp=strcmp
+	 /EXPORT:memset=memset /EXPORT:wcscmp=wcscmp /EXPORT:strcmp=strcmp\
+	 /EXPORT:_fltused=_fltused
 
 bin\err.exe: script\err.exe bin
 	type script\err.exe > bin\err.exe
