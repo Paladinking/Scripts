@@ -25,6 +25,7 @@ bool DynamicStringCreate(DynamicString* s);
 
 void DynamicStringFree(DynamicString* s);
 
+bool DynamicStringCopy(DynamicString* dest, DynamicString* source);
 
 typedef struct _DynamicWString {
 	wchar_t* buffer;
@@ -36,7 +37,7 @@ bool DynamicWStringAppend(DynamicWString* s, const wchar_t c);
 
 bool DynamicWStringExtend(DynamicWString*s, const wchar_t* c_str);
 
-bool DynamicWStringInsert(DynamicWString* s, unsigned ix, const char c);
+bool DynamicWStringInsert(DynamicWString* s, unsigned ix, const wchar_t c);
 
 void DynamicWStringPop(DynamicWString* s, unsigned count);
 
@@ -48,3 +49,4 @@ bool DynamicWStringCreate(DynamicWString* s);
 
 void DynamicWStringFree(DynamicWString* s);
 
+bool DynamicWStringCopy(DynamicWString* dest, DynamicWString* source);
