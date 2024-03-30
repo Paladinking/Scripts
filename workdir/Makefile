@@ -1,7 +1,7 @@
 
 CLFLAGS=/Fo:build\ /GS- /GL /O1 /favor:AMD64 /nologo
-LINKFLAGS=/link /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main
-LINKFLAGSW=/link /NODEFAULTLIB /SUBSYSTEM:WINDOWS /LTCG /entry:main
+LINKFLAGS=Kernel32.lib /link /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main
+LINKFLAGSW=Kernel32.lib /link /NODEFAULTLIB /SUBSYSTEM:WINDOWS /LTCG /entry:main
 
 all: bin\pathc.exe \
 	bin\parse-template.exe \
@@ -9,6 +9,7 @@ all: bin\pathc.exe \
 	bin\envir.exe \
 	bin\search.exe \
 	bin\picker.exe \
+	bin\path-edit.exe \
 	bin\2to3.bat \
 	bin\cal.bat \
 	bin\cleanenv.bat \
@@ -39,29 +40,33 @@ build:
 bin:
 	-@ if NOT EXIST "bin" mkdir "bin"
 	
-build\dynamic_string.obj: src\dynamic_string.c build
+build\dynamic_string.obj: src\dynamic_string.c src\dynamic_string.h build
 	cl /c $(CLFLAGS) src\dynamic_string.c
-build\args.obj: src\args.c build
+build\args.obj: src\args.c src\args.h build
 	cl /c $(CLFLAGS) src\args.c
-build\printf.obj: src\printf.c build
+build\printf.obj: src\printf.c src\printf.h build
 	cl /c $(CLFLAGS) src\printf.c
-build\path_utils.obj: src\path_utils.c build
+build\path_utils.obj: src\path_utils.c src\path_utils.h src\string_conv.h build
 	cl /c $(CLFLAGS) src\path_utils.c
-build\string_conv.obj: src\string_conv.c build
+build\string_conv.obj: src\string_conv.c src\string_conv.h build
 	cl /c $(CLFLAGS) src\string_conv.c
+build\cli.obj: src\cli.c src\cli.h src\dynamic_string.h build
+	cl /c $(CLFLAGS) src\cli.c
 
 bin\pathc.exe: src\pathc.c build\path_utils.obj build\args.obj build\printf.obj build\ntutils.lib bin
-	cl $(CLFLAGS) /Fe:bin\pathc.exe src\pathc.c build\printf.obj build\path_utils.obj build\args.obj build\ntutils.lib Kernel32.lib $(LINKFLAGS)
+	cl $(CLFLAGS) /Fe:bin\pathc.exe src\pathc.c build\printf.obj build\path_utils.obj build\args.obj build\ntutils.lib $(LINKFLAGS)
 bin\parse-template.exe: src\parse-template.c build\args.obj build\dynamic_string.obj build\ntutils.lib bin
-	cl $(CLFLAGS) /Fe:bin\parse-template.exe src\parse-template.c build\args.obj build\dynamic_string.obj build\ntutils.lib Kernel32.lib chkstk.obj $(LINKFLAGS)
+	cl $(CLFLAGS) /Fe:bin\parse-template.exe src\parse-template.c build\args.obj build\dynamic_string.obj build\ntutils.lib chkstk.obj $(LINKFLAGS)
 bin\path-add.exe: src\path-add.c build\ntutils.lib build\path_utils.obj build\string_conv.obj build\args.obj build\printf.obj bin
-	cl $(CLFLAGS) /Fe:bin\path-add.exe src\path-add.c build\ntutils.lib build\path_utils.obj build\string_conv.obj build\args.obj build\printf.obj Kernel32.lib $(LINKFLAGS)
+	cl $(CLFLAGS) /Fe:bin\path-add.exe src\path-add.c build\ntutils.lib build\path_utils.obj build\string_conv.obj build\args.obj build\printf.obj $(LINKFLAGS)
 bin\envir.exe: src\envir.c build\ntutils.lib build\printf.obj build\args.obj build\path_utils.obj bin
-	cl $(CLFLAGS) /Fe:bin\envir.exe src\envir.c build\ntutils.lib build\printf.obj build\args.obj build\path_utils.obj Kernel32.lib $(LINKFLAGS)
+	cl $(CLFLAGS) /Fe:bin\envir.exe src\envir.c build\ntutils.lib build\printf.obj build\args.obj build\path_utils.obj $(LINKFLAGS)
 bin\search.exe: src\search.c build\ntutils.lib build\printf.obj build\args.obj bin
-	cl $(CLFLAGS) /Fe:bin\search.exe src\search.c build\ntutils.lib build\printf.obj build\args.obj build\path_utils.obj User32.lib Kernel32.lib $(LINKFLAGS)
+	cl $(CLFLAGS) /Fe:bin\search.exe src\search.c build\ntutils.lib build\printf.obj build\args.obj build\path_utils.obj User32.lib $(LINKFLAGS)
 bin\picker.exe: src\picker.c build\printf.obj build\dynamic_string.obj build\ntutils.lib
-	cl $(CLFLAGS) /D _WINDOWS /Fe:bin\picker.exe src\picker.c build\ntutils.lib build\printf.obj build\dynamic_string.obj Kernel32.lib User32.lib Gdi32.lib $(LINKFLAGSW)
+	cl $(CLFLAGS) /D _WINDOWS /Fe:bin\picker.exe src\picker.c build\ntutils.lib build\printf.obj build\dynamic_string.obj User32.lib Gdi32.lib $(LINKFLAGSW)
+bin\path-edit.exe: src\path-edit.c build\cli.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib
+	cl $(CLFLAGS) /Fe:bin\path-edit.exe src\path-edit.c build\cli.obj build\printf.obj build\dynamic_string.obj build\ntutils.lib $(LINKFLAGS) 
 
 build\ntutils.lib: build
 	lib /MACHINE:X64 /DEF /OUT:build\ntutils.lib /NAME:ntdll.dll\

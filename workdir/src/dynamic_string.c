@@ -86,6 +86,22 @@ void DynamicStringFree(DynamicString *s) {
     s->buffer = NULL;
 }
 
+bool DynamicStringCopy(DynamicString* dest, DynamicString* source) {
+    HANDLE heap = GetProcessHeap();
+    dest->length = source->length;
+    dest->capacity = 0;
+    while (dest->capacity <= source->length) {
+        dest->capacity = dest->capacity * 2;
+    }
+    dest->buffer = HeapAlloc(heap, 0, dest->capacity);
+    if (dest->buffer == NULL) {
+        dest->capacity = 0;
+        dest->length = 0;
+        return false;
+    }
+    memcpy(dest->buffer, source->buffer, dest->length + 1);
+    return true;
+}
 
 bool DynamicWStringAppend(DynamicWString *s, const wchar_t c) {
     if (s->capacity == s->length + 1) {
@@ -115,7 +131,7 @@ bool DynamicWStringExtend(DynamicWString *s, const wchar_t *c_str) {
     return true;
 }
 
-bool DynamicWStringInsert(DynamicWString* s, unsigned ix, const char c) {
+bool DynamicWStringInsert(DynamicWString* s, unsigned ix, const wchar_t c) {
     if (!DynamicWStringAppend(s, c)) {
         return false;
     }
@@ -172,3 +188,19 @@ void DynamicWStringFree(DynamicWString *s) {
     s->buffer = NULL;
 }
 
+bool DynamicWStringCopy(DynamicWString* dest, DynamicWString* source) {
+    HANDLE heap = GetProcessHeap();
+    dest->length = source->length;
+    dest->capacity = 0;
+    while (dest->capacity <= source->length) {
+        dest->capacity = dest->capacity * 2;
+    }
+    dest->buffer = HeapAlloc(heap, 0, dest->capacity * sizeof(wchar_t));
+    if (dest->buffer == NULL) {
+        dest->capacity = 0;
+        dest->length = 0;
+        return false;
+    }
+    memcpy(dest->buffer, source->buffer, (dest->length + 1) * sizeof(wchar_t));
+    return true;
+}
