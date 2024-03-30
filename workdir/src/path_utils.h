@@ -44,7 +44,7 @@ typedef enum _PathStatus {
 
 /* 
  Makes sure a path is (probably) a valid Windows path.
- Replaces L'/' with L'\'.
+ Replaces L'/' with L'\'. Removes trailing L'\'.
  Does not check weird cases like CON.
 */
 PathStatus validate(LPWSTR path);
