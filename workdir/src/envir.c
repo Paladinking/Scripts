@@ -684,7 +684,7 @@ int main() {
         flag = find_flag(argv, &argc, L"-f", L"--force") > 0;
     }
     if (action >= STACK_FILE_SAVE && argc < 3) {
-        _printf_h(err, "Missing argument, %d, %d\n", action, STACK_FILE_SAVE);
+        _printf_h(err, "Missing argument\n");
         status = ERROR_INVALID_PARAMETER;
         goto end;
     } else if ((action < STACK_FILE_SAVE && argc > 2) || argc > 3) {
