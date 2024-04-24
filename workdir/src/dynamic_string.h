@@ -37,6 +37,8 @@ bool DynamicWStringAppend(DynamicWString* s, const wchar_t c);
 
 bool DynamicWStringExtend(DynamicWString*s, const wchar_t* c_str);
 
+bool DynamicWStringAppendCount(DynamicWString* s, const wchar_t* buf, unsigned count);
+
 bool DynamicWStringInsert(DynamicWString* s, unsigned ix, const wchar_t c);
 
 void DynamicWStringPop(DynamicWString* s, unsigned count);
@@ -50,3 +52,7 @@ bool DynamicWStringCreate(DynamicWString* s);
 void DynamicWStringFree(DynamicWString* s);
 
 bool DynamicWStringCopy(DynamicWString* dest, DynamicWString* source);
+
+bool DynamicWStringReserve(DynamicWString* s, size_t count);
+
+
