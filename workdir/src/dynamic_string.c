@@ -104,15 +104,8 @@ bool DynamicStringCopy(DynamicString* dest, DynamicString* source) {
 }
 
 bool DynamicWStringAppend(DynamicWString *s, const wchar_t c) {
-    if (s->capacity == s->length + 1) {
-        HANDLE heap = GetProcessHeap();
-        unsigned capacity = s->capacity * 2;
-        wchar_t *buffer = HeapReAlloc(heap, 0, s->buffer, capacity * sizeof(wchar_t));
-        if (buffer == NULL) {
-            return false;
-        }
-        s->buffer = buffer;
-        s->capacity = capacity;
+    if (!DynamicWStringReserve(s, s->length + 1)) {
+        return false;
     }
     s->buffer[s->length] = c;
     s->length += 1;
@@ -121,20 +114,20 @@ bool DynamicWStringAppend(DynamicWString *s, const wchar_t c) {
 }
 
 bool DynamicWStringExtend(DynamicWString *s, const wchar_t *c_str) {
-    unsigned index = 0;
-    while (c_str[index] != L'\0') {
-        if (!DynamicWStringAppend(s, c_str[index])) {
-            return false;
-        }
-        ++index;
+    size_t len = wcslen(c_str);
+    if (!DynamicWStringReserve(s, s->length + len)) {
+        return false;
     }
+    memcpy(s->buffer + s->length, c_str, (len + 1) * sizeof(wchar_t));
+    s->length += len;
     return true;
 }
 
 bool DynamicWStringInsert(DynamicWString* s, unsigned ix, const wchar_t c) {
-    if (!DynamicWStringAppend(s, c)) {
+    if (!DynamicWStringReserve(s, s->length + 1)) {
         return false;
     }
+    s->length += 1;
     memmove(s->buffer + ix + 1, s->buffer + ix, (s->length - ix - 1) * sizeof(wchar_t));
     s->buffer[ix] = c;
     return true;
@@ -204,3 +197,31 @@ bool DynamicWStringCopy(DynamicWString* dest, DynamicWString* source) {
     memcpy(dest->buffer, source->buffer, (dest->length + 1) * sizeof(wchar_t));
     return true;
 }
+
+bool DynamicWStringAppendCount(DynamicWString* s, const wchar_t* buf, unsigned count) {
+    if (!DynamicWStringReserve(s, s->length + count)) {
+        return FALSE;
+    }
+    memcpy(s->buffer + s->length, buf, count * sizeof(wchar_t));
+    s->length += count;
+    s->buffer[s->length] = L'\0';
+    return TRUE;
+}
+
+
+bool DynamicWStringReserve(DynamicWString* s, size_t count) {
+    if (s->capacity <= count) {
+        size_t new_cap = s->capacity * 2;
+        while (new_cap <= count) {
+            new_cap *= 2;
+        }
+        wchar_t* buf = HeapReAlloc(GetProcessHeap(), 0, s->buffer, new_cap * sizeof(wchar_t));
+        if (buf == NULL) {
+            return false;
+        }
+        s->buffer = buf;
+        s->capacity = new_cap;
+    }
+    return true;
+}
+

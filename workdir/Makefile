@@ -52,6 +52,8 @@ build\string_conv.obj: src\string_conv.c src\string_conv.h build
 	cl /c $(CLFLAGS) src\string_conv.c
 build\cli.obj: src\cli.c src\cli.h src\dynamic_string.h build
 	cl /c $(CLFLAGS) src\cli.c
+build\unicode_width.obj: src\unicode_width.c src\unicode_width.h build
+	cl /c $(CLFLAGS) src\unicode_width.c
 
 bin\pathc.exe: src\pathc.c build\path_utils.obj build\args.obj build\printf.obj build\ntutils.lib bin
 	cl $(CLFLAGS) /Fe:bin\pathc.exe src\pathc.c build\printf.obj build\path_utils.obj build\args.obj build\ntutils.lib $(LINKFLAGS)
@@ -65,8 +67,9 @@ bin\search.exe: src\search.c build\ntutils.lib build\printf.obj build\args.obj b
 	cl $(CLFLAGS) /Fe:bin\search.exe src\search.c build\ntutils.lib build\printf.obj build\args.obj build\path_utils.obj User32.lib $(LINKFLAGS)
 bin\picker.exe: src\picker.c build\printf.obj build\dynamic_string.obj build\ntutils.lib
 	cl $(CLFLAGS) /D _WINDOWS /Fe:bin\picker.exe src\picker.c build\ntutils.lib build\printf.obj build\dynamic_string.obj User32.lib Gdi32.lib $(LINKFLAGSW)
-bin\path-edit.exe: src\path-edit.c build\cli.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib
-	cl $(CLFLAGS) /Fe:bin\path-edit.exe src\path-edit.c build\cli.obj build\printf.obj build\dynamic_string.obj build\ntutils.lib $(LINKFLAGS) 
+bin\path-edit.exe: src\path-edit.c build\cli.obj build\dynamic_string.obj build\printf.obj build\unicode_width.obj build\ntutils.lib
+	cl $(CLFLAGS) /Fe:bin\path-edit.exe src\path-edit.c build\cli.obj build\printf.obj build\dynamic_string.obj build\unicode_width.obj build\ntutils.lib chkstk.obj $(LINKFLAGS) 
+
 
 build\ntutils.lib: build
 	lib /MACHINE:X64 /DEF /OUT:build\ntutils.lib /NAME:ntdll.dll\
@@ -77,7 +80,7 @@ build\ntutils.lib: build
 	 /EXPORT:_snprintf_s=_snprintf_s /EXPORT:_vscwprintf=_vscwprintf /EXPORT:_vsnprintf:_vsnprintf\
 	 /EXPORT:_vsnwprintf=_vsnwprintf /EXPORT:_vsnprintf=_vsnprintf /EXPORT:_vscprintf=_vscprintf\
 	 /EXPORT:memset=memset /EXPORT:wcscmp=wcscmp /EXPORT:strcmp=strcmp\
-	 /EXPORT:_fltused=_fltused
+	 /EXPORT:_fltused=_fltused /EXPORT:wcschr=wcschr
 
 bin\err.exe: script\err.exe bin
 	type script\err.exe > bin\err.exe
