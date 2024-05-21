@@ -54,18 +54,15 @@ vnoremap <A-up> :m '<-2<CR>gv=gv
 
 nnoremap <A-j> :m .+1<CR>==
 nnoremap <A-k> :m .-2<CR>==
-inoremap <A-j> <Esc>:m .+1<CR
-inoremap <A-k> <Esc>:m .-2<CR>=
+inoremap <A-j> <Esc>:m .+1<CR>==gi
+inoremap <A-k> <Esc>:m .-2<CR>==gi
 vnoremap <A-j> :m '>+1<CR>gv=
 vnoremap <A-k> :m '<-2<CR>gv=gv
 
 vnoremap <C-c> "*y
 
-vnoremap <Bs> <Del>
-vnoremap <C-x> <Del>
-
-nnoremap <C-d> yyp
-inoremap <C-d> <Esc>yyp<CR>==gi
+nnoremap <A-d> yyp
+inoremap <A-d> <Esc>yyp<CR>==gi
 
 nnoremap <C-q>  :let @/ = ""<CR>==
 nnoremap <C-t> :NvimTreeOpen<CR>
@@ -82,9 +79,6 @@ hi link markdownError NormalFloat
 
 set grepprg=grep\ -nH
 command! -nargs=1 Search silent grep! -rIi <args> | copen
-inoremap <C-F> <Esc>:Search 
-vnoremap <C-F> :Search 
-nnoremap <C-F> :Search 
 
 vnoremap q <C-v>
 
@@ -192,9 +186,9 @@ local capabilities = require('cmp_nvim_lsp').default_capabilities()
 --    capabilities = capabilities
 --}
 
-require('lspconfig')['sumneko_lua'].setup {
-    capabilities = capabilities
-}
+--require('lspconfig')['sumneko_lua'].setup {
+--    capabilities = capabilities
+--}
 local nvim_lsp = require'lspconfig'
 
 nvim_lsp.rust_analyzer.setup({
