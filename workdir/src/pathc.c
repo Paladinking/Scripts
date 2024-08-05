@@ -83,7 +83,8 @@ OpStatus paths_remove(int argc, LPWSTR *argv, PathBuffer *path_buffer,
 typedef enum _OperationType {
     OPERATION_ADD,
     OPERATION_REMOVE,
-    OPERATION_MOVE
+    OPERATION_MOVE,
+    OPERATION_PRUNE
 } OperationType;
 
 PathBuffer path_buffer = {NULL, 0, 0};
@@ -95,7 +96,8 @@ const char *help_message =
     "The following commands are available:\n\n"
     "  add, a              Add all filepaths in <args> to PATH\n"
     "  remove, r           Remove all filepaths in <args> from PATH\n"
-    "  move, m             Move all filepaths in <args> as if using add, then remove\n\n"
+    "  move, m             Move all filepaths in <args> as if using add, then remove\n"
+    "  prune, p            Remove all duplicate or invalid filepaths in PATH\n\n"
     "The following flags can be used:\n\n"
     "  -h, --help          Displays this help message\n"
     "  -n, --no-expand     Do not expand relative paths to an absolute path before adding it\n"
@@ -120,6 +122,8 @@ int pathc(int argc, LPWSTR *argv, HANDLE out, HANDLE err) {
         operation = OPERATION_REMOVE;
     } else if (wcscmp(argv[1], L"m") == 0 || wcscmp(argv[1], L"move") == 0) {
         operation = OPERATION_MOVE;
+    } else if (wcscmp(argv[1], L"p") == 0 || wcscmp(argv[1], L"prune") == 0) {
+        operation = OPERATION_PRUNE;
     } else {
         _printf_h(err, "Invalid operation type\n");
         return 2;
@@ -136,18 +140,20 @@ int pathc(int argc, LPWSTR *argv, HANDLE out, HANDLE err) {
         return 6;
     }
 
-    OpStatus status;
+    OpStatus status = OP_NO_CHANGE;
 
     if (operation == OPERATION_ADD) {
         status = paths_add(argc - 1, argv + 1, &path_buffer, before, expand);
     } else if (operation == OPERATION_REMOVE) {
         status = paths_remove(argc - 1, argv + 1, &path_buffer, before, expand);
-    } else {
+    } else if (operation == OPERATION_MOVE) {
         status = paths_remove(argc - 1, argv + 1, &path_buffer, FALSE, expand);
         if (status <= OP_NO_CHANGE) {
             status =
                 paths_add(argc - 1, argv + 1, &path_buffer, before, expand);
         }
+    } else if (operation == OPERATION_PRUNE) {
+        status = path_prune(&path_buffer);
     }
     if (status == OP_MISSSING_ARG) {
         _printf_h(err, "Missing argument\n");
