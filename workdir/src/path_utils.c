@@ -221,6 +221,87 @@ PathStatus validate(LPWSTR path) {
     return needs_quotes && !has_quotes ? PATH_NEEDS_QUOTES : PATH_VALID;
 }
 
+OpStatus path_prune(PathBuffer *path) {
+    PathBuffer res;
+    res.ptr = HeapAlloc(GetProcessHeap(), 0, path->capacity * sizeof(WCHAR));
+    res.capacity = path->capacity;
+    res.size = 0;
+
+    LPWSTR work_buf = HeapAlloc(GetProcessHeap(), 0, 256 * sizeof(WCHAR));
+    unsigned work_cap = 256;
+
+    unsigned i = 0;
+
+    OpStatus final_status = OP_NO_CHANGE;
+    while (path->ptr[i] != L'\0') {
+        WCHAR endc = L';';
+        if (path->ptr[i] == L'"') {
+            endc = L'"';
+            ++i;
+        }
+        unsigned begin = i;
+        while (1) {
+            if (path->ptr[i] == L'\0' || path->ptr[i] == endc) {
+                break;
+            }
+            ++i;
+        }
+
+        unsigned size = i - begin;
+        if (size + 1 > work_cap) {
+            HeapFree(GetProcessHeap(), 0, work_buf);
+            work_buf = HeapAlloc(GetProcessHeap(), 0, (size + 1) * sizeof(WCHAR));
+            work_cap = size + 1;
+            if (work_buf == NULL) {
+                HeapFree(GetProcessHeap(), 0, res.ptr);
+                return OP_OUT_OF_MEMORY;
+            }
+        }
+        memcpy(work_buf, path->ptr + begin, size * sizeof(WCHAR));
+        work_buf[size] = L'\0';
+        PathStatus path_status = validate(work_buf);
+
+        if (path_status != PATH_INVALID) {
+            if (res.size == 0) {
+                if (size + 2 > res.capacity) {
+                    res.capacity = size + 2;
+                    HeapFree(GetProcessHeap(), 0, res.ptr);
+                    res.ptr = HeapAlloc(GetProcessHeap(), 0, res.capacity * sizeof(WCHAR));
+                }
+                res.size = size + 1;
+                memcpy(res.ptr, work_buf, size * sizeof(WCHAR));
+                res.ptr[size] = L';';
+                res.ptr[size + 1] = '\0';
+            } else {
+                OpStatus status = path_add(work_buf, &res, FALSE, FALSE);
+                if (status > OP_NO_CHANGE) {
+                    HeapFree(GetProcessHeap(), 0, work_buf);
+                    HeapFree(GetProcessHeap(), 0, res.ptr);
+                    return status;
+                }
+                if (status == OP_SUCCESS) {
+                    final_status = OP_SUCCESS;
+                }
+            }
+        }
+
+        while (path->ptr[i] != L';') {
+            if (path->ptr[i] == L'\0') {
+                break;
+            }
+            ++i;
+        }
+        ++i;
+    }
+    HeapFree(GetProcessHeap(), 0, work_buf);
+    HeapFree(GetProcessHeap(), 0, path->ptr);
+    path->ptr = res.ptr;
+    path->size = res.size;
+    path->capacity = res.capacity;
+
+    return final_status;
+}
+
 OpStatus path_remove(LPWSTR arg, PathBuffer *path_buffer, BOOL expand) {
     LPWSTR path;
     if (expand) {

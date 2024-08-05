@@ -25,7 +25,7 @@ typedef struct _EnvBuffer {
  If res->ptr is NULL and the function fails, res->capacity is set to 0.
  If res->ptr != NULL and the function fails, res->capacity is unchanged.
  The value res->capacity + hint is used as an initial capacity if res->ptr is NULL.
- The value in hint chould indicate how much the buffer is expected to grow.
+ The value in hint should indicate how much the buffer is expected to grow.
 */
 BOOL get_envvar(LPCWSTR name, DWORD hint, WideBuffer* res);
 
@@ -58,6 +58,8 @@ OpStatus expand_path(LPWSTR path, LPWSTR* dest);
 OpStatus path_add(LPWSTR arg, PathBuffer* path, BOOL before, BOOL expand);
 
 OpStatus path_remove(LPWSTR arg, PathBuffer* path, BOOL expand);
+
+OpStatus path_prune(PathBuffer* path);
 
 LPWSTR contains(LPWSTR path, LPCWSTR dir);
 
