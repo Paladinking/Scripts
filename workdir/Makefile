@@ -10,6 +10,7 @@ all: bin\pathc.exe \
 	bin\search.exe \
 	bin\picker.exe \
 	bin\path-edit.exe \
+	bin\path-select.exe \
 	bin\2to3.bat \
 	bin\cal.bat \
 	bin\cleanenv.bat \
@@ -68,8 +69,16 @@ bin\search.exe: src\search.c build\ntutils.lib build\printf.obj build\args.obj b
 bin\picker.exe: src\picker.c build\printf.obj build\dynamic_string.obj build\ntutils.lib
 	cl $(CLFLAGS) /D _WINDOWS /Fe:bin\picker.exe src\picker.c build\ntutils.lib build\printf.obj build\dynamic_string.obj User32.lib Gdi32.lib $(LINKFLAGSW)
 bin\path-edit.exe: src\path-edit.c build\cli.obj build\dynamic_string.obj build\printf.obj build\unicode_width.obj build\ntutils.lib
-	cl $(CLFLAGS) /Fe:bin\path-edit.exe src\path-edit.c build\cli.obj build\printf.obj build\dynamic_string.obj build\unicode_width.obj build\ntutils.lib chkstk.obj $(LINKFLAGS) 
+	cl $(CLFLAGS) /Fe:bin\path-edit.exe src\path-edit.c build\cli.obj build\printf.obj build\dynamic_string.obj build\unicode_width.obj build\ntutils.lib chkstk.obj $(LINKFLAGS)
+bin\path-select.exe: src\path-select.c build\printf.obj build\args.obj build\path_utils.obj build\ntutils.lib build\kernelbase.lib
+	cl $(CLFLAGS) /Fe:bin\path-select.exe src\path-select.c build\printf.obj build\args.obj build\path_utils.obj build\ntutils.lib build\kernelbase.lib $(LINKFLAGS)
 
+bin\test.exe: src\test.c build\args.obj build\ntutils.lib
+	cl $(CLFLAGS) /Fe:bin\test.exe src\test.c build\args.obj build\ntutils.lib $(LINKFLAGS)
+
+build\kernelbase.lib: build
+	lib /MACHINE:X64 /DEF /OUT:build\kernelbase.lib /NAME:kernelbase.dll\
+	 /EXPORT:PathMatchSpecW=PathMatchSpecW
 
 build\ntutils.lib: build
 	lib /MACHINE:X64 /DEF /OUT:build\ntutils.lib /NAME:ntdll.dll\
@@ -80,7 +89,8 @@ build\ntutils.lib: build
 	 /EXPORT:_snprintf_s=_snprintf_s /EXPORT:_vscwprintf=_vscwprintf /EXPORT:_vsnprintf:_vsnprintf\
 	 /EXPORT:_vsnwprintf=_vsnwprintf /EXPORT:_vsnprintf=_vsnprintf /EXPORT:_vscprintf=_vscprintf\
 	 /EXPORT:memset=memset /EXPORT:wcscmp=wcscmp /EXPORT:strcmp=strcmp\
-	 /EXPORT:_fltused=_fltused /EXPORT:wcschr=wcschr
+	 /EXPORT:_fltused=_fltused /EXPORT:wcschr=wcschr /EXPORT:wcsrchr=wcsrchr\
+	 /EXPORT:strtol=strtol
 
 bin\err.exe: script\err.exe bin
 	type script\err.exe > bin\err.exe

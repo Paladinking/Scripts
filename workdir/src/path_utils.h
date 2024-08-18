@@ -22,7 +22,7 @@ typedef struct _EnvBuffer {
  Gets an environment variable <name> from the process environment block.
  Returns TRUE on success.
  If the function fails, res->ptr and res->size are not changed.
- If res->ptr is NULL and the function fails, res->capacity is set to 0.
+ If res->ptr == NULL and the function fails, res->capacity is set to 0.
  If res->ptr != NULL and the function fails, res->capacity is unchanged.
  The value res->capacity + hint is used as an initial capacity if res->ptr is NULL.
  The value in hint should indicate how much the buffer is expected to grow.

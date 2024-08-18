@@ -386,7 +386,7 @@ OpStatus path_add(LPWSTR arg, PathBuffer *path_buffer, BOOL before,
         (path_buffer->ptr)[size + extra_size - 1] = L';';
         offset = 0;
     } else {
-        if ((path_buffer->ptr)[path_buffer->size - 1] != L';') {
+        if (path_buffer->size == 0 || (path_buffer->ptr)[path_buffer->size - 1] != L';') {
             ++extra_size;
         }
         if (path_buffer->size + size + extra_size + 1 > path_buffer->capacity) {
@@ -402,7 +402,7 @@ OpStatus path_add(LPWSTR arg, PathBuffer *path_buffer, BOOL before,
             path_buffer->ptr = new_buffer;
         }
         offset = path_buffer->size;
-        if ((path_buffer->ptr)[path_buffer->size - 1] != L';') {
+        if (path_buffer->size == 0 || (path_buffer->ptr)[path_buffer->size - 1] != L';') {
             (path_buffer->ptr)[path_buffer->size] = L';';
             ++offset;
         }
