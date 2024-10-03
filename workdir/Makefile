@@ -90,7 +90,7 @@ build\ntutils.lib: build
 	 /EXPORT:_vsnwprintf=_vsnwprintf /EXPORT:_vsnprintf=_vsnprintf /EXPORT:_vscprintf=_vscprintf\
 	 /EXPORT:memset=memset /EXPORT:wcscmp=wcscmp /EXPORT:strcmp=strcmp\
 	 /EXPORT:_fltused=_fltused /EXPORT:wcschr=wcschr /EXPORT:wcsrchr=wcsrchr\
-	 /EXPORT:strtol=strtol
+	 /EXPORT:strtol=strtol /EXPORT:wcsncmp=wcsncmp
 
 bin\err.exe: script\err.exe bin
 	type script\err.exe > bin\err.exe

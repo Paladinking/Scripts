@@ -89,20 +89,24 @@ typedef enum _OperationType {
 
 PathBuffer path_buffer = {NULL, 0, 0};
 
+#define USAGE "usage: pathc [-h | --help] [-n | --no-expand] [-u | --update] [-b | --before] [-v | --variable <var>] <command> [<args>]\n"
+
 const char *help_message =
-    "usage: pathc [-h | --help] [-n | --no-expand] [-u | --update] [-b | --before] <command> [<args>]\n\n"
+    USAGE "\n"
     "Adds or removes a file path to PATH. By default, paths are added at the end of PATH, and the new PATH is printed to stdout.\n"
     "Does not add paths that already exists in PATH.\n\n"
     "The following commands are available:\n\n"
-    "  add, a              Add all filepaths in <args> to PATH\n"
-    "  remove, r           Remove all filepaths in <args> from PATH\n"
-    "  move, m             Move all filepaths in <args> as if using add, then remove\n"
-    "  prune, p            Remove all duplicate or invalid filepaths in PATH\n\n"
+    "  add, a                Add all filepaths in <args> to PATH\n"
+    "  remove, r             Remove all filepaths in <args> from PATH\n"
+    "  move, m               Move all filepaths in <args> as if using remove followed by add\n"
+    "  prune, p              Remove all duplicate or invalid filepaths in PATH\n\n"
     "The following flags can be used:\n\n"
-    "  -h, --help          Displays this help message\n"
-    "  -n, --no-expand     Do not expand relative paths to an absolute path before adding it\n"
-    "  -u, --update        Apply the new PATH to the parent process environment instead of printing it\n"
-    "  -b, --before        Add paths to the beginning of PATH";
+    "  -h, --help            Displays this help message\n"
+    "  -n, --no-expand       Do not expand relative paths to an absolute path before adding it\n"
+    "  -u, --update          Apply the new PATH to the parent process environment instead of printing it\n"
+    "  -b, --before          Add paths to the beginning of PATH\n"
+    "  -v, --variable <var>  Modify environment variable <var> instead of PATH";
+
 
 int pathc(int argc, LPWSTR *argv, HANDLE out, HANDLE err) {
     if (find_flag(argv, &argc, L"-h", L"--help")) {
@@ -111,8 +115,21 @@ int pathc(int argc, LPWSTR *argv, HANDLE out, HANDLE err) {
     }
 
     if (argc < 2) {
-        _printf_h(err, "Missing operation type\nusage: pathc [-h | --help] [-n | --no-expand] [-u | --update] [-b | --before] <command> [<args>]\n");
+        _printf_h(err, "Missing operation type\n" USAGE);
         return 2;
+    }
+
+    BOOL expand = !find_flag(argv, &argc, L"-n", L"--no-expand");
+    BOOL before = find_flag(argv, &argc, L"-b", L"--before");
+    BOOL update = find_flag(argv, &argc, L"-u", L"--update");
+
+    LPWSTR var;
+    int found = find_flag_value(argv, &argc, L"-v", L"--variable", &var);
+    if (found == -1) {
+        _printf_h(err, "Missing variable value\n");
+        return 2;
+    } else if (!found) {
+        var = L"PATH";
     }
 
     OperationType operation;
@@ -128,15 +145,12 @@ int pathc(int argc, LPWSTR *argv, HANDLE out, HANDLE err) {
         _printf_h(err, "Invalid operation type\n");
         return 2;
     }
-    BOOL expand = !find_flag(argv, &argc, L"-n", L"--no-expand");
-    BOOL before = find_flag(argv, &argc, L"-b", L"--before");
-    BOOL update = find_flag(argv, &argc, L"-u", L"--update");
 
     HANDLE heap = GetProcessHeap();
 
     path_buffer.capacity = 2000;
-    if (!get_envvar(L"Path", 20 * (argc - 1), &path_buffer)) {
-        _printf_h(err, "Could not get PATH\n");
+    if (!get_envvar(var, 20 * (argc - 1), &path_buffer)) {
+        _printf_h(err, "Could not get %s\n", var);
         return 6;
     }
 
@@ -176,9 +190,9 @@ int pathc(int argc, LPWSTR *argv, HANDLE out, HANDLE err) {
             _printf_h(err, "Could not get parent\n");
             return 4;
         }
-        int res = SetProcessEnvironmentVariable(L"PATH", path_buffer.ptr, id);
+        int res = SetProcessEnvironmentVariable(var, path_buffer.ptr, id);
         if (res != 0) {
-            _printf_h(err, "Failed setting PATH\n");
+            _printf_h(err, "Failed setting %s\n", var);
             return 5;
         }
     } else {

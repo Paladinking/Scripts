@@ -1,19 +1,57 @@
 #define UNICODE
 #include "args.h"
 
-DWORD find_flag(LPWSTR* argv, int* argc, LPCWSTR flag, LPCWSTR long_flag) {
+DWORD find_flag(LPWSTR *argv, int *argc, LPCWSTR flag, LPCWSTR long_flag) {
     DWORD count = 0;
-	for (int i = 1; i < *argc; ++i) {
-		if (wcscmp(argv[i], flag) == 0 || wcscmp(argv[i], long_flag) == 0) {
-			count += 1;
-			for (int j = i + 1; j < *argc; ++j) {
-				argv[j - 1] = argv[j];
-			}
-			--(*argc);
-			--i;
-		}
-	}
-	return count;
+    for (int i = 1; i < *argc; ++i) {
+        if (wcscmp(argv[i], flag) == 0 || wcscmp(argv[i], long_flag) == 0) {
+            count += 1;
+            for (int j = i + 1; j < *argc; ++j) {
+                argv[j - 1] = argv[j];
+            }
+            --(*argc);
+            --i;
+        }
+    }
+    return count;
+}
+
+int find_flag_value(LPWSTR *argv, int *argc, LPCWSTR flag, LPCWSTR long_flag,
+                    LPWSTR* dest) {
+    int short_len = wcslen(flag);
+    for (int i = 0; i < *argc; ++i) {
+        if (wcsncmp(argv[i], flag, short_len) == 0) {
+            if (argv[i][short_len] == L'\0') {
+                if (i + 1 == *argc) {
+                    return -1;
+                }
+                *dest = argv[i + 1];
+                for (int j = i + 2; j < *argc; ++j) {
+                    argv[j - 2] = argv[j];
+                }
+                *argc -= 2;
+                return 1;
+            } else {
+                *dest = argv[i] + short_len;
+                for (int j = i + 1; j < *argc; ++j) {
+                    argv[j - i] = argv[j];
+                }
+                *argc -= 1;
+                return 1;
+            }
+        } else if (wcscmp(argv[i], long_flag) == 0) {
+            if (i + 1 == *argc) {
+                return -1;
+            }
+            *dest = argv[i + 1];
+            for (int j = i + 2; j < *argc; ++j) {
+                argv[j - 2] = argv[j];
+            }
+            *argc -= 2;
+            return 1;
+        }
+    }
+    return 0;
 }
 
 LPWSTR* parse_command_line_with(const LPCWSTR args, int* argc, BOOL escape_backslash, BOOL escape_quotes) {
