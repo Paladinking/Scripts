@@ -11,6 +11,8 @@ all: bin\pathc.exe \
 	bin\picker.exe \
 	bin\path-edit.exe \
 	bin\path-select.exe \
+	bin\inject.exe \
+	bin\testdll.dll \
 	bin\2to3.bat \
 	bin\cal.bat \
 	bin\cleanenv.bat \
@@ -55,6 +57,8 @@ build\cli.obj: src\cli.c src\cli.h src\dynamic_string.h build
 	cl /c $(CLFLAGS) src\cli.c
 build\unicode_width.obj: src\unicode_width.c src\unicode_width.h build
 	cl /c $(CLFLAGS) src\unicode_width.c
+build\testdll.obj: src\testdll.c
+	cl /c $(CLFLAGS) src\testdll.c
 
 bin\pathc.exe: src\pathc.c build\path_utils.obj build\args.obj build\printf.obj build\ntutils.lib bin
 	cl $(CLFLAGS) /Fe:bin\pathc.exe src\pathc.c build\printf.obj build\path_utils.obj build\args.obj build\ntutils.lib $(LINKFLAGS)
@@ -72,6 +76,12 @@ bin\path-edit.exe: src\path-edit.c build\cli.obj build\dynamic_string.obj build\
 	cl $(CLFLAGS) /Fe:bin\path-edit.exe src\path-edit.c build\cli.obj build\printf.obj build\dynamic_string.obj build\unicode_width.obj build\ntutils.lib chkstk.obj $(LINKFLAGS)
 bin\path-select.exe: src\path-select.c build\printf.obj build\args.obj build\path_utils.obj build\ntutils.lib build\kernelbase.lib
 	cl $(CLFLAGS) /Fe:bin\path-select.exe src\path-select.c build\printf.obj build\args.obj build\path_utils.obj build\ntutils.lib build\kernelbase.lib $(LINKFLAGS)
+bin\inject.exe: src\inject.c build\printf.obj build\ntutils.lib
+	cl $(CLFLAGS) /Fe:bin\inject.exe src\inject.c build\printf.obj build\ntutils.lib chkstk.obj $(LINKFLAGS)
+
+bin\testdll.dll: build\testdll.obj build\printf.obj build\ntutils.lib
+	link /DLL /NODEFAULTLIB /ENTRY:DLLMain /LTCG /OUT:bin\testdll.dll build\testdll.obj build\printf.obj build\ntutils.lib Kernel32.lib
+	
 
 bin\test.exe: src\test.c build\args.obj build\ntutils.lib
 	cl $(CLFLAGS) /Fe:bin\test.exe src\test.c build\args.obj build\ntutils.lib $(LINKFLAGS)
