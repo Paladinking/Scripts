@@ -80,7 +80,7 @@ bin\inject.exe: src\inject.c build\printf.obj build\ntutils.lib
 	cl $(CLFLAGS) /Fe:bin\inject.exe src\inject.c build\printf.obj build\ntutils.lib chkstk.obj $(LINKFLAGS)
 
 bin\testdll.dll: build\testdll.obj build\printf.obj build\ntutils.lib
-	link /DLL /NODEFAULTLIB /ENTRY:DLLMain /LTCG /OUT:bin\testdll.dll build\testdll.obj build\printf.obj build\ntutils.lib Kernel32.lib
+	link /DLL /NODEFAULTLIB /entry:DLLMain /LTCG /OUT:bin\testdll.dll build\testdll.obj build\printf.obj build\ntutils.lib Kernel32.lib
 	
 
 bin\test.exe: src\test.c build\args.obj build\ntutils.lib
