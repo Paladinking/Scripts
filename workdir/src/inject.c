@@ -84,14 +84,13 @@ int main() {
         return 1;
     }
 
-    LPVOID entry = GetProcAddress(dll, "test");
+    LPVOID entry = GetProcAddress(dll, "entry");
     if (entry == NULL) {
         _printf("Failed getting dll entry function\n");
         FreeLibrary(dll);
         CloseHandle(hParent);
         return 1;
     }
-
 
     wchar_t* name = VirtualAllocEx(hParent, NULL, len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (name == NULL || !WriteProcessMemory(hParent, name, modbuf, len, NULL)) {
@@ -121,6 +120,8 @@ int main() {
         return 1;
     }
 
+    WaitForSingleObject(hThread, INFINITE);
+    CloseHandle(hThread);
 
     VirtualFreeEx(hParent, name, 0, MEM_RELEASE);
     FreeLibrary(dll);
