@@ -6,6 +6,7 @@
 #include "path_utils.h"
 #include "printf.h"
 #include "string_conv.h"
+#include <wchar.h>
 #include <tlhelp32.h>
 #include <windows.h>
 

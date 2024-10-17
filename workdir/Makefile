@@ -77,10 +77,10 @@ bin\path-edit.exe: src\path-edit.c build\cli.obj build\dynamic_string.obj build\
 bin\path-select.exe: src\path-select.c build\printf.obj build\args.obj build\path_utils.obj build\ntutils.lib build\kernelbase.lib
 	cl $(CLFLAGS) /Fe:bin\path-select.exe src\path-select.c build\printf.obj build\args.obj build\path_utils.obj build\ntutils.lib build\kernelbase.lib $(LINKFLAGS)
 bin\inject.exe: src\inject.c build\printf.obj build\ntutils.lib
-	cl $(CLFLAGS) /Fe:bin\inject.exe src\inject.c build\printf.obj build\ntutils.lib chkstk.obj $(LINKFLAGS)
+	cl $(CLFLAGS) /Fe:bin\inject.exe src\inject.c build\printf.obj build\ntutils.lib chkstk.obj build\dynamic_string.obj $(LINKFLAGS)
 
-bin\testdll.dll: build\testdll.obj build\printf.obj build\ntutils.lib
-	link /DLL /NODEFAULTLIB /entry:DLLMain /LTCG /OUT:bin\testdll.dll build\testdll.obj build\printf.obj build\ntutils.lib Kernel32.lib
+bin\testdll.dll: build\testdll.obj build\printf.obj build\dynamic_string.obj build\ntutils.lib
+	link /DLL /NODEFAULTLIB /entry:DLLMain /LTCG /OUT:bin\testdll.dll build\testdll.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib Kernel32.lib
 	
 
 bin\test.exe: src\test.c build\args.obj build\ntutils.lib
