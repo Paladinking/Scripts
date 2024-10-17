@@ -1,7 +1,7 @@
 #include "dynamic_string.h"
 #include <windows.h>
 
-bool DynamicStringAppend(DynamicString *s, const char c) {
+bool String_append(String *s, const char c) {
     if (s->capacity == s->length + 1) {
         HANDLE heap = GetProcessHeap();
         unsigned capacity = s->capacity * 2;
@@ -18,10 +18,10 @@ bool DynamicStringAppend(DynamicString *s, const char c) {
     return true;
 }
 
-bool DynamicStringExtend(DynamicString *s, const char *c_str) {
+bool String_extend(String *s, const char *c_str) {
     unsigned index = 0;
     while (c_str[index] != '\0') {
-        if (!DynamicStringAppend(s, c_str[index])) {
+        if (!String_append(s, c_str[index])) {
             return false;
         }
         ++index;
@@ -29,8 +29,8 @@ bool DynamicStringExtend(DynamicString *s, const char *c_str) {
     return true;
 }
 
-bool DynamicStringInsert(DynamicString* s, unsigned ix, const char c) {
-    if (!DynamicStringAppend(s, c)) {
+bool String_insert(String* s, unsigned ix, const char c) {
+    if (!String_append(s, c)) {
         return false;
     }
     memmove(s->buffer + ix + 1, s->buffer + ix, s->length - ix - 1);
@@ -38,7 +38,7 @@ bool DynamicStringInsert(DynamicString* s, unsigned ix, const char c) {
     return true;
 }
 
-void DynamicStringPop(DynamicString *s, unsigned int count) {
+void String_pop(String *s, unsigned int count) {
     if (count > s->length) {
         s->length = 0;
         s->buffer[0] = '\0';
@@ -48,7 +48,7 @@ void DynamicStringPop(DynamicString *s, unsigned int count) {
     }
 }
 
-void DynamicStringRemove(DynamicString* s, unsigned ix, unsigned count) {
+void String_remove(String* s, unsigned ix, unsigned count) {
     if (ix < 0 || ix >= s->length) {
         return;
     }
@@ -60,12 +60,12 @@ void DynamicStringRemove(DynamicString* s, unsigned ix, unsigned count) {
     s->buffer[s->length] = '\0';
 }
 
-void DynamicStringClear(DynamicString *s) {
+void String_clear(String *s) {
     s->length = 0;
     s->buffer[0] = '\0';
 }
 
-bool DynamicStringCreate(DynamicString *s) {
+bool String_create(String *s) {
     HANDLE heap = GetProcessHeap();
     s->length = 0;
     s->buffer = HeapAlloc(heap, 0, 4);
@@ -78,7 +78,7 @@ bool DynamicStringCreate(DynamicString *s) {
     return true;
 }
 
-void DynamicStringFree(DynamicString *s) {
+void String_free(String *s) {
     HANDLE heap = GetProcessHeap();
     HeapFree(heap, 0, s->buffer);
     s->capacity = 0;
@@ -86,7 +86,7 @@ void DynamicStringFree(DynamicString *s) {
     s->buffer = NULL;
 }
 
-bool DynamicStringCopy(DynamicString* dest, DynamicString* source) {
+bool String_copy(String* dest, String* source) {
     HANDLE heap = GetProcessHeap();
     dest->length = source->length;
     dest->capacity = 0;
@@ -103,8 +103,8 @@ bool DynamicStringCopy(DynamicString* dest, DynamicString* source) {
     return true;
 }
 
-bool DynamicWStringAppend(DynamicWString *s, const wchar_t c) {
-    if (!DynamicWStringReserve(s, s->length + 1)) {
+bool WString_append(WString *s, const wchar_t c) {
+    if (!WString_reserve(s, s->length + 1)) {
         return false;
     }
     s->buffer[s->length] = c;
@@ -113,9 +113,9 @@ bool DynamicWStringAppend(DynamicWString *s, const wchar_t c) {
     return true;
 }
 
-bool DynamicWStringExtend(DynamicWString *s, const wchar_t *c_str) {
+bool WString_extend(WString *s, const wchar_t *c_str) {
     size_t len = wcslen(c_str);
-    if (!DynamicWStringReserve(s, s->length + len)) {
+    if (!WString_reserve(s, s->length + len)) {
         return false;
     }
     memcpy(s->buffer + s->length, c_str, (len + 1) * sizeof(wchar_t));
@@ -123,8 +123,8 @@ bool DynamicWStringExtend(DynamicWString *s, const wchar_t *c_str) {
     return true;
 }
 
-bool DynamicWStringInsert(DynamicWString* s, unsigned ix, const wchar_t c) {
-    if (!DynamicWStringReserve(s, s->length + 1)) {
+bool WString_insert(WString* s, unsigned ix, const wchar_t c) {
+    if (!WString_reserve(s, s->length + 1)) {
         return false;
     }
     s->length += 1;
@@ -133,7 +133,7 @@ bool DynamicWStringInsert(DynamicWString* s, unsigned ix, const wchar_t c) {
     return true;
 }
 
-void DynamicWStringPop(DynamicWString *s, unsigned int count) {
+void WString_pop(WString *s, unsigned int count) {
     if (count > s->length) {
         s->length = 0;
         s->buffer[0] = L'\0';
@@ -143,7 +143,7 @@ void DynamicWStringPop(DynamicWString *s, unsigned int count) {
     }
 }
 
-void DynamicWStringRemove(DynamicWString* s, unsigned ix, unsigned count) {
+void WString_remove(WString* s, unsigned ix, unsigned count) {
     if (ix < 0 || ix >= s->length) {
         return;
     }
@@ -155,12 +155,12 @@ void DynamicWStringRemove(DynamicWString* s, unsigned ix, unsigned count) {
     s->buffer[s->length] = L'\0';
 }
 
-void DynamicWStringClear(DynamicWString *s) {
+void WString_clear(WString *s) {
     s->length = 0;
     s->buffer[0] = L'\0';
 }
 
-bool DynamicWStringCreate(DynamicWString *s) {
+bool WString_create(WString *s) {
     HANDLE heap = GetProcessHeap();
     s->length = 0;
     s->buffer = HeapAlloc(heap, 0, 4 * sizeof(wchar_t));
@@ -173,7 +173,7 @@ bool DynamicWStringCreate(DynamicWString *s) {
     return true;
 }
 
-void DynamicWStringFree(DynamicWString *s) {
+void WString_free(WString *s) {
     HANDLE heap = GetProcessHeap();
     HeapFree(heap, 0, s->buffer);
     s->capacity = 0;
@@ -181,7 +181,7 @@ void DynamicWStringFree(DynamicWString *s) {
     s->buffer = NULL;
 }
 
-bool DynamicWStringCopy(DynamicWString* dest, DynamicWString* source) {
+bool WString_copy(WString* dest, WString* source) {
     HANDLE heap = GetProcessHeap();
     dest->length = source->length;
     dest->capacity = 0;
@@ -198,8 +198,8 @@ bool DynamicWStringCopy(DynamicWString* dest, DynamicWString* source) {
     return true;
 }
 
-bool DynamicWStringAppendCount(DynamicWString* s, const wchar_t* buf, unsigned count) {
-    if (!DynamicWStringReserve(s, s->length + count)) {
+bool WString_append_count(WString* s, const wchar_t* buf, unsigned count) {
+    if (!WString_reserve(s, s->length + count)) {
         return FALSE;
     }
     memcpy(s->buffer + s->length, buf, count * sizeof(wchar_t));
@@ -209,7 +209,7 @@ bool DynamicWStringAppendCount(DynamicWString* s, const wchar_t* buf, unsigned c
 }
 
 
-bool DynamicWStringReserve(DynamicWString* s, size_t count) {
+bool WString_reserve(WString* s, size_t count) {
     if (s->capacity <= count) {
         size_t new_cap = s->capacity * 2;
         while (new_cap <= count) {

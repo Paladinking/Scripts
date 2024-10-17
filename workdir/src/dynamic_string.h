@@ -6,53 +6,53 @@ typedef struct _DynamicString {
 	char* buffer;
 	unsigned capacity;
 	unsigned length;
-} DynamicString;
+} String;
 
 
-bool DynamicStringAppend(DynamicString* s, const char c);
+bool String_append(String* s, const char c);
 
-bool DynamicStringExtend(DynamicString* s, const char* c_str);
+bool String_extend(String* s, const char* c_str);
 
-bool DynamicStringInsert(DynamicString* s, unsigned ix, const char c);
+bool String_insert(String* s, unsigned ix, const char c);
 
-void DynamicStringPop(DynamicString* s, unsigned count);
+void String_pop(String* s, unsigned count);
 
-void DynamicStringRemove(DynamicString* s, unsigned ix, unsigned count);
+void String_remove(String* s, unsigned ix, unsigned count);
 
-void DynamicStringClear(DynamicString* s);
+void String_clear(String* s);
 
-bool DynamicStringCreate(DynamicString* s);
+bool String_create(String* s);
 
-void DynamicStringFree(DynamicString* s);
+void String_free(String* s);
 
-bool DynamicStringCopy(DynamicString* dest, DynamicString* source);
+bool String_copy(String* dest, String* source);
 
 typedef struct _DynamicWString {
 	wchar_t* buffer;
 	unsigned capacity;
 	unsigned length;
-} DynamicWString;
+} WString;
 
-bool DynamicWStringAppend(DynamicWString* s, const wchar_t c);
+bool WString_append(WString* s, const wchar_t c);
 
-bool DynamicWStringExtend(DynamicWString*s, const wchar_t* c_str);
+bool WString_extend(WString*s, const wchar_t* c_str);
 
-bool DynamicWStringAppendCount(DynamicWString* s, const wchar_t* buf, unsigned count);
+bool WString_append_count(WString* s, const wchar_t* buf, unsigned count);
 
-bool DynamicWStringInsert(DynamicWString* s, unsigned ix, const wchar_t c);
+bool WString_insert(WString* s, unsigned ix, const wchar_t c);
 
-void DynamicWStringPop(DynamicWString* s, unsigned count);
+void WString_pop(WString* s, unsigned count);
 
-void DynamicWStringRemove(DynamicWString* s, unsigned ix, unsigned count);
+void WString_remove(WString* s, unsigned ix, unsigned count);
 
-void DynamicWStringClear(DynamicWString* s);
+void WString_clear(WString* s);
 
-bool DynamicWStringCreate(DynamicWString* s);
+bool WString_create(WString* s);
 
-void DynamicWStringFree(DynamicWString* s);
+void WString_free(WString* s);
 
-bool DynamicWStringCopy(DynamicWString* dest, DynamicWString* source);
+bool WString_copy(WString* dest, WString* source);
 
-bool DynamicWStringReserve(DynamicWString* s, size_t count);
+bool WString_reserve(WString* s, size_t count);
 
 

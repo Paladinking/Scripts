@@ -62,7 +62,7 @@ BOOL CliListNode_setwidth(CliListNode *node, unsigned ix,
     return TRUE;
 }
 
-BOOL CliListNode_pushdown(CliListNode* node, int *w, int row_width, DynamicWString* pushed, int row) {
+BOOL CliListNode_pushdown(CliListNode* node, int *w, int row_width, WString* pushed, int row) {
     if (row == node->rows) {
         CliListNode_setwidth(node, row, *w, node->data.length);
         ++node->rows;
@@ -70,7 +70,7 @@ BOOL CliListNode_pushdown(CliListNode* node, int *w, int row_width, DynamicWStri
         node->row_data[row].width += *w;
     }
     int last_ix = node->row_data[row].end_ix;
-    DynamicWStringClear(pushed);
+    WString_clear(pushed);
     *w = 0;
     while (row_width < node->row_data[row].width) {
         int lw;
@@ -82,7 +82,7 @@ BOOL CliListNode_pushdown(CliListNode* node, int *w, int row_width, DynamicWStri
         }
     }
     for (int i = last_ix; i < node->row_data[row].end_ix; ++i) {
-        if (!DynamicWStringAppend(pushed, node->data.buffer[i])) {
+        if (!WString_append(pushed, node->data.buffer[i])) {
             return FALSE;
         }
     }
@@ -103,7 +103,7 @@ BOOL CliListNode_insert(CliListNode *node, unsigned ix, wchar_t c) {
             ++row;
         }
     }
-    if (!DynamicWStringInsert(&node->data, ix, c)) {
+    if (!WString_insert(&node->data, ix, c)) {
         return FALSE;
     }
     for (int i = row; i < node->rows; ++i) {
@@ -123,11 +123,11 @@ BOOL CliListNode_insert_pair(CliListNode *node, unsigned ix, wchar_t c1, wchar_t
             ++row;
         }
     }
-    if (!DynamicWStringInsert(&node->data, ix, c1)) {
+    if (!WString_insert(&node->data, ix, c1)) {
         return FALSE;
     }
-    if (!DynamicWStringInsert(&node->data, ix + 1, c2)) {
-        DynamicWStringRemove(&node->data, ix, 1);
+    if (!WString_insert(&node->data, ix + 1, c2)) {
+        WString_remove(&node->data, ix, 1);
         return FALSE;
     }
     for (int i = row; i < node->rows; ++i) {
@@ -137,30 +137,30 @@ BOOL CliListNode_insert_pair(CliListNode *node, unsigned ix, wchar_t c1, wchar_t
 }
 
 void CliListNode_free(CliListNode *node) {
-    DynamicWStringFree(&node->data);
+    WString_free(&node->data);
     HeapFree(GetProcessHeap(), 0, node->row_data);
 }
 
-BOOL CliListNode_create(CliListNode *node, DWORD flags, DynamicWString *data) {
+BOOL CliListNode_create(CliListNode *node, DWORD flags, WString *data) {
     node->rows = 1;
     node->row_capacity = 4;
     node->flags = flags & ~CLI_COPY;
     if (data != NULL) {
         if (flags & CLI_COPY) {
-            if (!DynamicWStringCopy(&node->data, data)) {
+            if (!WString_copy(&node->data, data)) {
                 return FALSE;
             }
         } else {
             node->data = *data;
         }
     } else {
-        if (!DynamicWStringCreate(&node->data)) {
+        if (!WString_create(&node->data)) {
             return FALSE;
         }
     }
     node->row_data = HeapAlloc(GetProcessHeap(), 0, 4 * sizeof(RowData));
     if (node->row_data == NULL) {
-        DynamicWStringFree(&node->data);
+        WString_free(&node->data);
         return FALSE;
     }
     return TRUE;
@@ -168,14 +168,14 @@ BOOL CliListNode_create(CliListNode *node, DWORD flags, DynamicWString *data) {
 
 void CliListNode_remove(CliListNode *node, unsigned int ix) {
     if (IS_HIGH_SURROGATE(node->data.buffer[ix])) {
-        DynamicWStringRemove(&node->data, ix, 2);
+        WString_remove(&node->data, ix, 2);
     } else {
-        DynamicWStringRemove(&node->data, ix, 1);
+        WString_remove(&node->data, ix, 1);
     }
 }
 
-const wchar_t *CliListNode_draw_row(CliListNode *node, CONSOLE_SCREEN_BUFFER_INFO *cInfo, DynamicWString* buf, unsigned row) {
-    DynamicWStringClear(buf);
+const wchar_t *CliListNode_draw_row(CliListNode *node, CONSOLE_SCREEN_BUFFER_INFO *cInfo, WString* buf, unsigned row) {
+    WString_clear(buf);
     unsigned start;
     if (row == 0) {
         start = 0;
@@ -183,12 +183,12 @@ const wchar_t *CliListNode_draw_row(CliListNode *node, CONSOLE_SCREEN_BUFFER_INF
         start = node->row_data[row - 1].end_ix;
     }
     unsigned len = node->row_data[row].end_ix - start;
-    DynamicWStringAppendCount(buf, node->data.buffer + start, len);
+    WString_append_count(buf, node->data.buffer + start, len);
     return buf->buffer;
 }
 
 const wchar_t *CliListNode_draw(CliListNode *node,
-                                CONSOLE_SCREEN_BUFFER_INFO *cInfo, DynamicWString* buf) {
+                                CONSOLE_SCREEN_BUFFER_INFO *cInfo, WString* buf) {
     // If the line contains no invalid unicode and is fully visible, just print
     // it.
     if ((node->flags & (CLI_OBSCURED | CLI_INVALID_UNICODE)) == 0) {
@@ -197,40 +197,40 @@ const wchar_t *CliListNode_draw(CliListNode *node,
     int ix = 0;
     int offset = 0;
     int width = 0;
-    DynamicWStringClear(buf);
-    DynamicWStringReserve(buf, node->data.length);
+    WString_clear(buf);
+    WString_reserve(buf, node->data.length);
     while (1) {
         UINT32 val = node->data.buffer[ix];
         int w = 1;
         if (IS_HIGH_SURROGATE(node->data.buffer[ix])) {
             ++ix;
             if (IS_LOW_SURROGATE(node->data.buffer[ix])) {
-                DynamicWStringAppend(buf, val);
-                DynamicWStringAppend(buf, node->data.buffer[ix]);
+                WString_append(buf, val);
+                WString_append(buf, node->data.buffer[ix]);
                 val = ((node->data.buffer[ix] & 0x3FF) << 10) | (val & 0x3FF);
                 w = UNICODE_WIDTH(val);
                 ++ix;
             } else {
-                DynamicWStringAppend(buf, 0xfdff);
+                WString_append(buf, 0xfdff);
                 w = 1;
             }
         } else {
             if (IS_LOW_SURROGATE(node->data.buffer[ix])) {
-                DynamicWStringAppend(buf, 0xfdff);
+                WString_append(buf, 0xfdff);
                 w = 1;
             } else {
-                DynamicWStringAppend(buf, node->data.buffer[ix]);
+                WString_append(buf, node->data.buffer[ix]);
                 w = UNICODE_WIDTH(val);
             }
             ++ix;
         }
         width += w;
         if (width > cInfo->dwSize.X) {
-            DynamicWStringInsert(buf, ix + offset - w, L'\r');
-            DynamicWStringInsert(buf, ix + offset + 1 - w, L'\x1b');
-            DynamicWStringInsert(buf, ix + offset + 2 - w, L'[');
-            DynamicWStringInsert(buf, ix + offset + 3 - w, L'1');
-            DynamicWStringInsert(buf, ix + offset + 4 - w, L'B');
+            WString_insert(buf, ix + offset - w, L'\r');
+            WString_insert(buf, ix + offset + 1 - w, L'\x1b');
+            WString_insert(buf, ix + offset + 2 - w, L'[');
+            WString_insert(buf, ix + offset + 3 - w, L'1');
+            WString_insert(buf, ix + offset + 4 - w, L'B');
             offset += 5;
             width = w;
         }
@@ -289,12 +289,12 @@ void full_draw(CliList *list, CONSOLE_SCREEN_BUFFER_INFO *cInfo) {
     if (header) {
         _wprintf_h(out, L"%s\n\r", list->header);
     }
-    DynamicWString b;
-    DynamicWStringCreate(&b);
+    WString b;
+    WString_create(&b);
     validate_lines(list, cInfo->dwSize.X);
     for (int i = 0; i < list->element_count; ++i) {
-        DynamicWStringClear(&b);
-        DynamicWStringReserve(&b, 3 * list->elements[i].rows);
+        WString_clear(&b);
+        WString_reserve(&b, 3 * list->elements[i].rows);
         for (int j = 0; j < list->elements[i].rows; ++j) {
             b.buffer[j] = L'\n';
             b.buffer[2 * j + list->elements[i].rows] = L'\x1b';
@@ -306,8 +306,8 @@ void full_draw(CliList *list, CONSOLE_SCREEN_BUFFER_INFO *cInfo) {
     }
     if (list->element_count > 0 &&
         list->elements[list->element_count - 1].rows > 1) {
-        DynamicWStringClear(&b);
-        DynamicWStringReserve(&b, list->elements[list->element_count - 1].rows * 2);
+        WString_clear(&b);
+        WString_reserve(&b, list->elements[list->element_count - 1].rows * 2);
         int i = 0;
         for (; i < list->elements[list->element_count - 1].rows; ++i) {
             b.buffer[2 * i] = L'\x1b';
@@ -318,10 +318,10 @@ void full_draw(CliList *list, CONSOLE_SCREEN_BUFFER_INFO *cInfo) {
     } else {
         _wprintf_h(out, L"Footer\x1bM\r");
     }
-    DynamicWStringFree(&b);
+    WString_free(&b);
 }
 
-CliList *CliList_create(const wchar_t *header, DynamicWString *elements,
+CliList *CliList_create(const wchar_t *header, WString *elements,
                         DWORD count, DWORD flags) {
     CliList *list = HeapAlloc(GetProcessHeap(), 0, sizeof(CliList));
     if (list == NULL) {
@@ -334,7 +334,7 @@ CliList *CliList_create(const wchar_t *header, DynamicWString *elements,
         HeapFree(GetProcessHeap(), 0, list);
         return NULL;
     }
-    if (!DynamicWStringCreate(&list->scratch_buffer)) {
+    if (!WString_create(&list->scratch_buffer)) {
         HeapFree(GetProcessHeap(), 0, list->elements);
         HeapFree(GetProcessHeap(), 0, list);
         return NULL;
@@ -347,7 +347,7 @@ CliList *CliList_create(const wchar_t *header, DynamicWString *elements,
                 for (DWORD j = 0; j < i; ++j) {
                     CliListNode_free(&list->elements[j]);
                 }
-                DynamicWStringFree(&list->scratch_buffer);
+                WString_free(&list->scratch_buffer);
                 HeapFree(GetProcessHeap(), 0, list->elements);
                 HeapFree(GetProcessHeap(), 0, list);
                 return NULL;
@@ -359,7 +359,7 @@ CliList *CliList_create(const wchar_t *header, DynamicWString *elements,
                 for (DWORD j = 0; j < i; ++j) {
                     HeapFree(GetProcessHeap(), 0, list->elements[i].row_data);
                 }
-                DynamicWStringFree(&list->scratch_buffer);
+                WString_free(&list->scratch_buffer);
                 HeapFree(GetProcessHeap(), 0, list->elements);
                 HeapFree(GetProcessHeap(), 0, list);
                 return NULL;
@@ -433,9 +433,9 @@ DWORD CliList_run(CliList *list) {
     }
     _wprintf_h(out, L"\x1b[4\x20q\x1b[22m");
     full_draw(list, &cInfo);
-    DynamicWString b1, b2;
-    DynamicWStringCreate(&b1);
-    DynamicWStringCreate(&b2);
+    WString b1, b2;
+    WString_create(&b1);
+    WString_create(&b2);
 
     int row = list->element_count - 1;
     int col = 0;
@@ -484,10 +484,10 @@ DWORD CliList_run(CliList *list) {
                         if (list->elements[row - 1].rows == 1) {
                             _wprintf_h(out, L"\x1bM\r%s\r", buf);
                         } else {
-                            DynamicWStringClear(&b2);
+                            WString_clear(&b2);
                             for (int i = 0; i < list->elements[row - 1].rows;
                                  ++i) {
-                                DynamicWStringExtend(&b2, L"\x1bM");
+                                WString_extend(&b2, L"\x1bM");
                             }
                             _wprintf_h(out, L"%s\r%s\r\x1b[%dA", b2.buffer, buf,
                                        list->elements[row - 1].rows - 1);
@@ -730,8 +730,8 @@ DWORD CliList_run(CliList *list) {
     _wprintf_h(out, L"\x1b[0\x20q\x1b[22m");
 
 cleanup:
-    DynamicWStringFree(&b1);
-    DynamicWStringFree(&b2);
+    WString_free(&b1);
+    WString_free(&b2);
     SetConsoleMode(out, old_out_mode);
     SetConsoleMode(in, old_in_mode);
     return res;
@@ -741,6 +741,6 @@ void CliList_free(CliList *list) {
     for (DWORD i = 0; i < list->element_count; ++i) {
         CliListNode_free(&list->elements[i]);
     }
-    DynamicWStringFree(&list->scratch_buffer);
+    WString_free(&list->scratch_buffer);
     HeapFree(GetProcessHeap(), 0, list);
 }
