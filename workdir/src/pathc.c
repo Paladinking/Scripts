@@ -89,24 +89,30 @@ typedef enum _OperationType {
 
 PathBuffer path_buffer = {NULL, 0, 0};
 
-#define USAGE "usage: pathc [-h | --help] [-n | --no-expand] [-u | --update] [-b | --before] [-v | --variable <var>] <command> [<args>]\n"
+#define USAGE                                                                  \
+    "usage: pathc [-h | --help] [-n | --no-expand] [-u | --update] [-b | "     \
+    "--before] [-v | --variable <var>] <command> [<args>]\n"
 
-const char *help_message =
-    USAGE "\n"
-    "Adds or removes a file path to PATH. By default, paths are added at the end of PATH, and the new PATH is printed to stdout.\n"
+const char *help_message = USAGE
+    "\n"
+    "Adds or removes a file path to PATH. By default, paths are added at the "
+    "end of PATH, and the new PATH is printed to stdout.\n"
     "Does not add paths that already exists in PATH.\n\n"
     "The following commands are available:\n\n"
     "  add, a                Add all filepaths in <args> to PATH\n"
     "  remove, r             Remove all filepaths in <args> from PATH\n"
-    "  move, m               Move all filepaths in <args> as if using remove followed by add\n"
-    "  prune, p              Remove all duplicate or invalid filepaths in PATH\n\n"
+    "  move, m               Move all filepaths in <args> as if using remove "
+    "followed by add\n"
+    "  prune, p              Remove all duplicate or invalid filepaths in "
+    "PATH\n\n"
     "The following flags can be used:\n\n"
     "  -h, --help            Displays this help message\n"
-    "  -n, --no-expand       Do not expand relative paths to an absolute path before adding it\n"
-    "  -u, --update          Apply the new PATH to the parent process environment instead of printing it\n"
+    "  -n, --no-expand       Do not expand relative paths to an absolute path "
+    "before adding it\n"
+    "  -u, --update          Apply the new PATH to the parent process "
+    "environment instead of printing it\n"
     "  -b, --before          Add paths to the beginning of PATH\n"
     "  -v, --variable <var>  Modify environment variable <var> instead of PATH";
-
 
 int pathc(int argc, LPWSTR *argv, HANDLE out, HANDLE err) {
     if (find_flag(argv, &argc, L"-h", L"--help")) {
@@ -190,13 +196,13 @@ int pathc(int argc, LPWSTR *argv, HANDLE out, HANDLE err) {
             _printf_h(err, "Could not get parent\n");
             return 4;
         }
-        int res = SetProcessEnvironmentVariable(var, path_buffer.ptr, id);
+        int res = SetProcessEnvironmentVariable(var, path_buffer.buffer, id);
         if (res != 0) {
             _printf_h(err, "Failed setting %s\n", var);
             return 5;
         }
     } else {
-        _printf_h(out, "%.*S\n", path_buffer.size, path_buffer.ptr);
+        _printf_h(out, "%.*S\n", path_buffer.length, path_buffer.buffer);
     }
 
     if (status == OP_NO_CHANGE) {
@@ -216,9 +222,8 @@ int main() {
     FlushFileBuffers(out);
     FlushFileBuffers(err);
     HeapFree(heap, 0, expanded);
-    HeapFree(heap, 0, path_buffer.ptr);
+    WString_free(&path_buffer);
     HeapFree(heap, 0, argv);
     ExitProcess(status);
     return status;
 }
-

@@ -133,6 +133,17 @@ bool WString_insert(WString* s, unsigned ix, const wchar_t c) {
     return true;
 }
 
+bool WString_insert_count(WString* s, unsigned ix, const wchar_t* buf, unsigned count) {
+    if (!WString_reserve(s, s->length + count)) {
+        return false;
+    }
+    s->length += count;
+    memmove(s->buffer + ix + count, s->buffer + ix, (s->length - ix - count) * sizeof(wchar_t));
+    memmove(s->buffer + ix, buf, count);
+
+    return true;
+}
+
 void WString_pop(WString *s, unsigned int count) {
     if (count > s->length) {
         s->length = 0;
@@ -173,6 +184,22 @@ bool WString_create(WString *s) {
     return true;
 }
 
+bool WString_create_capacity(WString_noinit* s, size_t cap) {
+    HANDLE heap = GetProcessHeap();
+    s->length = 0;
+    s->capacity = 4;
+    while (s->capacity < cap) {
+        s->capacity *= 2;
+    }
+    s->buffer = HeapAlloc(heap, 0, s->capacity * sizeof(wchar_t));
+    if (s->buffer == NULL) {
+        s->capacity = 0;
+        return false;
+    }
+    s->buffer[0] = '\0';
+    return true;
+}
+
 void WString_free(WString *s) {
     HANDLE heap = GetProcessHeap();
     HeapFree(heap, 0, s->buffer);
@@ -184,7 +211,7 @@ void WString_free(WString *s) {
 bool WString_copy(WString* dest, WString* source) {
     HANDLE heap = GetProcessHeap();
     dest->length = source->length;
-    dest->capacity = 0;
+    dest->capacity = 4;
     while (dest->capacity <= source->length) {
         dest->capacity = dest->capacity * 2;
     }
@@ -225,3 +252,23 @@ bool WString_reserve(WString* s, size_t count) {
     return true;
 }
 
+bool WString_from_utf8_bytes(WString* dest, const char* s, size_t count) {
+    UINT code_point = 65001;
+    DWORD size = MultiByteToWideChar(code_point, 0, s, count, NULL, 0);
+    if (!WString_reserve(dest, count)) {
+        return false;
+    }
+    size = MultiByteToWideChar(code_point, 0, s, count, dest->buffer, size);
+    if (size == 0) {
+        return false;
+    }
+    dest->length = size;
+    dest->buffer[size] = L'\0';
+
+    return true;
+}
+
+bool WString_from_utf8_str(WString* dest, const char* s) {
+    size_t len = strlen(s);
+    return WString_from_utf8_bytes(dest, s, len);
+}
