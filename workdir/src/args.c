@@ -171,8 +171,6 @@ LPWSTR* parse_command_line_with(const LPCWSTR args, int* argc, BOOL escape_backs
     return argv;
 }
 
-
-
-LPWSTR* parse_command_line(const LPCWSTR args, int* argc) {
+LPWSTR *parse_command_line(const LPCWSTR args, int *argc) {
     return parse_command_line_with(args, argc, TRUE, TRUE);
 }

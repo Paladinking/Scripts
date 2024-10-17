@@ -107,6 +107,9 @@ void free_env(EnvBuffer *env) {
     env->size = 0;
 }
 
+LPWSTR expanded = NULL;
+DWORD expanded_capacity = 0;
+
 LPWSTR contains(LPWSTR path, LPCWSTR dir) {
     WCHAR dir_endc = L'\0';
     if (dir[0] == L'"') {
@@ -305,7 +308,8 @@ OpStatus path_prune(PathBuffer *path) {
 OpStatus path_remove(LPWSTR arg, PathBuffer *path_buffer, BOOL expand) {
     LPWSTR path;
     if (expand) {
-        OpStatus status = expand_path(arg, &path);
+        OpStatus status = expand_path(arg, &expanded, &expanded_capacity);
+        path = expanded;
         if (status != OP_SUCCESS) {
             return status;
         }
@@ -344,7 +348,8 @@ OpStatus path_add(LPWSTR arg, PathBuffer *path_buffer, BOOL before,
                   BOOL expand) {
     LPWSTR path;
     if (expand) {
-        OpStatus status = expand_path(arg, &path);
+        OpStatus status = expand_path(arg, &expanded, &expanded_capacity);
+        path = expanded;
         if (status != OP_SUCCESS) {
             return status;
         }
@@ -386,7 +391,7 @@ OpStatus path_add(LPWSTR arg, PathBuffer *path_buffer, BOOL before,
         (path_buffer->ptr)[size + extra_size - 1] = L';';
         offset = 0;
     } else {
-        if (path_buffer->size == 0 || (path_buffer->ptr)[path_buffer->size - 1] != L';') {
+        if (path_buffer->size > 0 && (path_buffer->ptr)[path_buffer->size - 1] != L';') {
             ++extra_size;
         }
         if (path_buffer->size + size + extra_size + 1 > path_buffer->capacity) {
@@ -402,7 +407,7 @@ OpStatus path_add(LPWSTR arg, PathBuffer *path_buffer, BOOL before,
             path_buffer->ptr = new_buffer;
         }
         offset = path_buffer->size;
-        if (path_buffer->size == 0 || (path_buffer->ptr)[path_buffer->size - 1] != L';') {
+        if (path_buffer->size > 0 && (path_buffer->ptr)[path_buffer->size - 1] != L';') {
             (path_buffer->ptr)[path_buffer->size] = L';';
             ++offset;
         }
@@ -419,10 +424,7 @@ OpStatus path_add(LPWSTR arg, PathBuffer *path_buffer, BOOL before,
     return OP_SUCCESS;
 }
 
-LPWSTR expanded = NULL;
-DWORD expanded_capacity = 0;
-
-OpStatus expand_path(LPWSTR path, LPWSTR *dest) {
+OpStatus expand_path(LPWSTR path, LPWSTR* dest, DWORD* dest_cap) {
     HANDLE heap = GetProcessHeap();
     if (path[0] == L'"') {
         ++path;
@@ -433,23 +435,23 @@ OpStatus expand_path(LPWSTR path, LPWSTR *dest) {
         path[index] = L'\0';
     }
     DWORD expanded_size =
-        GetFullPathName(path, expanded_capacity, expanded, NULL);
+        GetFullPathNameW(path, *dest_cap, *dest, NULL);
     if (expanded_size == 0) {
         return OP_INVALID_PATH;
     }
-    if (expanded_size > expanded_capacity) {
-        HeapFree(heap, 0, expanded);
-        expanded = HeapAlloc(heap, 0, (expanded_size + 1) * sizeof(WCHAR));
+    if (expanded_size > *dest_cap) {
+        HeapFree(heap, 0, *dest);
+        *dest = HeapAlloc(heap, 0, (expanded_size + 1) * sizeof(WCHAR));
         if (expanded == NULL) {
+            *dest_cap = 0;
             return OP_OUT_OF_MEMORY;
         }
-        expanded_capacity = expanded_size + 1;
-        DWORD res = GetFullPathName(path, expanded_capacity, expanded, NULL);
+        *dest_cap = expanded_size + 1;
+        DWORD res = GetFullPathNameW(path, *dest_cap, *dest, NULL);
         if (!res) {
             return OP_INVALID_PATH;
         }
     }
-    *dest = expanded;
     return OP_SUCCESS;
 }
 

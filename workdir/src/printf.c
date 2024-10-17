@@ -4,12 +4,17 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+#ifndef USE_STDLIB
 extern int _vscprintf(const char *format, va_list argptr);
 extern int _vscwprintf(const wchar_t *format, va_list argptr);
 extern int _vsnprintf(char *buffer, size_t count, const char *format,
                       va_list argptr);
 extern int _vsnwprintf(wchar_t *buffer, size_t count, const wchar_t *format,
                        va_list argptr);
+#else
+#include <stdio.h>
+#include <wchar.h>
+#endif
 #ifdef __cplusplus
 }
 #endif
