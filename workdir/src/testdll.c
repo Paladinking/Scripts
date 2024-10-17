@@ -139,12 +139,6 @@ BOOL get_autocomplete(DynamicWString* in, DWORD ix, DynamicWString* out, SearchC
         return FALSE;
     }
 
-    WideBuffer buf;
-    buf.capacity = 48;
-    buf.ptr = NULL;
-    buf.size = 0;
-    if (!get_envvar(L""))
-
     wchar_t cmd[] = L"python.exe test.py";
 
     STARTUPINFOW si;
@@ -220,6 +214,7 @@ BOOL WINAPI ReadConsoleW_Hook(HANDLE hConsoleInput, LPVOID lpBuffer, DWORD nNumb
     context.lookup_exe.size = 0;
     context.lookup_exe.capacity = 48;
     context.lookup_exe.ptr = NULL;
+
 read:
     if (!ReadConsoleW_Old(hConsoleInput, lpBuffer, nNumberOfCharsToRead, lpNumberOfCharsRead, pInputControl)) {
         goto fail;
