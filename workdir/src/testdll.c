@@ -3,6 +3,8 @@
 #include <windows.h>
 #include <Psapi.h>
 #include "printf.h"
+#include "dynamic_string.h"
+#include "path_utils.h"
 #include <limits.h>
 
 
@@ -97,10 +99,103 @@ int instruction_length(unsigned char* data, unsigned len) {
     return -1;
 }
 
+typedef struct SearchContext {
+    WideBuffer lookup_exe;
 
-BOOL get_autocomplete(wchar_t* in_buf, wchar_t* out_buf, DWORD ix, DWORD len, DWORD* out_len) {
-    memcpy(out_buf, L"Hello_world", 11 * sizeof(wchar_t));
-    *out_len = 11;
+} SearchContext;
+
+
+BOOL make_absolute(DynamicWString* path) {
+    wchar_t buf[MAX_PATH];
+    DWORD res = GetFullPathNameW(path->buffer, MAX_PATH, buf, NULL);
+    if (res == 0) {
+        return FALSE;
+    } else if (res > MAX_PATH) {
+        // TODO: HeapAlloc
+        return FALSE;
+    } else {
+        DynamicWStringClear(path);
+        DynamicWStringAppendCount(path, buf, res);
+        return TRUE;
+    }
+}
+
+BOOL get_autocomplete(DynamicWString* in, DWORD ix, DynamicWString* out, SearchContext* context) {
+    DynamicWStringClear(out);
+
+    HANDLE read, write;
+    SECURITY_ATTRIBUTES sa;
+    sa.nLength = sizeof(sa);
+    sa.bInheritHandle = TRUE;
+    sa.lpSecurityDescriptor = NULL;
+
+    if (!CreatePipe(&read, &write, &sa, 0)) {
+        return FALSE;
+    }
+
+    if (!SetHandleInformation(read, HANDLE_FLAG_INHERIT, 0)) {
+        CloseHandle(read);
+        CloseHandle(write);
+        return FALSE;
+    }
+
+    WideBuffer buf;
+    buf.capacity = 48;
+    buf.ptr = NULL;
+    buf.size = 0;
+    if (!get_envvar(L""))
+
+    wchar_t cmd[] = L"python.exe test.py";
+
+    STARTUPINFOW si;
+    memset(&si, 0, sizeof(si));
+    si.cb = sizeof(si);
+    si.hStdOutput = write;
+    si.dwFlags = STARTF_USESTDHANDLES;
+
+    PROCESS_INFORMATION pi;
+    memset(&pi, 0, sizeof(pi));
+
+    if (!CreateProcessW(NULL, cmd, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
+        CloseHandle(read);
+        CloseHandle(write);
+        return FALSE;
+    }
+
+    CloseHandle(pi.hThread);
+    CloseHandle(write);
+
+    wchar_t buf[128];
+    DWORD read_count;
+    while (ReadFile(read, buf, 256, &read_count, NULL)) {
+        if ((read_count % sizeof(wchar_t) != 0)) {
+            DWORD r;
+            char last_byte = buf[read_count / sizeof(wchar_t)];
+            char b;
+            if (!ReadFile(read, &b, 1, &r, NULL) || r == 0) {
+                --read_count;
+            } else {
+                buf[read_count / sizeof(wchar_t)] = ((wchar_t)last_byte) | (((wchar_t) b) << 8);
+                ++read_count;
+            }
+        }
+        DynamicWStringAppendCount(out, buf, read_count / sizeof(wchar_t));
+    }
+
+    CloseHandle(read);
+
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD exit;
+    if (!GetExitCodeProcess(pi.hProcess, &exit)) {
+        CloseHandle(pi.hProcess);
+        return FALSE;
+    }
+
+    CloseHandle(pi.hProcess);
+    if (exit != 0) {
+        return FALSE;
+    }
+
     return TRUE;
 }
 
@@ -112,28 +207,41 @@ BOOL WINAPI ReadConsoleW_Hook(HANDLE hConsoleInput, LPVOID lpBuffer, DWORD nNumb
         PCONSOLE_READCONSOLE_CONTROL pInputControl
     ) {
     HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
-    wchar_t *autcomplete_buf = HeapAlloc(GetProcessHeap(), 0, nNumberOfCharsToRead * sizeof(wchar_t));
-
-read:
-    if (!ReadConsoleW_Old(hConsoleInput, lpBuffer, nNumberOfCharsToRead, lpNumberOfCharsRead, pInputControl)) {
+    DynamicWString auto_complete;
+    if (!DynamicWStringCreate(&auto_complete)) {
         return FALSE;
     }
-    DWORD len = *lpNumberOfCharsRead;
-    wchar_t* data = lpBuffer;
 
-    for (DWORD ix = 0; ix < len; ++ix) {
-        if (data[ix] == '\r') {
+    DynamicWString in;
+    in.capacity = nNumberOfCharsToRead;
+    in.buffer = lpBuffer;
+
+    SearchContext context;
+    context.lookup_exe.size = 0;
+    context.lookup_exe.capacity = 48;
+    context.lookup_exe.ptr = NULL;
+read:
+    if (!ReadConsoleW_Old(hConsoleInput, lpBuffer, nNumberOfCharsToRead, lpNumberOfCharsRead, pInputControl)) {
+        goto fail;
+    }
+    in.length = *lpNumberOfCharsRead;
+
+    for (DWORD ix = 0; ix < in.length; ++ix) {
+        if (in.buffer[ix] == '\r') {
+            DynamicWStringFree(&auto_complete);
+            HeapFree(GetProcessHeap(), 0, context.lookup_exe.ptr);
             return TRUE;
         }
     }
     CONSOLE_SCREEN_BUFFER_INFO info;
     if (!GetConsoleScreenBufferInfo(out, &info)) {
-        return FALSE;
+        goto fail;
     }
+    --in.length;
     COORD pos = info.dwCursorPosition;
-    int ix = len - 1;
+    int ix = in.length;
     while (1) {
-        if (ix == 0 || data[ix - 1] == L' ') {
+        if (ix == 0 || in.buffer[ix - 1] == L' ') {
             break;
         }
         --ix;
@@ -146,18 +254,29 @@ read:
     }
 
     DWORD written;
-    FillConsoleOutputCharacterW(out, L' ', len - ix, pos, &written);
+    FillConsoleOutputCharacterW(out, L' ', in.length - ix, pos, &written);
 
     if (!SetConsoleCursorPosition(out, pos)) {
-        return FALSE;
+        goto fail;
     }
 
-    get_autocomplete(data, data + ix, ix, len, &written);
-    WriteConsoleW(out, data + ix, written, &written, NULL);
+    if (get_autocomplete(&in, ix, &auto_complete, &context)) {
+        in.length = ix;
+        if (in.length + auto_complete.length >= in.capacity) {
+            return FALSE;
+        }
+        DynamicWStringAppendCount(&in, auto_complete.buffer, auto_complete.length);
+    }
+    WriteConsoleW(out, in.buffer + ix, in.length - ix, &written, NULL);
 
-    pInputControl->nInitialChars = ix + 11;
+
+    pInputControl->nInitialChars = in.length;
 
     goto read;
+fail:
+    DynamicWStringFree(&auto_complete);
+    HeapFree(GetProcessHeap(), 0, context.lookup_exe.ptr);
+    return FALSE;
 }
 
 #define JMPREL_SIZE 5
