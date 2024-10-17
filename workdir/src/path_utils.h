@@ -1,15 +1,16 @@
 #pragma once
 #include <windows.h>
 #include "string_conv.h"
+#include "dynamic_string.h"
 #ifndef UNICODE
 #error Unicode required
 #endif
 
-typedef WideBuffer PathBuffer;
+typedef WString PathBuffer;
 
 typedef struct _EnvVar {
 	LPCWSTR name;
-	WideBuffer val;
+	WString val;
 } EnvVar;
 
 typedef struct _EnvBuffer {
@@ -21,20 +22,19 @@ typedef struct _EnvBuffer {
 /*
  Gets an environment variable <name> from the process environment block.
  Returns TRUE on success.
- If the function fails, res->ptr and res->size are not changed.
- If res->ptr == NULL and the function fails, res->capacity is set to 0.
- If res->ptr != NULL and the function fails, res->capacity is unchanged.
- The value res->capacity + hint is used as an initial capacity if res->ptr is NULL.
+ If the function fails, res->buffer is not changed.
+ If the function fails, res->capacity and res->length are undefined.
+ The value res->capacity + hint is used as an initial capacity if res->buffer is NULL.
  The value in hint should indicate how much the buffer is expected to grow.
 */
-BOOL get_envvar(LPCWSTR name, DWORD hint, WideBuffer* res);
+BOOL get_envvar(LPCWSTR name, DWORD hint, WString* res);
 
 /*
  Gets an environment variable <name> from <env>.
  If the variable is not present, it first added to env.
  If the function fails, NULL is returned.
 */
-WideBuffer* read_envvar(LPCWSTR name, EnvBuffer* env);
+WString* read_envvar(LPCWSTR name, EnvBuffer* env);
 
 void free_env(EnvBuffer* env);
 

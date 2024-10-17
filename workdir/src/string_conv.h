@@ -1,5 +1,6 @@
 #pragma once
 #include <windows.h>
+#include "dynamic_string.h"
 
 typedef struct _WideBuffer {
 	LPWSTR ptr;

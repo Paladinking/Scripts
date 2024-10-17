@@ -38,7 +38,7 @@ DWORD GetParentProcessId() {
     return 0;
 }
 
-wchar_t** split_path(WideBuffer* path, unsigned* count) {
+wchar_t** split_path(WString* path, unsigned* count) {
     HANDLE heap = GetProcessHeap();
     *count = 0;
     unsigned cap = 16;
@@ -46,20 +46,20 @@ wchar_t** split_path(WideBuffer* path, unsigned* count) {
     *count = 0;
 
     unsigned i = 0;
-    while (path->ptr[i] != L'\0') {
+    while (path->buffer[i] != L'\0') {
         WCHAR endc = L';';
         unsigned begin = i;
-        if (path->ptr[i] == L'"') {
+        if (path->buffer[i] == L'"') {
             endc = L'"';
             ++i;
         }
         while (1) {
-            if (path->ptr[i] == L'\0' || path->ptr[i] == endc) {
+            if (path->buffer[i] == L'\0' || path->buffer[i] == endc) {
                 break;
             }
             ++i;
         }
-        while (path->ptr[i] != L'\0' && path->ptr[i] != L';') {
+        while (path->buffer[i] != L'\0' && path->buffer[i] != L';') {
             ++i;
         }
         unsigned end = i;
@@ -67,13 +67,13 @@ wchar_t** split_path(WideBuffer* path, unsigned* count) {
             cap = cap * 2;
             out = HeapReAlloc(heap, 0, out, cap * sizeof(wchar_t*));
         }
-        out[*count] = path->ptr + begin;
+        out[*count] = path->buffer + begin;
         *count += 1;
-        if (path->ptr[i] == '\0') {
-            path->ptr[end] = '\0';
+        if (path->buffer[i] == '\0') {
+            path->buffer[end] = '\0';
             break;
         } else {
-            path->ptr[end] = '\0';
+            path->buffer[end] = '\0';
             ++i;
         }
     }
@@ -175,22 +175,13 @@ void select_path(wchar_t** paths, BOOL* has_file, unsigned count, unsigned ix) {
     }
 }
 
-void merge_path(WideBuffer* dest, wchar_t** path_parts, unsigned count, unsigned path_size) {
-    dest->ptr = HeapAlloc(GetProcessHeap(), 0, (path_size + 1) * sizeof(wchar_t));
-    dest->capacity = path_size + 1;
-    dest->size = 0;
+void merge_path(WString* dest, wchar_t** path_parts, unsigned count, unsigned path_size) {
+    WString_create_capacity(dest, path_size + 1);
+
     for (unsigned ix = 0; ix < count; ++ix) {
-        unsigned len = wcslen(path_parts[ix]);
-        if (dest->size + len + 2 > dest->capacity) {
-            // Should never happen, path has not grown...
-            dest->capacity = dest->size + len + 2;
-            dest->ptr = HeapReAlloc(GetProcessHeap(), 0, dest->ptr, dest->capacity * sizeof(wchar_t));
-        }
-        memcpy(dest->ptr + dest->size, path_parts[ix], len * sizeof(wchar_t));
-        *(dest->ptr + dest->size + len) = L';';
-        dest->size = dest->size + len + 1;
+        WString_extend(dest, path_parts[ix]);
+        WString_append(dest, L';');
     }
-    dest->ptr[dest->size] = L'\0';
 }
 
 const char* help_message =
@@ -240,9 +231,9 @@ int main() {
         }
     }
 
-    WideBuffer buf;
-    buf.ptr = NULL;
-    buf.size = 0;
+    WString buf;
+    buf.buffer = NULL;
+    buf.length = 0;
     buf.capacity = 0;
     if (get_envvar(L"PATH", 2048, &buf)) {
         unsigned count;
@@ -301,18 +292,18 @@ int main() {
                     select_path(path_parts, path_data, count, val);
                     --match_count;
                 } while (match_count > 1);
-                WideBuffer dest;
-                merge_path(&dest, path_parts, count, buf.size);
+                WString dest;
+                merge_path(&dest, path_parts, count, buf.length);
                 DWORD id = GetParentProcessId();
                 if (id == 0) {
                     status = 5;
                     _wprintf_h(err, L"Failed getting parent process id\n");
-                } else if (SetProcessEnvironmentVariable(L"PATH", dest.ptr, id)) {
+                } else if (SetProcessEnvironmentVariable(L"PATH", dest.buffer, id)) {
                     status = 6;
                     _wprintf_h(err, L"Failed setting PATH variable\n");
                 }
 
-                HeapFree(GetProcessHeap(), 0, dest.ptr);
+                WString_free(&dest);
             }
         } else {
             status = 4;
@@ -321,7 +312,7 @@ int main() {
 
         HeapFree(GetProcessHeap(), 0, path_data);
         HeapFree(GetProcessHeap(), 0, path_parts);
-        HeapFree(GetProcessHeap(), 0, buf.ptr);
+        WString_free(&buf);
     } else {
         _wprintf_h(err, L"Failed getting PATH\n");
         status = 3;

@@ -60,22 +60,22 @@ build\unicode_width.obj: src\unicode_width.c src\unicode_width.h build
 build\testdll.obj: src\testdll.c
 	cl /c $(CLFLAGS) src\testdll.c
 
-bin\pathc.exe: src\pathc.c build\path_utils.obj build\args.obj build\printf.obj build\ntutils.lib bin
-	cl $(CLFLAGS) /Fe:bin\pathc.exe src\pathc.c build\printf.obj build\path_utils.obj build\args.obj build\ntutils.lib $(LINKFLAGS)
+bin\pathc.exe: src\pathc.c build\path_utils.obj build\args.obj build\printf.obj build\dynamic_string.obj build\ntutils.lib bin
+	cl $(CLFLAGS) /Fe:bin\pathc.exe src\pathc.c build\printf.obj build\path_utils.obj build\args.obj build\dynamic_string.obj build\ntutils.lib $(LINKFLAGS)
 bin\parse-template.exe: src\parse-template.c build\args.obj build\dynamic_string.obj build\ntutils.lib bin
 	cl $(CLFLAGS) /Fe:bin\parse-template.exe src\parse-template.c build\args.obj build\dynamic_string.obj build\ntutils.lib chkstk.obj $(LINKFLAGS)
-bin\path-add.exe: src\path-add.c build\ntutils.lib build\path_utils.obj build\string_conv.obj build\args.obj build\printf.obj bin
-	cl $(CLFLAGS) /Fe:bin\path-add.exe src\path-add.c build\ntutils.lib build\path_utils.obj build\string_conv.obj build\args.obj build\printf.obj $(LINKFLAGS)
-bin\envir.exe: src\envir.c build\ntutils.lib build\printf.obj build\args.obj build\path_utils.obj bin
-	cl $(CLFLAGS) /Fe:bin\envir.exe src\envir.c build\ntutils.lib build\printf.obj build\args.obj build\path_utils.obj $(LINKFLAGS)
+bin\path-add.exe: src\path-add.c build\ntutils.lib build\path_utils.obj build\string_conv.obj build\args.obj build\printf.obj build\dynamic_string.obj bin
+	cl $(CLFLAGS) /Fe:bin\path-add.exe src\path-add.c build\ntutils.lib build\path_utils.obj build\string_conv.obj build\args.obj build\printf.obj build\dynamic_string.obj $(LINKFLAGS)
+bin\envir.exe: src\envir.c build\ntutils.lib build\printf.obj build\args.obj build\path_utils.obj build\dynamic_string.obj bin
+	cl $(CLFLAGS) /Fe:bin\envir.exe src\envir.c build\ntutils.lib build\printf.obj build\args.obj build\dynamic_string.obj build\path_utils.obj $(LINKFLAGS)
 bin\search.exe: src\search.c build\ntutils.lib build\printf.obj build\args.obj bin
 	cl $(CLFLAGS) /Fe:bin\search.exe src\search.c build\ntutils.lib build\printf.obj build\args.obj build\path_utils.obj User32.lib $(LINKFLAGS)
 bin\picker.exe: src\picker.c build\printf.obj build\dynamic_string.obj build\ntutils.lib
 	cl $(CLFLAGS) /D _WINDOWS /Fe:bin\picker.exe src\picker.c build\ntutils.lib build\printf.obj build\dynamic_string.obj User32.lib Gdi32.lib $(LINKFLAGSW)
 bin\path-edit.exe: src\path-edit.c build\cli.obj build\dynamic_string.obj build\printf.obj build\unicode_width.obj build\ntutils.lib
 	cl $(CLFLAGS) /Fe:bin\path-edit.exe src\path-edit.c build\cli.obj build\printf.obj build\dynamic_string.obj build\unicode_width.obj build\ntutils.lib chkstk.obj $(LINKFLAGS)
-bin\path-select.exe: src\path-select.c build\printf.obj build\args.obj build\path_utils.obj build\ntutils.lib build\kernelbase.lib
-	cl $(CLFLAGS) /Fe:bin\path-select.exe src\path-select.c build\printf.obj build\args.obj build\path_utils.obj build\ntutils.lib build\kernelbase.lib $(LINKFLAGS)
+bin\path-select.exe: src\path-select.c build\printf.obj build\args.obj build\path_utils.obj build\dynamic_string.obj build\ntutils.lib build\kernelbase.lib
+	cl $(CLFLAGS) /Fe:bin\path-select.exe src\path-select.c build\printf.obj build\args.obj build\path_utils.obj build\dynamic_string.obj build\ntutils.lib build\kernelbase.lib $(LINKFLAGS)
 bin\inject.exe: src\inject.c build\printf.obj build\ntutils.lib
 	cl $(CLFLAGS) /Fe:bin\inject.exe src\inject.c build\printf.obj build\ntutils.lib chkstk.obj build\dynamic_string.obj $(LINKFLAGS)
 

@@ -1,4 +1,5 @@
 #define UNICODE
+#define _NO_CRT_STDIO_INLINE
 #include <windows.h>
 #include <tlhelp32.h>
 #include "printf.h"
