@@ -53,7 +53,7 @@ typedef enum _OpStatus {
 	OP_SUCCESS, OP_NO_CHANGE, OP_INVALID_PATH, OP_MISSSING_ARG, OP_OUT_OF_MEMORY
 } OpStatus;
 
-OpStatus expand_path(LPWSTR path, LPWSTR* dest);
+OpStatus expand_path(LPWSTR path, LPWSTR* dest, DWORD *dest_cap);
 
 OpStatus path_add(LPWSTR arg, PathBuffer* path, BOOL before, BOOL expand);
 
