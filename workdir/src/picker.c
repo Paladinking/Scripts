@@ -6,7 +6,7 @@
 int x = 50;
 unsigned cursor = 0;
 
-DynamicWString data;
+WString data;
 
 LRESULT WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     switch (uMsg) {
@@ -66,7 +66,7 @@ LRESULT WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
                     if (data.length == 0) {
                         break;
                     }
-                    DynamicWStringRemove(&data, cursor, 1);
+                    WString_remove(&data, cursor, 1);
                 }
                 InvalidateRgn(hWnd, NULL, FALSE);
             }
@@ -79,14 +79,14 @@ LRESULT WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
             if (wParam == 8) {
                 if (cursor != 0) {
                     --cursor;
-                    DynamicWStringRemove(&data, cursor, 1);
+                    WString_remove(&data, cursor, 1);
                 }
             } else if (wParam == L'\t') {
-                DynamicWStringInsert(&data, cursor, L' ');
-                DynamicWStringInsert(&data, cursor + 1, L' ');
+                WString_insert(&data, cursor, L' ');
+                WString_insert(&data, cursor + 1, L' ');
                 cursor += 2;
             } else {
-                DynamicWStringInsert(&data, cursor, wParam);
+                WString_insert(&data, cursor, wParam);
                 ++cursor;
             }
 
@@ -116,7 +116,7 @@ int main() {
     UINT res = 0;
     HWND window = NULL;
     AttachConsole(ATTACH_PARENT_PROCESS);
-    DynamicWStringCreate(&data);
+    WString_create(&data);
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
     HINSTANCE module = GetModuleHandle(NULL);

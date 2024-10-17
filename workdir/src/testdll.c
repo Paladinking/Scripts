@@ -105,7 +105,7 @@ typedef struct SearchContext {
 } SearchContext;
 
 
-BOOL make_absolute(DynamicWString* path) {
+BOOL make_absolute(WString* path) {
     wchar_t buf[MAX_PATH];
     DWORD res = GetFullPathNameW(path->buffer, MAX_PATH, buf, NULL);
     if (res == 0) {
@@ -114,14 +114,14 @@ BOOL make_absolute(DynamicWString* path) {
         // TODO: HeapAlloc
         return FALSE;
     } else {
-        DynamicWStringClear(path);
-        DynamicWStringAppendCount(path, buf, res);
+        WString_clear(path);
+        WString_append_count(path, buf, res);
         return TRUE;
     }
 }
 
-BOOL get_autocomplete(DynamicWString* in, DWORD ix, DynamicWString* out, SearchContext* context) {
-    DynamicWStringClear(out);
+BOOL get_autocomplete(WString* in, DWORD ix, WString* out, SearchContext* context) {
+    WString_clear(out);
 
     HANDLE read, write;
     SECURITY_ATTRIBUTES sa;
@@ -173,7 +173,7 @@ BOOL get_autocomplete(DynamicWString* in, DWORD ix, DynamicWString* out, SearchC
                 ++read_count;
             }
         }
-        DynamicWStringAppendCount(out, buf, read_count / sizeof(wchar_t));
+        WString_append_count(out, buf, read_count / sizeof(wchar_t));
     }
 
     CloseHandle(read);
@@ -201,12 +201,12 @@ BOOL WINAPI ReadConsoleW_Hook(HANDLE hConsoleInput, LPVOID lpBuffer, DWORD nNumb
         PCONSOLE_READCONSOLE_CONTROL pInputControl
     ) {
     HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
-    DynamicWString auto_complete;
-    if (!DynamicWStringCreate(&auto_complete)) {
+    WString auto_complete;
+    if (!WString_create(&auto_complete)) {
         return FALSE;
     }
 
-    DynamicWString in;
+    WString in;
     in.capacity = nNumberOfCharsToRead;
     in.buffer = lpBuffer;
 
@@ -223,7 +223,7 @@ read:
 
     for (DWORD ix = 0; ix < in.length; ++ix) {
         if (in.buffer[ix] == '\r') {
-            DynamicWStringFree(&auto_complete);
+            WString_free(&auto_complete);
             HeapFree(GetProcessHeap(), 0, context.lookup_exe.ptr);
             return TRUE;
         }
@@ -260,7 +260,7 @@ read:
         if (in.length + auto_complete.length >= in.capacity) {
             return FALSE;
         }
-        DynamicWStringAppendCount(&in, auto_complete.buffer, auto_complete.length);
+        WString_append_count(&in, auto_complete.buffer, auto_complete.length);
     }
     WriteConsoleW(out, in.buffer + ix, in.length - ix, &written, NULL);
 
@@ -269,7 +269,7 @@ read:
 
     goto read;
 fail:
-    DynamicWStringFree(&auto_complete);
+    WString_free(&auto_complete);
     HeapFree(GetProcessHeap(), 0, context.lookup_exe.ptr);
     return FALSE;
 }

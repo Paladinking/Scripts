@@ -8,7 +8,7 @@ typedef struct _RowData {
 } RowData;
 
 typedef struct _CliListNode {
-    DynamicWString data;
+    WString data;
     DWORD flags;
     DWORD rows;
     RowData *row_data;
@@ -23,7 +23,7 @@ typedef struct _CliList {
 
     DWORD elements_capacity;
     DWORD options;
-    DynamicWString scratch_buffer;
+    WString scratch_buffer;
 } CliList;
 
 static const DWORD CLI_MOVE = 1;
@@ -35,7 +35,7 @@ static const DWORD CLI_KEEP_TABS = 32;
 static const DWORD CLI_OBSCURED = 64;
 static const DWORD CLI_INVALID_UNICODE = 128;
 
-CliList* CliList_create(const wchar_t* header, DynamicWString* elements, DWORD count, DWORD flags);
+CliList* CliList_create(const wchar_t* header, WString* elements, DWORD count, DWORD flags);
 
 DWORD CliList_run(CliList* list);
 

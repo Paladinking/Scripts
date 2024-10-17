@@ -177,8 +177,8 @@ typedef enum _ReplaceStatus {
 } ReplaceStatus;
 
 ReplaceStatus replace(MapEntry *map, unsigned map_len, HANDLE in, HANDLE out) {
-    DynamicString key_buffer;
-    if (!DynamicStringCreate(&key_buffer)) {
+    String key_buffer;
+    if (!String_create(&key_buffer)) {
         return REPLACE_OUT_OF_MEMORY;
     }
 
@@ -199,7 +199,7 @@ ReplaceStatus replace(MapEntry *map, unsigned map_len, HANDLE in, HANDLE out) {
             if (read_buffer[i] == '{') {
                 open_template += 1;
                 if (open_template == 3) {
-                    DynamicStringFree(&key_buffer);
+                    String_free(&key_buffer);
                     return REPLACE_INVALID;
                 }
             } else if (read_buffer[i] == '}' && open_template == 2) {
@@ -222,7 +222,7 @@ ReplaceStatus replace(MapEntry *map, unsigned map_len, HANDLE in, HANDLE out) {
                                   NULL);
                     }
                 }
-                DynamicStringClear(&key_buffer);
+                String_clear(&key_buffer);
                 open_template = 0;
                 closed_template = 0;
             } else if (open_template == 2) {
@@ -234,9 +234,9 @@ ReplaceStatus replace(MapEntry *map, unsigned map_len, HANDLE in, HANDLE out) {
                     WriteFile(out, &read_buffer[i], 1, NULL, NULL);
                     open_template = 0;
                     closed_template = 0;
-                    DynamicStringClear(&key_buffer);
-                } else if (!DynamicStringAppend(&key_buffer, read_buffer[i])) {
-                    DynamicStringFree(&key_buffer);
+                    String_clear(&key_buffer);
+                } else if (!String_append(&key_buffer, read_buffer[i])) {
+                    String_free(&key_buffer);
                     return REPLACE_OUT_OF_MEMORY;
                 }
             } else {
@@ -248,7 +248,7 @@ ReplaceStatus replace(MapEntry *map, unsigned map_len, HANDLE in, HANDLE out) {
             }
         }
     }
-    DynamicStringFree(&key_buffer);
+    String_free(&key_buffer);
     if (open_template == 2) {
         return REPLACE_INVALID;
     }
