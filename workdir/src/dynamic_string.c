@@ -2,49 +2,53 @@
 #include <windows.h>
 
 bool String_append(String *s, const char c) {
-    if (s->capacity == s->length + 1) {
-        HANDLE heap = GetProcessHeap();
-        unsigned capacity = s->capacity * 2;
-        char *buffer = HeapReAlloc(heap, 0, s->buffer, capacity);
-        if (buffer == NULL) {
-            return false;
-        }
-        s->buffer = buffer;
-        s->capacity = capacity;
+    if (!String_reserve(s, s->length + 1)) {
+        return false;
     }
     s->buffer[s->length] = c;
     s->length += 1;
-    s->buffer[s->length] = '\0';
+    s->buffer[s->length] = L'\0';
     return true;
 }
 
 bool String_extend(String *s, const char *c_str) {
-    unsigned index = 0;
-    while (c_str[index] != '\0') {
-        if (!String_append(s, c_str[index])) {
-            return false;
-        }
-        ++index;
+    size_t len = strlen(c_str);
+    if (!String_reserve(s, s->length + len)) {
+        return false;
     }
+    memcpy(s->buffer + s->length, c_str, (len + 1));
+    s->length += len;
     return true;
 }
 
 bool String_insert(String* s, unsigned ix, const char c) {
-    if (!String_append(s, c)) {
+    if (!String_reserve(s, s->length + 1)) {
         return false;
     }
-    memmove(s->buffer + ix + 1, s->buffer + ix, s->length - ix - 1);
+    s->length += 1;
+    memmove(s->buffer + ix + 1, s->buffer + ix, (s->length - ix - 1));
     s->buffer[ix] = c;
+    return true;
+}
+
+bool String_insert_count(String* s, unsigned ix, const char* buf, unsigned count) {
+    if (!String_reserve(s, s->length + count)) {
+        return false;
+    }
+    s->length += count;
+    memmove(s->buffer + ix + count, s->buffer + ix, (s->length - ix - count));
+    memmove(s->buffer + ix, buf, count);
+
     return true;
 }
 
 void String_pop(String *s, unsigned int count) {
     if (count > s->length) {
         s->length = 0;
-        s->buffer[0] = '\0';
+        s->buffer[0] = L'\0';
     } else {
         s->length = s->length - count;
-        s->buffer[s->length] = '\0';
+        s->buffer[s->length] = L'\0';
     }
 }
 
@@ -55,14 +59,14 @@ void String_remove(String* s, unsigned ix, unsigned count) {
     if (ix + count > s->length) {
         count = s->length - ix;
     }
-    memmove(s->buffer + ix, s->buffer + ix + count, s->length - ix - count);
+    memmove(s->buffer + ix, s->buffer + ix + count, (s->length - ix - count));
     s->length = s->length - count;
-    s->buffer[s->length] = '\0';
+    s->buffer[s->length] = L'\0';
 }
 
 void String_clear(String *s) {
     s->length = 0;
-    s->buffer[0] = '\0';
+    s->buffer[0] = L'\0';
 }
 
 bool String_create(String *s) {
@@ -78,6 +82,22 @@ bool String_create(String *s) {
     return true;
 }
 
+bool String_create_capacity(String_noinit* s, size_t cap) {
+    HANDLE heap = GetProcessHeap();
+    s->length = 0;
+    s->capacity = 4;
+    while (s->capacity < cap) {
+        s->capacity *= 2;
+    }
+    s->buffer = HeapAlloc(heap, 0, s->capacity);
+    if (s->buffer == NULL) {
+        s->capacity = 0;
+        return false;
+    }
+    s->buffer[0] = '\0';
+    return true;
+}
+
 void String_free(String *s) {
     HANDLE heap = GetProcessHeap();
     HeapFree(heap, 0, s->buffer);
@@ -89,7 +109,7 @@ void String_free(String *s) {
 bool String_copy(String* dest, String* source) {
     HANDLE heap = GetProcessHeap();
     dest->length = source->length;
-    dest->capacity = 0;
+    dest->capacity = 4;
     while (dest->capacity <= source->length) {
         dest->capacity = dest->capacity * 2;
     }
@@ -99,9 +119,63 @@ bool String_copy(String* dest, String* source) {
         dest->length = 0;
         return false;
     }
-    memcpy(dest->buffer, source->buffer, dest->length + 1);
+    memcpy(dest->buffer, source->buffer, (dest->length + 1));
     return true;
 }
+
+bool String_append_count(String* s, const char* buf, unsigned count) {
+    if (!String_reserve(s, s->length + count)) {
+        return FALSE;
+    }
+    memcpy(s->buffer + s->length, buf, count);
+    s->length += count;
+    s->buffer[s->length] = L'\0';
+    return TRUE;
+}
+
+
+bool String_reserve(String* s, size_t count) {
+    if (s->capacity <= count) {
+        if (s->capacity == 0) {
+            return false;
+        }
+        size_t new_cap = s->capacity * 2;
+        while (new_cap <= count) {
+            new_cap *= 2;
+        }
+        char* buf = HeapReAlloc(GetProcessHeap(), 0, s->buffer, new_cap);
+        if (buf == NULL) {
+            return false;
+        }
+        s->buffer = buf;
+        s->capacity = new_cap;
+    }
+    return true;
+}
+
+bool String_from_utf16_bytes(String *dest, const wchar_t *s, size_t count) {
+    UINT code_point = 65001;
+    DWORD size = WideCharToMultiByte(code_point, 0, s, count, NULL, 0, NULL, NULL);
+    if (!String_reserve(dest, size)) {
+        return false;
+    }
+    size = WideCharToMultiByte(code_point, 0, s, count, dest->buffer, size, NULL, NULL);
+    if (size == 0) {
+        return false;
+    }
+    dest->length = size;
+    dest->buffer[size] = L'\0';
+
+    return true;
+}
+
+bool String_from_utf16_str(String *dest, const wchar_t* s) {
+    size_t len = wcslen(s);
+    return String_from_utf16_bytes(dest, s, len);
+}
+
+
+// Wide
 
 bool WString_append(WString *s, const wchar_t c) {
     if (!WString_reserve(s, s->length + 1)) {
@@ -200,6 +274,46 @@ bool WString_create_capacity(WString_noinit* s, size_t cap) {
     return true;
 }
 
+void WString_replaceall(WString* s, wchar_t from, wchar_t to) {
+    for (unsigned i = 0; i < s->length; ++i) {
+        if (s->buffer[i] == from) {
+            s->buffer[i] = to;
+        }
+    }
+}
+
+unsigned WString_count(const WString* s, wchar_t c) {
+    unsigned count = 0;
+    for (unsigned i = 0; i < s->length; ++i) {
+        if (s->buffer[i] == c) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+bool WString_startswith(const WString* s, const wchar_t* str) {
+    unsigned ix = 0;
+    while (str[ix]) {
+        if (ix >= s->length) {
+            return false;
+        }
+        if (s->buffer[ix] != str[ix]) {
+            return false;
+        }
+        ++ix;
+    }
+    return true;
+}
+
+bool WString_equals(const WString* s, const WString* str) {
+    if (s->length != str->length) {
+        return false;
+    }
+    return memcmp(s, str, s->length * sizeof(wchar_t)) == 0;
+}
+
+
 void WString_free(WString *s) {
     HANDLE heap = GetProcessHeap();
     HeapFree(heap, 0, s->buffer);
@@ -238,6 +352,9 @@ bool WString_append_count(WString* s, const wchar_t* buf, unsigned count) {
 
 bool WString_reserve(WString* s, size_t count) {
     if (s->capacity <= count) {
+        if (s->capacity == 0) {
+            return false;
+        }
         size_t new_cap = s->capacity * 2;
         while (new_cap <= count) {
             new_cap *= 2;
@@ -255,7 +372,7 @@ bool WString_reserve(WString* s, size_t count) {
 bool WString_from_utf8_bytes(WString* dest, const char* s, size_t count) {
     UINT code_point = 65001;
     DWORD size = MultiByteToWideChar(code_point, 0, s, count, NULL, 0);
-    if (!WString_reserve(dest, count)) {
+    if (!WString_reserve(dest, size)) {
         return false;
     }
     size = MultiByteToWideChar(code_point, 0, s, count, dest->buffer, size);

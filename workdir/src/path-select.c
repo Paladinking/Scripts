@@ -81,6 +81,12 @@ wchar_t** split_path(WString* path, unsigned* count) {
     return out;
 }
 
+typedef struct _WideBuffer {
+	LPWSTR ptr;
+	DWORD size;
+	DWORD capacity;
+} WideBuffer;
+
 // 0 = false, 1 = true, < 0 = error
 int has_file(const wchar_t* file, const wchar_t* dir, unsigned file_len, WideBuffer* buf) {
     unsigned dir_len = wcslen(dir);

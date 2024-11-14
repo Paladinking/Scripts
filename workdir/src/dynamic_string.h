@@ -10,23 +10,48 @@ typedef struct String {
 
 typedef String String_noinit;
 
+// Append character `c` to string
 bool String_append(String* s, const char c);
 
-bool String_extend(String* s, const char* c_str);
+// Append null-terminated string `c_str` to string
+bool String_extend(String*s, const char* c_str);
 
+// Append `count` characters from `buf` to string
+bool String_append_count(String* s, const char* buf, unsigned count);
+
+// Insert `c` at offset `ix` into string
 bool String_insert(String* s, unsigned ix, const char c);
 
+// Insert `count` characters from `buf` at `ix`
+bool String_insert_count(String* s, unsigned ix, const char* buf, unsigned count);
+
+// Remove the `count` last elements from string
 void String_pop(String* s, unsigned count);
 
+// Remove `count` elements starting at `ix` from string
 void String_remove(String* s, unsigned ix, unsigned count);
 
+// Clear string. Leaves capacity unchanged
 void String_clear(String* s);
 
-bool String_create(String* s);
+// Create a new string 
+bool String_create(String_noinit* s);
 
+// Create a new string with capacity >= `cap`
+bool String_create_capacity(String_noinit* s, size_t cap);
+
+// Free a string
 void String_free(String* s);
 
-bool String_copy(String* dest, String* source);
+// Copy `source` into `dest`. `dest` should be unitialized
+bool String_copy(String_noinit* dest, String* source);
+
+// Increase capacity to allow `count` elements
+bool String_reserve(String* s, size_t count);
+
+bool String_from_utf16_bytes(String* dest, const wchar_t* s, size_t count);
+
+bool String_from_utf16_str(String* dest, const wchar_t* s);
 
 typedef struct WString {
 	wchar_t* buffer;
@@ -60,11 +85,19 @@ void WString_remove(WString* s, unsigned ix, unsigned count);
 // Clear string. Leaves capacity unchanged
 void WString_clear(WString* s);
 
-// Create a new string
+// Create a new string 
 bool WString_create(WString_noinit* s);
 
 // Create a new string with capacity >= `cap`
 bool WString_create_capacity(WString_noinit* s, size_t cap);
+
+void WString_replaceall(WString* s, wchar_t from, wchar_t to);
+
+unsigned WString_count(const WString* s, wchar_t c);
+
+bool WString_startswith(const WString* s, const wchar_t* str);
+
+bool WString_equals(const WString* s, const WString* str);
 
 // Free a string
 void WString_free(WString* s);

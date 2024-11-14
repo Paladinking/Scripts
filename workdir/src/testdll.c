@@ -4,9 +4,12 @@
 #include <Psapi.h>
 #include "printf.h"
 #include "dynamic_string.h"
-#include "path_utils.h"
+#include "glob.h"
 #include <limits.h>
 
+// TODO:
+// Commands and arguments from file
+// Do not double complete when commands and files have same name
 
 static int refcount = 0;
 
@@ -100,102 +103,146 @@ int instruction_length(unsigned char* data, unsigned len) {
 }
 
 typedef struct SearchContext {
-    WideBuffer lookup_exe;
+    WString cmd_base;
+    WalkCtx dir_ctx;
+    WString dir;
+    BOOL has_quotes;
 
+    const WString* commands;
+    unsigned command_count;
+    unsigned command_ix;
 } SearchContext;
 
-
-BOOL make_absolute(WString* path) {
-    wchar_t buf[MAX_PATH];
-    DWORD res = GetFullPathNameW(path->buffer, MAX_PATH, buf, NULL);
-    if (res == 0) {
-        return FALSE;
-    } else if (res > MAX_PATH) {
-        // TODO: HeapAlloc
-        return FALSE;
-    } else {
-        WString_clear(path);
-        WString_append_count(path, buf, res);
-        return TRUE;
+wchar_t* find_parent_dir(wchar_t* str, unsigned len) {
+    unsigned ix = len;
+    while (ix > 0) {
+        --ix;
+        if (str[ix] == L'/' || str[ix] == L'\\') {
+            return str + ix;
+        }
     }
+    return NULL;
 }
 
-BOOL get_autocomplete(WString* in, DWORD ix, WString* out, SearchContext* context) {
-    WString_clear(out);
+bool char_needs_quotes(wchar_t c) {
+    return c == L' ' || c == L'+' || c == L'=' || c == L'(' || c == L')' || 
+            c == L'{' || c == '}' || c == L'%' || c == L'[' || c == L']';
+}
 
-    HANDLE read, write;
-    SECURITY_ATTRIBUTES sa;
-    sa.nLength = sizeof(sa);
-    sa.bInheritHandle = TRUE;
-    sa.lpSecurityDescriptor = NULL;
-
-    if (!CreatePipe(&read, &write, &sa, 0)) {
-        return FALSE;
-    }
-
-    if (!SetHandleInformation(read, HANDLE_FLAG_INHERIT, 0)) {
-        CloseHandle(read);
-        CloseHandle(write);
-        return FALSE;
-    }
-
-    wchar_t cmd[] = L"python.exe test.py";
-
-    STARTUPINFOW si;
-    memset(&si, 0, sizeof(si));
-    si.cb = sizeof(si);
-    si.hStdOutput = write;
-    si.dwFlags = STARTF_USESTDHANDLES;
-
-    PROCESS_INFORMATION pi;
-    memset(&pi, 0, sizeof(pi));
-
-    if (!CreateProcessW(NULL, cmd, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
-        CloseHandle(read);
-        CloseHandle(write);
-        return FALSE;
-    }
-
-    CloseHandle(pi.hThread);
-    CloseHandle(write);
-
-    wchar_t buf[128];
-    DWORD read_count;
-    while (ReadFile(read, buf, 256, &read_count, NULL)) {
-        if ((read_count % sizeof(wchar_t) != 0)) {
-            DWORD r;
-            char last_byte = buf[read_count / sizeof(wchar_t)];
-            char b;
-            if (!ReadFile(read, &b, 1, &r, NULL) || r == 0) {
-                --read_count;
-            } else {
-                buf[read_count / sizeof(wchar_t)] = ((wchar_t)last_byte) | (((wchar_t) b) << 8);
-                ++read_count;
-            }
+bool str_needs_quotes(const WString* str) {
+    for (unsigned i = 0; i < str->length; ++i) {
+        wchar_t c = str->buffer[i];
+        if (char_needs_quotes(c)) {
+            return true;
         }
-        WString_append_count(out, buf, read_count / sizeof(wchar_t));
+    }
+    return false;
+}
+
+bool filter(const WString* str, void* ctx) {
+    WString* base = &((SearchContext*)ctx)->cmd_base;
+    if (base->length > str->length) {
+        return false;
+    }
+    for (unsigned ix = 0; ix < base->length; ++ix) {
+        if (towlower(str->buffer[ix]) != towlower(base->buffer[ix])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+BOOL get_autocomplete(WString* in, DWORD ix, WString* out, SearchContext* context, BOOL changed) {
+    WString_clear(out);
+    if (changed) {
+        WalkDir_abort(&context->dir_ctx);
+        WString_clear(&context->cmd_base);
+        WString_clear(&context->dir);
+        wchar_t* sep = find_parent_dir(in->buffer + ix, in->length - ix);
+        context->command_ix = 0;
+        if (sep == NULL) {
+            context->has_quotes = FALSE;
+            WString_append_count(&context->cmd_base, in->buffer + ix, in->length - ix);
+            WalkDir_begin(&context->dir_ctx, L".");
+        } else {
+            context->has_quotes = in->buffer[ix] == L'"';
+            if (context->has_quotes) {
+                ++ix;
+            }
+            unsigned offset = sep - (in->buffer + ix);
+            unsigned remaining = in->length - ix - offset;
+            if (context->has_quotes && in->buffer[ix + offset - 1] == L'"') {
+                --offset;
+            } else if (context->has_quotes && sep[remaining - 1] == L'"') {
+                --remaining;
+            }
+            WString_append_count(&context->dir, in->buffer + ix, offset);
+            WString_append(&context->dir, *sep);
+            WString_append_count(&context->cmd_base, sep + 1, remaining - 1);
+            WalkDir_begin(&context->dir_ctx, context->dir.buffer);
+        }
     }
 
-    CloseHandle(read);
+    const WString* line = NULL;
+    Path* path = NULL;
+    bool commands = context->dir.length == 0;
 
-    WaitForSingleObject(pi.hProcess, INFINITE);
-    DWORD exit;
-    if (!GetExitCodeProcess(pi.hProcess, &exit)) {
-        CloseHandle(pi.hProcess);
-        return FALSE;
+    while (commands && context->command_ix < context->command_count) {
+        ++context->command_ix;
+        if (filter(&context->commands[context->command_ix - 1], context)) {
+            line = &context->commands[context->command_ix - 1];
+            break;
+        }
+    }
+    while (!line) {
+        if (WalkDir_next(&context->dir_ctx, &path) <= 0) {
+            const wchar_t* dir = commands ? L"." : context->dir.buffer;
+            WalkDir_begin(&context->dir_ctx, dir);
+            context->command_ix = 0;
+            while (commands && context->command_ix < context->command_count) {
+                ++context->command_ix;
+                if (filter(&context->commands[context->command_ix - 1], context)) {
+                    line = &context->commands[context->command_ix - 1];
+                    break;
+                }
+            }
+            while (!line) {
+                if (WalkDir_next(&context->dir_ctx, &path) <= 0) {
+                    return FALSE;
+                }
+                if (filter(&path->path, context)) {
+                    line = &path->path;
+                    break;
+                }
+            }
+            break;
+        }
+        if (filter(&path->path, context)) {
+            line = &path->path;
+            break;
+        }
+    }
+    BOOL quote = context->has_quotes;
+    if (!quote && (str_needs_quotes(&context->dir) || str_needs_quotes(line))) {
+        quote = TRUE;
     }
 
-    CloseHandle(pi.hProcess);
-    if (exit != 0) {
-        return FALSE;
+    if (quote) {
+        WString_append(out, L'"');
     }
-
+    WString_append_count(out, context->dir.buffer, context->dir.length);
+    WString_append_count(out, line->buffer, line->length);
+    if (quote) {
+        WString_append(out, L'"');
+    }
     return TRUE;
 }
 
 typedef BOOL(WINAPI* ReadConsoleW_t)(HANDLE, LPVOID, DWORD, LPDWORD, PCONSOLE_READCONSOLE_CONTROL);
 
 ReadConsoleW_t ReadConsoleW_Old;
+
+WString commands[1] = {L"git", 0, 3};
 
 BOOL WINAPI ReadConsoleW_Hook(HANDLE hConsoleInput, LPVOID lpBuffer, DWORD nNumberOfCharsToRead, LPDWORD lpNumberOfCharsRead, 
         PCONSOLE_READCONSOLE_CONTROL pInputControl
@@ -209,24 +256,35 @@ BOOL WINAPI ReadConsoleW_Hook(HANDLE hConsoleInput, LPVOID lpBuffer, DWORD nNumb
     WString in;
     in.capacity = nNumberOfCharsToRead;
     in.buffer = lpBuffer;
+    in.length = 0;
 
     SearchContext context;
-    context.lookup_exe.size = 0;
-    context.lookup_exe.capacity = 48;
-    context.lookup_exe.ptr = NULL;
+    context.dir_ctx.handle = INVALID_HANDLE_VALUE;
+    WString_create(&context.cmd_base);
+    WString_create(&context.dir);
+    context.command_count = 1;
+    context.commands = commands;
 
+    BOOL has_complete = FALSE;
 read:
     if (!ReadConsoleW_Old(hConsoleInput, lpBuffer, nNumberOfCharsToRead, lpNumberOfCharsRead, pInputControl)) {
         goto fail;
     }
+    DWORD events;
+    GetNumberOfConsoleInputEvents(hConsoleInput, &events);
     in.length = *lpNumberOfCharsRead;
 
     for (DWORD ix = 0; ix < in.length; ++ix) {
         if (in.buffer[ix] == '\r') {
+            WString_free(&context.dir);
+            WString_free(&context.cmd_base);
             WString_free(&auto_complete);
-            HeapFree(GetProcessHeap(), 0, context.lookup_exe.ptr);
             return TRUE;
         }
+    }
+    if (in.length == 0 || in.buffer[in.length - 1] != L'\t') {
+        // A CTR-C event can trigger ReadConsoleW_Old to return without '\t'
+        goto fail;
     }
     CONSOLE_SCREEN_BUFFER_INFO info;
     if (!GetConsoleScreenBufferInfo(out, &info)) {
@@ -234,9 +292,24 @@ read:
     }
     --in.length;
     COORD pos = info.dwCursorPosition;
-    int ix = in.length;
+    int ix = 0;
+    unsigned quote = 0;
+    for (; ix < in.length; ++ix) {
+        wchar_t c = in.buffer[ix];
+        if (c == L'"') {
+            if (quote) {
+                quote = 0;
+            } else {
+                quote = 1;
+            }
+        }
+    }
     while (1) {
-        if (ix == 0 || in.buffer[ix - 1] == L' ') {
+        if (ix == 0) {
+            break;
+        }
+        wchar_t c = in.buffer[ix - 1];
+        if (quote == 0 && (char_needs_quotes(c) || c == L'&' || c == L'|' || c == L'<' || c == L'>')) {
             break;
         }
         --ix;
@@ -246,22 +319,39 @@ read:
         } else {
             pos.X -= 1;
         }
+        if (in.buffer[ix] == L'"') {
+            if (quote) {
+                break;
+            } else {
+                quote = 1;
+            }
+        }
+    }
+
+    unsigned wordlen = in.length - ix;
+    BOOL changed = FALSE;
+    if (!has_complete || wordlen != auto_complete.length ||
+        memcmp(in.buffer + ix, auto_complete.buffer, wordlen * sizeof(wchar_t)) != 0) {
+        changed = TRUE;
+    }
+
+    has_complete = get_autocomplete(&in, ix, &auto_complete, &context, changed);
+
+    if (has_complete) {
+        in.length = ix;
+        if (in.length + auto_complete.length >= in.capacity) {
+            goto fail;
+        }
+        WString_append_count(&in, auto_complete.buffer, auto_complete.length);
     }
 
     DWORD written;
-    FillConsoleOutputCharacterW(out, L' ', in.length - ix, pos, &written);
+    FillConsoleOutputCharacterW(out, L' ', wordlen, pos, &written);
 
     if (!SetConsoleCursorPosition(out, pos)) {
         goto fail;
     }
 
-    if (get_autocomplete(&in, ix, &auto_complete, &context)) {
-        in.length = ix;
-        if (in.length + auto_complete.length >= in.capacity) {
-            return FALSE;
-        }
-        WString_append_count(&in, auto_complete.buffer, auto_complete.length);
-    }
     WriteConsoleW(out, in.buffer + ix, in.length - ix, &written, NULL);
 
 
@@ -269,8 +359,9 @@ read:
 
     goto read;
 fail:
+    WString_free(&context.dir);
+    WString_free(&context.cmd_base);
     WString_free(&auto_complete);
-    HeapFree(GetProcessHeap(), 0, context.lookup_exe.ptr);
     return FALSE;
 }
 
