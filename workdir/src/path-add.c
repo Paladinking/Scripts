@@ -6,7 +6,6 @@
 #include "dynamic_string.h"
 #include "path_utils.h"
 #include "printf.h"
-#include "string_conv.h"
 #include <tlhelp32.h>
 #include <wchar.h>
 #include <windows.h>
@@ -355,24 +354,25 @@ int main() {
 
     BOOL changed = FALSE;
 
-    StringBuffer buffer = {NULL, 0, 0};
+    String buffer;
+    String_create(&buffer);
     for (DWORD i = 1; i < argc; ++i) {
         DWORD len = wcslen(argv[i]);
-        if (!WideStringToNarrow(argv[i], len, &buffer)) {
+        if (!String_from_utf16_bytes(&buffer, argv[i], len)) {
             continue;
         }
-        OpStatus res = add_paths(paths_data, lines, buffer.ptr, argv[0]);
+        OpStatus res = add_paths(paths_data, lines, buffer.buffer, argv[0]);
         if (res == OP_SUCCESS) {
             changed = TRUE;
         } else if (res != OP_NO_CHANGE) {
             status = res;
 
-            HeapFree(heap, 0, buffer.ptr);
+            String_free(&buffer);
             HeapFree(heap, 0, paths_data);
             goto end;
         }
     }
-    HeapFree(heap, 0, buffer.ptr);
+    String_free(&buffer);
     HeapFree(heap, 0, paths_data);
     if (!changed) {
         status = 1;

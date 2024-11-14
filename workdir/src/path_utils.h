@@ -1,6 +1,5 @@
 #pragma once
 #include <windows.h>
-#include "string_conv.h"
 #include "dynamic_string.h"
 #ifndef UNICODE
 #error Unicode required

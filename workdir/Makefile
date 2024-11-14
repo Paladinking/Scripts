@@ -49,7 +49,7 @@ build\args.obj: src\args.c src\args.h build
 	cl /c $(CLFLAGS) src\args.c
 build\printf.obj: src\printf.c src\printf.h build
 	cl /c $(CLFLAGS) src\printf.c
-build\path_utils.obj: src\path_utils.c src\path_utils.h src\string_conv.h build
+build\path_utils.obj: src\path_utils.c src\path_utils.h build
 	cl /c $(CLFLAGS) src\path_utils.c
 build\string_conv.obj: src\string_conv.c src\string_conv.h build
 	cl /c $(CLFLAGS) src\string_conv.c
@@ -59,17 +59,23 @@ build\unicode_width.obj: src\unicode_width.c src\unicode_width.h build
 	cl /c $(CLFLAGS) src\unicode_width.c
 build\testdll.obj: src\testdll.c
 	cl /c $(CLFLAGS) src\testdll.c
+build\glob.obj: src\glob.c src\glob.h build
+	cl /c $(CLFLAGS) src\glob.c
+build\hashmap.obj: src\hashmap.c src\hashmap.h build
+	cl /c $(CLFLAGS) src\hashmap.c
+build\whashmap.obj: src\hashmap.c src\hashmap.h src\whashmap.h build
+	cl /c $(CLFLAGS) /Fo:build\whashmap.obj /DHASHMAP_WIDE src\hashmap.c
 
 bin\pathc.exe: src\pathc.c build\path_utils.obj build\args.obj build\printf.obj build\dynamic_string.obj build\ntutils.lib bin
 	cl $(CLFLAGS) /Fe:bin\pathc.exe src\pathc.c build\printf.obj build\path_utils.obj build\args.obj build\dynamic_string.obj build\ntutils.lib $(LINKFLAGS)
 bin\parse-template.exe: src\parse-template.c build\args.obj build\dynamic_string.obj build\ntutils.lib bin
 	cl $(CLFLAGS) /Fe:bin\parse-template.exe src\parse-template.c build\args.obj build\dynamic_string.obj build\ntutils.lib chkstk.obj $(LINKFLAGS)
-bin\path-add.exe: src\path-add.c build\ntutils.lib build\path_utils.obj build\string_conv.obj build\args.obj build\printf.obj build\dynamic_string.obj bin
-	cl $(CLFLAGS) /Fe:bin\path-add.exe src\path-add.c build\ntutils.lib build\path_utils.obj build\string_conv.obj build\args.obj build\printf.obj build\dynamic_string.obj $(LINKFLAGS)
+bin\path-add.exe: src\path-add.c build\ntutils.lib build\path_utils.obj build\args.obj build\printf.obj build\dynamic_string.obj bin
+	cl $(CLFLAGS) /Fe:bin\path-add.exe src\path-add.c build\ntutils.lib build\path_utils.obj build\args.obj build\printf.obj build\dynamic_string.obj $(LINKFLAGS)
 bin\envir.exe: src\envir.c build\ntutils.lib build\printf.obj build\args.obj build\path_utils.obj build\dynamic_string.obj bin
 	cl $(CLFLAGS) /Fe:bin\envir.exe src\envir.c build\ntutils.lib build\printf.obj build\args.obj build\dynamic_string.obj build\path_utils.obj $(LINKFLAGS)
-bin\search.exe: src\search.c build\ntutils.lib build\printf.obj build\args.obj bin
-	cl $(CLFLAGS) /Fe:bin\search.exe src\search.c build\ntutils.lib build\printf.obj build\args.obj build\path_utils.obj User32.lib $(LINKFLAGS)
+bin\search.exe: src\search.c build\ntutils.lib build\printf.obj build\path_utils.obj build\dynamic_string.obj build\args.obj bin
+	cl $(CLFLAGS) /Fe:bin\search.exe src\search.c build\ntutils.lib build\printf.obj build\dynamic_string.obj build\args.obj build\path_utils.obj User32.lib $(LINKFLAGS)
 bin\picker.exe: src\picker.c build\printf.obj build\dynamic_string.obj build\ntutils.lib
 	cl $(CLFLAGS) /D _WINDOWS /Fe:bin\picker.exe src\picker.c build\ntutils.lib build\printf.obj build\dynamic_string.obj User32.lib Gdi32.lib $(LINKFLAGSW)
 bin\path-edit.exe: src\path-edit.c build\cli.obj build\dynamic_string.obj build\printf.obj build\unicode_width.obj build\ntutils.lib
@@ -79,12 +85,12 @@ bin\path-select.exe: src\path-select.c build\printf.obj build\args.obj build\pat
 bin\inject.exe: src\inject.c build\printf.obj build\ntutils.lib
 	cl $(CLFLAGS) /Fe:bin\inject.exe src\inject.c build\printf.obj build\ntutils.lib chkstk.obj build\dynamic_string.obj $(LINKFLAGS)
 
-bin\testdll.dll: build\testdll.obj build\printf.obj build\dynamic_string.obj build\ntutils.lib
-	link /DLL /NODEFAULTLIB /entry:DLLMain /LTCG /OUT:bin\testdll.dll build\testdll.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib Kernel32.lib
+bin\testdll.dll: build\testdll.obj build\printf.obj build\dynamic_string.obj build\glob.obj build\ntutils.lib
+	link /DLL /NODEFAULTLIB /entry:DLLMain /LTCG /OUT:bin\testdll.dll build\testdll.obj build\dynamic_string.obj build\printf.obj build\glob.obj build\ntutils.lib Kernel32.lib
 	
 
-bin\test.exe: src\test.c build\args.obj build\ntutils.lib
-	cl $(CLFLAGS) /Fe:bin\test.exe src\test.c build\args.obj build\ntutils.lib $(LINKFLAGS)
+bin\test.exe: src\test.c build\glob.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib build\hashmap.obj build\whashmap.obj
+	cl $(CLFLAGS) /Fe:bin\test.exe src\test.c build\glob.obj build\dynamic_string.obj build\printf.obj build\hashmap.obj build\whashmap.obj build\ntutils.lib $(LINKFLAGS)
 
 build\kernelbase.lib: build
 	lib /MACHINE:X64 /DEF /OUT:build\kernelbase.lib /NAME:kernelbase.dll\
@@ -100,7 +106,7 @@ build\ntutils.lib: build
 	 /EXPORT:_vsnwprintf=_vsnwprintf /EXPORT:_vsnprintf=_vsnprintf /EXPORT:_vscprintf=_vscprintf\
 	 /EXPORT:memset=memset /EXPORT:wcscmp=wcscmp /EXPORT:strcmp=strcmp\
 	 /EXPORT:_fltused=_fltused /EXPORT:wcschr=wcschr /EXPORT:wcsrchr=wcsrchr\
-	 /EXPORT:strtol=strtol /EXPORT:wcsncmp=wcsncmp
+	 /EXPORT:strtol=strtol /EXPORT:wcsncmp=wcsncmp /EXPORT:memcmp=memcmp
 
 bin\err.exe: script\err.exe bin
 	type script\err.exe > bin\err.exe
