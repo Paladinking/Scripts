@@ -3,6 +3,7 @@
 #include "printf.h"
 #include "hashmap.h"
 #include "whashmap.h"
+#include "subprocess.h"
 
 enum Invalidation {
     ALWAYS, NEVER, CHDIR
@@ -13,36 +14,52 @@ enum Invalidation {
 #define EXTRA_ANY_FILES 4
 #define EXTRA_DEFAULT 8
 
-WHashMap nodes;
+struct CmpNode;
 
 typedef struct DynamicMatches {
     // First is length of first string, followed by first string
     // After that, length of second string etc...
-    const wchar_t* matches; // NULL when invalidated
+    wchar_t* matches; // NULL when invalidated
+    wchar_t* cmd;
     unsigned match_count;
     enum Invalidation invalidation;
     wchar_t separator;
 } DynamicMatches;
 
-typedef struct StaticMatches {
-    const wchar_t* matches;
-    unsigned match_count;
-} StaticMatches;
+
+typedef struct DynamicNode {
+    DynamicMatches* matches;
+    struct CmpNode* node;
+} DynamicNode;
 
 typedef struct CmpNode {
-    StaticMatches fixed;
-    DynamicMatches* dynamic;
+    // First is length of first string, followed by first string
+    // After that, length of second string etc...
+    wchar_t* fixed_matches;
+    unsigned fixed_count;
+
+    DynamicNode* dynamic;
     unsigned dynamic_count;
+
     unsigned extra;
     // If extra has EXTRA_ANY_ITEM, contains one child that
     // all matches lead to. All other flags are ignored.
-    // Otherwise first has dynamic_count children for dynamic matches.
-    // If extra has EXTRA_ANY_FILES or EXTRA_EXISTING_FILES next child
-    // is anything matched by files.
+    // If extra has EXTRA_ANY_FILES or EXTRA_EXISTING_FILES, this is one child
     // If extra has EXTRA_DEFAULT, next child is default child.
-    struct CmpNode* children;
+    struct CmpNode* extra_nodes[2];
     wchar_t hash_postfix[5]; // Prefix used in global hashmap for finding next node
 } CmpNode;
+
+
+
+WHashMap gNodes;
+
+unsigned gDynamic_count = 0;
+unsigned gDynamic_capacity = 0;
+DynamicMatches** gDynamic_matches = NULL;
+HANDLE gDynamic_thread = NULL;
+
+
 
 bool is_filelike(const wchar_t* str, unsigned len) {
     if (len == 0) {
@@ -65,11 +82,238 @@ bool is_filelike(const wchar_t* str, unsigned len) {
     return true;
 }
 
+
+typedef struct NodeBuilder {
+    CmpNode* node;
+    WString fixed;
+    CmpNode** fixed_nodes;
+    unsigned node_cap;
+    unsigned dynamic_cap;
+} NodeBuilder;
+
+
+bool reserve(void** dst, unsigned* cap, unsigned size, size_t elem_size) {
+    if (size <= *cap) {
+        return true;
+    }
+    if (size >= 0x7fffffff) {
+        return false;
+    }
+    if (*cap == 0) {
+        *cap = 4;
+        while (*cap < size) {
+            *cap *= 2;
+        }
+        *dst = HeapAlloc(GetProcessHeap(), 0, *cap * elem_size);
+        if (*dst == NULL) {
+            *cap = 0;
+            return false;
+        }
+    } else {
+        unsigned new_cap = *cap;
+        while (new_cap < size) {
+            new_cap *= 2;
+        }
+        void* new_ptr = HeapReAlloc(GetProcessHeap(), 0, *dst, new_cap * elem_size);
+        if (new_ptr == NULL) {
+            return false;
+        }
+        *dst = new_ptr;
+        *cap = new_cap;
+    }
+    return true;
+}
+
+#define RESERVE(ptr, cap, size, type) reserve((void**)ptr, cap, size, sizeof(type))
+
+
+// Adds to global structures
+DynamicMatches* DynamicMatches_create(wchar_t* cmd, enum Invalidation invalidation, wchar_t sep) {
+    DynamicMatches* n = HeapAlloc(GetProcessHeap(), 0, sizeof(DynamicMatches));
+    if (n == NULL) {
+        return NULL;
+    }
+    n->match_count = 0;
+    n->matches = NULL;
+    n->invalidation = invalidation;
+    n->separator = sep;
+    n->cmd = cmd;
+    if (!RESERVE(&gDynamic_matches, &gDynamic_capacity, gDynamic_count + 1, DynamicMatches*)) {
+        HeapFree(GetProcessHeap(), 0, n);
+        return NULL;
+    }
+    gDynamic_matches[gDynamic_count] = n;
+    gDynamic_count += 1;
+    return n;
+}
+
+
+void DynamicMatches_evaluate(DynamicMatches* ptr) {
+    // Already valid
+    if (ptr->cmd != NULL) {
+        return;
+    }
+    WString buf;
+    WString_create(&buf);
+}
+ 
+
+bool Node_create(NodeBuilder* builder) {
+    static uint32_t postfix = 0;
+
+    CmpNode* node = HeapAlloc(GetProcessHeap(), 0, sizeof(CmpNode));
+    if (node == NULL) {
+        return false;
+    }
+
+    uint32_t b[2] = {postfix, postfix};
+    node->hash_postfix[0] = L'\xc';
+    memcpy(node->hash_postfix + 1, &b, 4 * sizeof(wchar_t));
+    ++postfix;
+
+    node->fixed_matches = NULL;
+    node->fixed_count = 0;
+    node->dynamic = NULL;
+    node->dynamic_count = 0;
+    node->extra = 0;
+    node->extra_nodes[0] = NULL;
+    node->extra_nodes[1] = NULL;
+
+    builder->node = node;
+    if (!WString_create(&builder->fixed)) {
+        HeapFree(GetProcessHeap(), 0, node);
+        return false;
+    }
+    builder->node_cap = 0;
+    builder->dynamic_cap = 0;
+    builder->fixed_nodes = NULL;
+
+    return true;
+}
+
+
+bool Node_add_fixed(NodeBuilder* builder, const wchar_t* str, unsigned len, CmpNode* child) {
+    if (len > 0xffff || builder->node->extra & EXTRA_ANY_ITEM) {
+        return false;
+    }
+    if (child == NULL) {
+        child = builder->node;
+    }
+    if (!RESERVE(&builder->fixed_nodes, &builder->node_cap, builder->node->fixed_count + 1, CmpNode*)) {
+        return false;
+    }
+
+    if (!WString_append(&builder->fixed, len)) {
+        return false;
+    }
+    if (!WString_append_count(&builder->fixed, str, len)) {
+        WString_pop(&builder->fixed, 1);
+        return false;
+    }
+    builder->fixed_nodes[builder->node->fixed_count] = child;
+    builder->node->fixed_count += 1;
+
+    return true;
+}
+
+bool Node_add_dynamic(NodeBuilder* builder, DynamicMatches* dyn, CmpNode* child) {
+    // Any item may not have other matches
+    if (builder->node->extra & EXTRA_ANY_ITEM) {
+        return false;
+    }
+    if (child == NULL) {
+        child = builder->node;
+    }
+    unsigned dynamic = builder->node->dynamic_count;
+    if (!RESERVE(&builder->node->dynamic, &builder->dynamic_cap, dynamic + 1, DynamicNode)) {
+        return false;
+    }
+    builder->node->dynamic[dynamic].node = child;
+    builder->node->dynamic[dynamic].matches = dyn;
+
+    builder->node->dynamic_count += 1;
+    return true;
+}
+
+bool Node_add_files(NodeBuilder* builder, bool exists, CmpNode* child) {
+    if (builder->node->extra & (EXTRA_ANY_ITEM | EXTRA_ANY_FILES | EXTRA_EXISTING_FILES)) {
+        return false;
+    }
+    if (child == NULL) {
+        child = builder->node;
+    }
+    builder->node->extra_nodes[0] = child;
+    if (exists) {
+        builder->node->extra |= EXTRA_EXISTING_FILES;
+    } else {
+        builder->node->extra |= EXTRA_ANY_FILES;
+    }
+    return true;
+}
+
+bool Node_add_default(NodeBuilder* builder, CmpNode* child) {
+    if (builder->node->extra & (EXTRA_ANY_ITEM | EXTRA_DEFAULT)) {
+        return false;
+    }
+    if (child == NULL) {
+        child = builder->node;
+    }
+    builder->node->extra_nodes[1] = child;
+    builder->node->extra |= EXTRA_DEFAULT;
+    return true;
+}
+
+bool Node_add_any(NodeBuilder* builder, CmpNode* child) {
+    if (builder->node->dynamic_count != 0 || builder->node->fixed_count != 0 || builder->node->extra != 0) {
+        return false;
+    }
+    if (child == NULL) {
+        child = builder->node;
+    }
+    builder->node->extra_nodes[0] = child;
+    builder->node->extra = EXTRA_ANY_ITEM;
+    return true;
+}
+
+
+void Node_abort(NodeBuilder* builder) {
+    WString_free(&builder->fixed);
+    HeapFree(GetProcessHeap(), 0, builder->fixed_nodes);
+}
+
+
+// Creates the node. Adds fixed children to global structures.
+// Does not add itself, since this requires knowing parent
+CmpNode* Node_finalize(NodeBuilder* builder) {
+    CmpNode* node = builder->node;
+    node->fixed_matches = builder->fixed.buffer;
+    builder->fixed.buffer = NULL;
+
+    WString hashbuf;
+    WString_create(&hashbuf);
+
+    unsigned ix = 0;
+    for (unsigned i = 0; i < node->fixed_count; ++i) {
+        wchar_t count = node->fixed_matches[ix];
+        ++ix;
+        WString_append_count(&hashbuf, node->fixed_matches + ix, count);
+        WString_append_count(&hashbuf, node->hash_postfix, 5);
+        WHashMap_Insert(&gNodes, hashbuf.buffer, builder->fixed_nodes[i]);
+        ix += count;
+        WString_clear(&hashbuf);
+    }
+
+    WString_free(&hashbuf);
+    HeapFree(GetProcessHeap(), 0, builder->fixed_nodes);
+
+    return node;
+}
+
 // str should have 6 byte space for postfix + null-terminator
 // quotes should be gone from str
 CmpNode* find_next_node(CmpNode* current, wchar_t* str, unsigned len) {
     if (current->extra & EXTRA_ANY_ITEM) {
-        return current->children;
+        return current->extra_nodes[0];
     }
     str[len + 0] = current->hash_postfix[0];
     str[len + 1] = current->hash_postfix[1];
@@ -78,32 +322,71 @@ CmpNode* find_next_node(CmpNode* current, wchar_t* str, unsigned len) {
     str[len + 4] = current->hash_postfix[4];
     str[len + 5] = L'\0';
     // This finds all static and dynamic matches
-    CmpNode* match = WHashMap_Value(&nodes, str);
+    CmpNode* match = WHashMap_Value(&gNodes, str);
     str[len] = L'\0';
     if (match != NULL) {
         return match;
     }
 
-    unsigned child_offset = current->dynamic_count;
     if (current->extra & EXTRA_ANY_FILES) {
         if (is_filelike(str, len)) {
-            return current->children + child_offset;
+            return current->extra_nodes[0];
         }
-        ++child_offset;
     } else if (current->extra & EXTRA_EXISTING_FILES) {
         if (is_file(str)) {
-            return current->children + child_offset;
+            return current->extra_nodes[0];
         }
-        ++child_offset;
     }
     if (current->extra & EXTRA_DEFAULT) {
-        return current->children + child_offset;
+        return current->extra_nodes[1];
     }
     return current;
 }
 
+CmpNode* root;
 
 int main() {
+    WHashMap_Create(&gNodes);
+
+    NodeBuilder b;
+    Node_create(&b);
+    Node_add_files(&b, false, NULL);
+    CmpNode* git_add = Node_finalize(&b);
+
+    Node_create(&b);
+    CmpNode* git_status = Node_finalize(&b);
+
+    Node_create(&b);
+    Node_add_fixed(&b, L"add", wcslen(L"add"), git_add);
+    Node_add_fixed(&b, L"status", wcslen(L"status"), git_status);
+    CmpNode* git = Node_finalize(&b);
+
+    Node_create(&b);
+    Node_add_files(&b, true, NULL);
+    CmpNode* grep = Node_finalize(&b);
+    
+    Node_create(&b);
+    Node_add_fixed(&b, L"grep", wcslen(L"grep"), grep);
+    Node_add_fixed(&b, L"git", wcslen(L"git"), git);
+    Node_add_files(&b, true, NULL);
+
+    root = Node_finalize(&b);
+
+    _wprintf(L"Created nodes\n");
+
+    wchar_t str[20] = L"git";
+    CmpNode* node = find_next_node(root, str, 3);
+
+    _wprintf(L"%*.*s\n", node->fixed_matches[0], node->fixed_matches[0], node->fixed_matches + 1);
+
+
+    String res;
+    String_create(&res);
+    if (!subprocess_run(L"git for-each-ref --format=%(refname:short) refs/heads", &res, 1000)) {
+        _wprintf(L"Error\n");
+    }
+    _wprintf(L"%S", res.buffer);
+
     String json_str;
     if (!read_text_file(&json_str, L"autocmp.json")) {
         return 1;
