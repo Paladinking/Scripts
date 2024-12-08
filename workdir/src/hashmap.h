@@ -37,7 +37,11 @@
 
 #ifdef HASHMAP_WIDE
 #define ckey_t wchar_t
+#ifdef HASHMAP_CASE_INSENSITIVE
+#define keycmp(a, b) _wcsicmp(a, b)
+#else
 #define keycmp(a, b) wcscmp(a, b)
+#endif
 #define keylen(k) wcslen(k)
 #define HashElement WHashElement
 #define HashBucket WHashBucket
@@ -58,7 +62,11 @@
 #define HashMap_FreeFrozen WHashMap_FreeFrozen
 #else
 #define ckey_t char
+#ifdef HASHMAP_CASE_INSENSITIVE
+#define keycmp(a, b) _stricmp(a, b)
+#else
 #define keycmp(a, b) strcmp(a, b)
+#endif
 #define keylen(k) strlen(k)
 #endif
 

@@ -68,6 +68,9 @@ static uint64_t hash(const ckey_t* str) {
     uint64_t hash = 5381;
     int c;
     while ((c = *str++)) {
+#ifdef HASHMAP_CASE_INSENSITIVE
+        c = tolower(c);
+#endif
         hash = ((hash << 5) + hash) + c;
     }
     return hash;
