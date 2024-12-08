@@ -21,7 +21,7 @@ bool String_extend(String *s, const char *c_str) {
     return true;
 }
 
-bool String_insert(String* s, unsigned ix, const char c) {
+bool String_insert(String* s, string_size_t ix, const char c) {
     if (!String_reserve(s, s->length + 1)) {
         return false;
     }
@@ -31,7 +31,7 @@ bool String_insert(String* s, unsigned ix, const char c) {
     return true;
 }
 
-bool String_insert_count(String* s, unsigned ix, const char* buf, unsigned count) {
+bool String_insert_count(String* s, string_size_t ix, const char* buf, string_size_t count) {
     if (!String_reserve(s, s->length + count)) {
         return false;
     }
@@ -42,7 +42,7 @@ bool String_insert_count(String* s, unsigned ix, const char* buf, unsigned count
     return true;
 }
 
-void String_pop(String *s, unsigned int count) {
+void String_pop(String *s, string_size_t count) {
     if (count > s->length) {
         s->length = 0;
         s->buffer[0] = L'\0';
@@ -52,7 +52,7 @@ void String_pop(String *s, unsigned int count) {
     }
 }
 
-void String_remove(String* s, unsigned ix, unsigned count) {
+void String_remove(String* s, string_size_t ix, string_size_t count) {
     if (ix < 0 || ix >= s->length) {
         return;
     }
@@ -82,7 +82,7 @@ bool String_create(String *s) {
     return true;
 }
 
-bool String_create_capacity(String_noinit* s, size_t cap) {
+bool String_create_capacity(String_noinit* s, string_size_t cap) {
     HANDLE heap = GetProcessHeap();
     s->length = 0;
     s->capacity = 4;
@@ -96,6 +96,45 @@ bool String_create_capacity(String_noinit* s, size_t cap) {
     }
     s->buffer[0] = '\0';
     return true;
+}
+
+void String_replaceall(String* s, char from, char to) {
+    for (string_size_t i = 0; i < s->length; ++i) {
+        if (s->buffer[i] == from) {
+            s->buffer[i] = to;
+        }
+    }
+}
+
+string_size_t String_count(const String* s, char c) {
+    string_size_t count = 0;
+    for (string_size_t i = 0; i < s->length; ++i) {
+        if (s->buffer[i] == c) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+bool String_startswith(const String* s, const char* str) {
+    string_size_t ix = 0;
+    while (str[ix]) {
+        if (ix >= s->length) {
+            return false;
+        }
+        if (s->buffer[ix] != str[ix]) {
+            return false;
+        }
+        ++ix;
+    }
+    return true;
+}
+
+bool String_equals(const String* s, const String* str) {
+    if (s->length != str->length) {
+        return false;
+    }
+    return memcmp(s, str, s->length) == 0;
 }
 
 void String_free(String *s) {
@@ -123,7 +162,7 @@ bool String_copy(String* dest, String* source) {
     return true;
 }
 
-bool String_append_count(String* s, const char* buf, unsigned count) {
+bool String_append_count(String* s, const char* buf, string_size_t count) {
     if (!String_reserve(s, s->length + count)) {
         return FALSE;
     }
@@ -136,6 +175,9 @@ bool String_append_count(String* s, const char* buf, unsigned count) {
 
 bool String_reserve(String* s, size_t count) {
     if (s->capacity <= count) {
+        if (count > 0x7fffffff) {
+            return false;
+        }
         if (s->capacity == 0) {
             return false;
         }
@@ -197,7 +239,7 @@ bool WString_extend(WString *s, const wchar_t *c_str) {
     return true;
 }
 
-bool WString_insert(WString* s, unsigned ix, const wchar_t c) {
+bool WString_insert(WString* s, string_size_t ix, const wchar_t c) {
     if (!WString_reserve(s, s->length + 1)) {
         return false;
     }
@@ -207,7 +249,7 @@ bool WString_insert(WString* s, unsigned ix, const wchar_t c) {
     return true;
 }
 
-bool WString_insert_count(WString* s, unsigned ix, const wchar_t* buf, unsigned count) {
+bool WString_insert_count(WString* s, string_size_t ix, const wchar_t* buf, string_size_t count) {
     if (!WString_reserve(s, s->length + count)) {
         return false;
     }
@@ -218,7 +260,7 @@ bool WString_insert_count(WString* s, unsigned ix, const wchar_t* buf, unsigned 
     return true;
 }
 
-void WString_pop(WString *s, unsigned int count) {
+void WString_pop(WString *s, string_size_t count) {
     if (count > s->length) {
         s->length = 0;
         s->buffer[0] = L'\0';
@@ -228,7 +270,7 @@ void WString_pop(WString *s, unsigned int count) {
     }
 }
 
-void WString_remove(WString* s, unsigned ix, unsigned count) {
+void WString_remove(WString* s, string_size_t ix, string_size_t count) {
     if (ix < 0 || ix >= s->length) {
         return;
     }
@@ -258,7 +300,7 @@ bool WString_create(WString *s) {
     return true;
 }
 
-bool WString_create_capacity(WString_noinit* s, size_t cap) {
+bool WString_create_capacity(WString_noinit* s, string_size_t cap) {
     HANDLE heap = GetProcessHeap();
     s->length = 0;
     s->capacity = 4;
@@ -275,16 +317,16 @@ bool WString_create_capacity(WString_noinit* s, size_t cap) {
 }
 
 void WString_replaceall(WString* s, wchar_t from, wchar_t to) {
-    for (unsigned i = 0; i < s->length; ++i) {
+    for (string_size_t i = 0; i < s->length; ++i) {
         if (s->buffer[i] == from) {
             s->buffer[i] = to;
         }
     }
 }
 
-unsigned WString_count(const WString* s, wchar_t c) {
-    unsigned count = 0;
-    for (unsigned i = 0; i < s->length; ++i) {
+string_size_t WString_count(const WString* s, wchar_t c) {
+    string_size_t count = 0;
+    for (string_size_t i = 0; i < s->length; ++i) {
         if (s->buffer[i] == c) {
             ++count;
         }
@@ -293,7 +335,7 @@ unsigned WString_count(const WString* s, wchar_t c) {
 }
 
 bool WString_startswith(const WString* s, const wchar_t* str) {
-    unsigned ix = 0;
+    string_size_t ix = 0;
     while (str[ix]) {
         if (ix >= s->length) {
             return false;
@@ -339,7 +381,7 @@ bool WString_copy(WString* dest, WString* source) {
     return true;
 }
 
-bool WString_append_count(WString* s, const wchar_t* buf, unsigned count) {
+bool WString_append_count(WString* s, const wchar_t* buf, string_size_t count) {
     if (!WString_reserve(s, s->length + count)) {
         return FALSE;
     }
@@ -352,6 +394,9 @@ bool WString_append_count(WString* s, const wchar_t* buf, unsigned count) {
 
 bool WString_reserve(WString* s, size_t count) {
     if (s->capacity <= count) {
+        if (count > 0x7fffffff) {
+            return false;
+        }
         if (s->capacity == 0) {
             return false;
         }
