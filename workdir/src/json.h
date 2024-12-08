@@ -112,4 +112,8 @@ void JsonList_free(JsonList* list);
 
 void JsonType_free(JsonType* val);
 
+bool json_parse_object(const char* str, JsonObject* obj, String_noinit* errormsg);
+
+bool json_parse_type(const char* str, JsonType* val, String_noinit* errormsg);
+
 #endif

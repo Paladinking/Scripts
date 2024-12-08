@@ -467,12 +467,126 @@ void JsonType_free(JsonType* val) {
     val->type = JSON_NULL;
 }
 
+typedef struct ParseCtx {
+    const char* root;
+    unsigned row;
+    unsigned col;
+    String errormsg;
+} JsonParseCtx;
+
+void find_position(JsonParseCtx* ctx, const char* pos) {
+    ctx->row = 1;
+    ctx->col = 1;
+    const char* s = ctx->root;
+    char last = '\0';
+    while (s < pos) {
+        if (*s == '\r' || (*s == '\n' && last != '\r')) {
+            ctx->col = 1;
+            ++ctx->row;
+        } else {
+            ++ctx->col;
+        }
+        last = *s;
+        ++s;
+    }
+}
+
+bool format_int(String* dst, int64_t i) {
+    if (i == 0) {
+        return String_append(dst, '0');
+    }
+    uint64_t n;
+    if (i < 0) {
+        if (i == INT64_MIN) {
+            n = ((uint64_t)INT64_MAX) + 1;
+        } else {
+            n = -i;
+        }
+        if (!String_append(dst, '-')) {
+            return false;
+        }
+    }  else {
+        n = i;
+    }
+    unsigned ix = 0;
+    char buf[20];
+    while (n > 0) {
+        buf[ix] = (n % 10) + '0';
+        ++ix;
+        n /= 10;
+    }
+    while (ix > 0) {
+        if (!String_append(dst, buf[ix - 1])) {
+            return false;
+        }
+        --ix;
+    }
+    return true;
+}
+
+bool unexpected_eof(const char* s, JsonParseCtx* ctx) {
+    find_position(ctx, s);
+    if (ctx->errormsg.buffer == NULL) {
+        String_create(&ctx->errormsg);
+    }
+    String_clear(&ctx->errormsg);
+    String_extend(&ctx->errormsg, "Error: Unexpeced EOF at: row ");
+    format_int(&ctx->errormsg, ctx->row);
+    String_extend(&ctx->errormsg, ", col ");
+    format_int(&ctx->errormsg, ctx->col);
+    return false;
+}
+
+bool expected_char(const char* s, JsonParseCtx* ctx, char expected, char found) {
+    find_position(ctx, s);
+    if (ctx->errormsg.buffer == NULL) {
+        String_create(&ctx->errormsg);
+    }
+    String_clear(&ctx->errormsg);
+    String_extend(&ctx->errormsg, "Error: Expected character '");
+    String_append(&ctx->errormsg, expected);
+    String_extend(&ctx->errormsg, "' at row ");
+    format_int(&ctx->errormsg, ctx->row);
+    String_extend(&ctx->errormsg, ", col ");
+    format_int(&ctx->errormsg, ctx->col);
+    return false;
+}
+
+bool unexpected_char(const char* s, JsonParseCtx* ctx, char found) {
+    find_position(ctx, s);
+    if (ctx->errormsg.buffer == NULL) {
+        String_create(&ctx->errormsg);
+    }
+    String_clear(&ctx->errormsg);
+    String_extend(&ctx->errormsg, "Error: Invalid character '");
+    String_append(&ctx->errormsg, found);
+    String_extend(&ctx->errormsg, "' at row ");
+    format_int(&ctx->errormsg, ctx->row);
+    String_extend(&ctx->errormsg, ", col ");
+    format_int(&ctx->errormsg, ctx->col);
+    return false;
+}
+
+bool invalid_literal(const char* s, JsonParseCtx* ctx, const char* type) {
+    find_position(ctx, s);
+    if (ctx->errormsg.buffer == NULL) {
+        String_create(&ctx->errormsg);
+    }
+    String_clear(&ctx->errormsg);
+    String_extend(&ctx->errormsg, "Error: Invalid ");
+    String_extend(&ctx->errormsg, type);
+    String_extend(&ctx->errormsg, " at row ");
+    format_int(&ctx->errormsg, ctx->row);
+    String_extend(&ctx->errormsg, ", col ");
+    format_int(&ctx->errormsg, ctx->col);
+    return false;
+}
 
 // Skip until next non-space character
-bool skip_spaces(const char** str) {
+bool skip_spaces(const char** str, JsonParseCtx* ctx) {
     const char* s = *str;
     if (*s == '\0') {
-        return false;
+        return unexpected_eof(s, ctx);
     }
     while (1) {
         ++s;
@@ -481,28 +595,28 @@ bool skip_spaces(const char** str) {
         }
         *str = s;
         if (*s == '\0') {
-            return false;
+            return unexpected_eof(s, ctx);
         }
         return true;
     }
 }
 
-bool JsonType_parse(const char** str, JsonType* res);
-bool JsonString_parse(const char** str, String* res);
-bool JsonObject_parse(const char** str, JsonObject* res);
-bool JsonList_parse(const char** str, JsonList* res);
-bool JsonBool_parse(const char** str, bool* res);
-bool JsonNumber_parse(const char** str, int64_t* i, double* d, bool* is_int);
-bool JsonDouble_parse(const char** str, double* d);
-bool JsonNull_parse(const char** str);
+bool JsonType_parse(const char** str, JsonType* res, JsonParseCtx* ctx);
+bool JsonString_parse(const char** str, String* res, JsonParseCtx* ctx);
+bool JsonObject_parse(const char** str, JsonObject* res, JsonParseCtx* ctx);
+bool JsonList_parse(const char** str, JsonList* res, JsonParseCtx* ctx);
+bool JsonBool_parse(const char** str, bool* res, JsonParseCtx* ctx);
+bool JsonNumber_parse(const char** str, int64_t* i, double* d, bool* is_int, JsonParseCtx* ctx);
+bool JsonDouble_parse(const char** str, double* d, JsonParseCtx* ctx);
+bool JsonNull_parse(const char** str, JsonParseCtx* ctx);
 
 
-bool JsonType_parse(const char** str, JsonType* res) {
+bool JsonType_parse(const char** str, JsonType* res, JsonParseCtx* ctx) {
     const char* s = *str;
     switch (*s) {
         case '{': {
             JsonObject obj;
-            if (!JsonObject_parse(&s, &obj)) {
+            if (!JsonObject_parse(&s, &obj, ctx)) {
                 return false;
             }
             res->type = JSON_OBJECT;
@@ -511,7 +625,7 @@ bool JsonType_parse(const char** str, JsonType* res) {
         }
         case '[': {
             JsonList list;
-            if (!JsonList_parse(&s, &list)) {
+            if (!JsonList_parse(&s, &list, ctx)) {
                 return false;
             }
             res->type = JSON_LIST;
@@ -520,7 +634,7 @@ bool JsonType_parse(const char** str, JsonType* res) {
         }
         case '"': {
             String string;
-            if (!JsonString_parse(&s, &string)) {
+            if (!JsonString_parse(&s, &string, ctx)) {
                 return false;
             }
             res->type = JSON_STRING;
@@ -541,7 +655,7 @@ bool JsonType_parse(const char** str, JsonType* res) {
             int64_t i;
             double d;
             bool is_int;
-            if (!JsonNumber_parse(&s, &i, &d, &is_int)) {
+            if (!JsonNumber_parse(&s, &i, &d, &is_int, ctx)) {
                 return false;
             }
             if (is_int) {
@@ -556,7 +670,7 @@ bool JsonType_parse(const char** str, JsonType* res) {
         case 't':
         case 'f': {
             bool b;
-            if (!JsonBool_parse(&s, &b)) {
+            if (!JsonBool_parse(&s, &b, ctx)) {
                 return false;
             }
             res->type = JSON_BOOL;
@@ -564,20 +678,22 @@ bool JsonType_parse(const char** str, JsonType* res) {
             break;
         }
         case 'n': {
-            if (!JsonNull_parse(&s)) {
+            if (!JsonNull_parse(&s, ctx)) {
                 return false;
             }
             res->type = JSON_NULL;
             break;
         }
+        case '\0':
+            return unexpected_eof(s, ctx);
         default:
-            return false;
+            return unexpected_char(s, ctx, *s);
     }
     *str = s;
     return true;
 }
 
-bool JsonString_parse(const char** str, String* string) {
+bool JsonString_parse(const char** str, String* string, JsonParseCtx* ctx) {
     const char* s = *str;
     if (*s != '"') {
         return false;
@@ -585,12 +701,13 @@ bool JsonString_parse(const char** str, String* string) {
     if (!String_create(string)) {
         return false;
     }
+    ++s;
     while (1) {
         char c = *s;
         switch (c) {
             case '\0':
                 String_free(string);
-                return false;
+                return unexpected_eof(s, ctx);
             case '"':
                 *str = s;
                 return true;
@@ -619,7 +736,7 @@ bool JsonString_parse(const char** str, String* string) {
                         break;
                     default:
                         String_free(string);
-                        return false;
+                        return unexpected_char(s, ctx, *s);
                 }
                 break;
             default:
@@ -630,15 +747,15 @@ bool JsonString_parse(const char** str, String* string) {
     }
 }
 
-bool JsonObject_parse(const char** str, JsonObject* obj) {
+bool JsonObject_parse(const char** str, JsonObject* obj, JsonParseCtx* ctx) {
     const char* s = *str;
     if (*s != '{') {
-        return false;
+        return expected_char(s, ctx, '{', *s);
     }
     if (!JsonObject_create(obj)) {
         return false;
     }
-    if (!skip_spaces(&s)) {
+    if (!skip_spaces(&s, ctx)) {
         goto end;
     }
     if (*s == '}') {
@@ -648,19 +765,20 @@ bool JsonObject_parse(const char** str, JsonObject* obj) {
 
     while (1) {
         String label;
-        if (!JsonString_parse(&s, &label)) {
+        if (!JsonString_parse(&s, &label, ctx)) {
             goto end;
         }
-        if (!skip_spaces(&s) || *s != ':') {
+        if (!skip_spaces(&s, ctx)) {
             String_free(&label);
             goto end;
         }
-        if (!skip_spaces(&s)) {
+        if (*s != ':') {
             String_free(&label);
+            expected_char(s, ctx, ':', *s);
             goto end;
         }
         JsonType type;
-        if (!JsonType_parse(&s, &type)) {
+        if (!skip_spaces(&s, ctx) || !JsonType_parse(&s, &type, ctx)) {
             String_free(&label);
             goto end;
         }
@@ -670,7 +788,7 @@ bool JsonObject_parse(const char** str, JsonObject* obj) {
             JsonType_free(&type);
             goto end;
         }
-        if (!skip_spaces(&s)) {
+        if (!skip_spaces(&s, ctx)) {
             goto end;
         }
         if (*s == '}') {
@@ -678,9 +796,10 @@ bool JsonObject_parse(const char** str, JsonObject* obj) {
             return true;
         }
         if (*s != ',') {
+            expected_char(s, ctx, ',', *s);
             goto end;
         }
-        if (!skip_spaces(&s)) {
+        if (!skip_spaces(&s, ctx)) {
             goto end;
         }
     }
@@ -689,15 +808,15 @@ end:
     return false;
 }
 
-bool JsonList_parse(const char** str, JsonList* list) {
+bool JsonList_parse(const char** str, JsonList* list, JsonParseCtx* ctx) {
     const char* s = *str;
     if (*s != '[') {
-        return false;
+        return expected_char(s, ctx, '[', *s);
     }
     if (!JsonList_create(list)) {
         return false;
     }
-    if (!skip_spaces(&s)) {
+    if (!skip_spaces(&s, ctx)) {
         goto end;
     }
     if (*s == ']') {
@@ -706,14 +825,14 @@ bool JsonList_parse(const char** str, JsonList* list) {
     }
     while (1) {
         JsonType type;
-        if (!JsonType_parse(&s, &type)) {
+        if (!JsonType_parse(&s, &type, ctx)) {
             goto end;
         }
         if (!JsonList_append(list, type)) {
             JsonType_free(&type);
             goto end;
         }
-        if (!skip_spaces(&s)) {
+        if (!skip_spaces(&s, ctx)) {
             goto end;
         }
         if (*s == ']') {
@@ -721,9 +840,10 @@ bool JsonList_parse(const char** str, JsonList* list) {
             return true;
         }
         if (*s != ',') {
+            expected_char(s, ctx, ',', *s);
             goto end;
         }
-        if (!skip_spaces(&s)) {
+        if (!skip_spaces(&s, ctx)) {
             goto end;
         }
     }
@@ -732,8 +852,9 @@ end:
     return false;
 }
 
-bool JsonNumber_parse(const char** str, int64_t* i, double* d, bool* is_int) {
+bool JsonNumber_parse(const char** str, int64_t* i, double* d, bool* is_int, JsonParseCtx* ctx) {
     const char* s = *str;
+    uint64_t n;
     bool negative = false;
     *is_int = true;
     if (*s == '-')  {
@@ -741,25 +862,27 @@ bool JsonNumber_parse(const char** str, int64_t* i, double* d, bool* is_int) {
         negative = true;
     }
     if (*s < '0' && *s > '9') {
-        return false;
+        return invalid_literal(*str, ctx, "number");
     }
-    *i = (*s - '0');
+    n = (*s - '0');
+    *d = (*s - '0');
     ++s;
     if (*(s - 1) != '0') {
         while (*s >= '0' && *s <= '9') {
-            *i *= 10;
-            *i += *s - '0';
+            n *= 10;
+            *d *= 10;
+            n += *s - '0';
+            *d += *s - '0';
             ++s;
         }
     } else if (*s >= '0' && *s <= '9') {
-        return false;
+        return invalid_literal(*str, ctx, "number");
     }
     if (*s == '.') {
         *is_int = false;
-        *d = *i;
         ++s;
         if (*s < '0' || *s > '9') {
-            return false;
+            return invalid_literal(*str, ctx, "number");
         }
         double factor = 0.1;
         while (*s >= '0' && *s <= '9') {
@@ -771,7 +894,6 @@ bool JsonNumber_parse(const char** str, int64_t* i, double* d, bool* is_int) {
     if (*s == 'e' || *s == 'E') {
         if (*is_int) {
             *is_int = false;
-            *d = *i;
         }
         ++s;
         int64_t exp = 0;
@@ -783,7 +905,7 @@ bool JsonNumber_parse(const char** str, int64_t* i, double* d, bool* is_int) {
             ++s;
         }
         if (*s < '0' || *s > '9') {
-            return false;
+            return invalid_literal(*str, ctx, "number");
         }
         while (*s >= '0' && *s <= '9') {
             exp = exp * 10;
@@ -793,6 +915,7 @@ bool JsonNumber_parse(const char** str, int64_t* i, double* d, bool* is_int) {
         double factor = 1.0;
         while (exp > 15) {
             exp -= 15;
+            // 10^15 is the largest power of 10 that can be fully represented by a double
             factor *= 1000000000000000;
         }
         int64_t exps[15] = {1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 
@@ -816,7 +939,140 @@ bool JsonNumber_parse(const char** str, int64_t* i, double* d, bool* is_int) {
     return true;
 }
 
+bool JsonBool_parse(const char** str, bool* b, JsonParseCtx* ctx) {
+    const char* s = *str;
+    if (strncmp(s, "true", 4) == 0) {
+        *b = true;
+        *str = s + 3;
+        return true;
+    }
+    if (strncmp(s, "false", 5) == 0) {
+        *b = false;
+        *str = s + 4;
+        return true;
+    }
+    return invalid_literal(*str, ctx, "keyword");
+}
+
+bool JsonNull_parse(const char** str, JsonParseCtx* ctx) {
+    if (strncmp(*str, "null", 4) == 0) {
+        *str = *str + 3;
+        return true;
+    }
+    return invalid_literal(*str, ctx, "keyword");
+}
+
+bool json_parse_object(const char* str, JsonObject* obj, String_noinit* errormsg) {
+    JsonParseCtx ctx;
+    ctx.errormsg.buffer = NULL;
+    ctx.root = str;
+    if ((*str != '{' && !skip_spaces(&str, &ctx)) || !JsonObject_parse(&str, obj, &ctx)) {
+        if (errormsg == NULL) {
+            String_free(&ctx.errormsg);
+        } else {
+            *errormsg = ctx.errormsg;
+        }
+        return false;
+    }
+    return true;
+}
+
+bool json_parse_type(const char* str, JsonType* type, String_noinit* errormsg) {
+    JsonParseCtx ctx;
+    ctx.errormsg.buffer = NULL;
+    ctx.root = str;
+    while (*str == ' ' || *str == '\t' || *str == '\n' || *str == '\r') {
+        ++str;
+    }
+    if (!JsonType_parse(&str, type, &ctx)) {
+        if (errormsg == NULL) {
+            String_free(&ctx.errormsg);
+        } else {
+            *errormsg = ctx.errormsg;
+        }
+        return false;
+    }
+    return true;
+}
+
+
+#ifdef JSON_TESTS
+#include <stdio.h>
+#include <assert.h>
+
+double rel_diff(double a, double b) {
+    double c = a < 0 ? -a : a;
+    double d = b < 0 ? -b : b;
+    d = c > d ? c : d;
+    if (d == 0.0) {
+        return 0.0;
+    }
+    double diff = a - b;
+    diff = diff < 0 ? -diff : diff;
+    return diff / d;
+}
+
+#define TEST_INT(str, res) do { \
+    const char* s = str;        \
+    JsonParseCtx ctx;           \
+    ctx.errormsg.buffer = NULL; \
+    ctx.root = s;               \
+    int64_t i;                  \
+    double d;                   \
+    bool is_int;                \
+    assert(JsonNumber_parse(&s, &i, &d, &is_int, &ctx)); \
+    assert(is_int);             \
+    printf("%lld, %lld\n", i, (int64_t)res); \
+    assert(i == res);           \
+} while (0)
+
+#define TEST_DOUBLE(str, res) do { \
+    const char* s = str;        \
+    JsonParseCtx ctx;           \
+    ctx.errormsg.buffer = NULL; \
+    ctx.root = s;               \
+    int64_t i;                  \
+    double d;                   \
+    bool is_int;                \
+    assert(JsonNumber_parse(&s, &i, &d, &is_int, &ctx)); \
+    assert(!is_int);             \
+    printf("%g, %g, %g\n", d, res, rel_diff(d, res)); \
+    if (rel_diff(d, res) > 1e-10) {              \
+        assert(d == res);        \
+    }                            \
+} while (0)
 
 int main() {
+    TEST_INT("123", 123);
+    TEST_INT("-12345678", -12345678);
+    TEST_DOUBLE("123.456", 123.456);
+    TEST_DOUBLE("-0.999999", -0.999999);
+    TEST_DOUBLE("1e-20", 1e-20);
+    TEST_DOUBLE("0.00214125E70", 0.00214125E70);
+    TEST_DOUBLE("-0.00214125E+70", -0.00214125E70);
+    TEST_DOUBLE("123456789101112131415.0", 123456789101112131415.0);
+    TEST_INT("-9223372036854775807", )
 
+    const char* str = "{\"Hello\": [0, -0.0, -1123, true, null, {\"This\": \"Is the fin\\\"al countdown\", \"Is a test\": -2.345e24}]}";
+    JsonObject obj;
+    String errormsg;
+    if (!json_parse_object(str, &obj, &errormsg)) {
+        printf("%s\n", errormsg.buffer);
+        assert(false);
+    }
+    JsonList* list = JsonObject_get_list(&obj, "Hello");
+    assert(list != NULL);
+    assert(list->size == 6);
+    assert(JsonList_get_int(list, 0) != NULL && *JsonList_get_int(list, 0) == 0);
+    assert(JsonList_get_double(list, 1) != NULL && *JsonList_get_double(list, 1) == -0.0);
+    assert(JsonList_get_int(list, 2) != NULL && *JsonList_get_int(list, 2) == -1123);
+    assert(JsonList_get_bool(list, 3) != NULL && *JsonList_get_bool(list, 3) == true);
+    assert(JsonList_get_null(list, 4));
+    JsonObject* o = JsonList_get_obj(list, 5);
+    assert(o != NULL);
+    assert(JsonObject_get_string(o, "This") != NULL && strcmp(JsonObject_get_string(o, "This")->buffer, "Is the fin\"al countdown") == 0);
+    assert(JsonObject_get_double(o, "Is a test") != NULL && rel_diff(*JsonObject_get_double(o, "Is a test"), -2.345e24) < 1e-10);
+
+    printf("Success!\n");
 }
+#endif
