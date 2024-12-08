@@ -9,6 +9,8 @@
  */
 bool get_workdir(WString* str);
 
+bool is_file(const wchar_t* str);
+
 typedef struct _Path {
     WString path;
     bool is_dir;
@@ -26,5 +28,7 @@ bool WalkDir_begin(WalkCtx* ctx, const wchar_t* dir);
 int WalkDir_next(WalkCtx* ctx, Path** path);
 
 void WalkDir_abort(WalkCtx* ctx);
+
+bool read_text_file(String_noinit* str, const wchar_t* filename);
 
 #endif
