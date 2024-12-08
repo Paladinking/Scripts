@@ -1,5 +1,43 @@
 #include "glob.h"
 
+
+bool read_text_file(String_noinit* str, const wchar_t* filename) {
+    HANDLE file = CreateFileW(filename, GENERIC_READ,
+                              FILE_SHARE_READ, NULL,
+                              OPEN_EXISTING, 0, NULL);
+
+    if (file == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    LARGE_INTEGER size;
+    if (!GetFileSizeEx(file, &size) || size.QuadPart >= 0xffffffff) {
+        CloseHandle(file);
+        return false;
+    }
+
+    if (!String_create_capacity(str, size.QuadPart + 1)) {
+        CloseHandle(file);
+        return false;
+    }
+
+    DWORD read = 0;
+    while (read < size.QuadPart) {
+        DWORD r;
+        if (!ReadFile(file, str->buffer + read, size.QuadPart - read, &r, NULL)) {
+            if (GetLastError() != ERROR_HANDLE_EOF) {
+                CloseHandle(file);
+                return false;
+            }
+            break;
+        }
+        read += r;
+    }
+    str->length = read;
+    str->buffer[str->length] = '\0';
+    CloseHandle(file);
+    return true;
+}
+
 bool get_workdir(WString* str) {
     WString_clear(str);
     DWORD res = GetCurrentDirectoryW(str->capacity, str->buffer);
@@ -17,6 +55,10 @@ bool get_workdir(WString* str) {
     }
     str->length = res;
     return true;
+}
+
+bool is_file(const wchar_t* str) {
+    return GetFileAttributesW(str) != INVALID_FILE_ATTRIBUTES;
 }
 
 bool WalkDir_begin(WalkCtx* ctx, const wchar_t* dir) {
