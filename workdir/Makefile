@@ -67,6 +67,8 @@ build\whashmap.obj: src\hashmap.c src\hashmap.h src\whashmap.h build
 	cl /c $(CLFLAGS) /Fo:build\whashmap.obj /DHASHMAP_WIDE /DHASHMAP_CASE_INSENSITIVE src\hashmap.c
 build\json.obj: src\json.c src\json.h src\dynamic_string.h src\hashmap.h
 	cl /c $(CLFLAGS) src\json.c
+build\subprocess.obj: src\subprocess.c src\subprocess.h src\dynamic_string.h build
+	cl /c $(CLFLAGS) src\subprocess.c
 
 bin\pathc.exe: src\pathc.c build\path_utils.obj build\args.obj build\printf.obj build\dynamic_string.obj build\ntutils.lib bin
 	cl $(CLFLAGS) /Fe:bin\pathc.exe src\pathc.c build\printf.obj build\path_utils.obj build\args.obj build\dynamic_string.obj build\ntutils.lib $(LINKFLAGS)
@@ -91,8 +93,8 @@ bin\testdll.dll: build\testdll.obj build\printf.obj build\dynamic_string.obj bui
 	link /DLL /NODEFAULTLIB /entry:DLLMain /LTCG /OUT:bin\testdll.dll build\testdll.obj build\dynamic_string.obj build\printf.obj build\glob.obj build\ntutils.lib Kernel32.lib
 	
 
-bin\test.exe: src\test.c build\glob.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib build\hashmap.obj build\whashmap.obj build\json.obj
-	cl $(CLFLAGS) /Fe:bin\test.exe src\test.c build\glob.obj build\dynamic_string.obj build\printf.obj build\hashmap.obj build\whashmap.obj build\json.obj build\ntutils.lib $(LINKFLAGS)
+bin\test.exe: src\test.c build\glob.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib build\hashmap.obj build\whashmap.obj build\json.obj build\subprocess.obj
+	cl $(CLFLAGS) /Fe:bin\test.exe src\test.c build\glob.obj build\dynamic_string.obj build\printf.obj build\hashmap.obj build\whashmap.obj build\json.obj build\subprocess.obj build\ntutils.lib $(LINKFLAGS)
 
 build\kernelbase.lib: build
 	lib /MACHINE:X64 /DEF /OUT:build\kernelbase.lib /NAME:kernelbase.dll\
