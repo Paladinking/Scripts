@@ -54,21 +54,25 @@ vnoremap <A-up> :m '<-2<CR>gv=gv
 
 nnoremap <A-j> :m .+1<CR>==
 nnoremap <A-k> :m .-2<CR>==
-inoremap <A-j> <Esc>:m .+1<CR>==gi
-inoremap <A-k> <Esc>:m .-2<CR>==gi
+inoremap <A-j> <Esc>:m .+1<CR
+inoremap <A-k> <Esc>:m .-2<CR>=
 vnoremap <A-j> :m '>+1<CR>gv=
 vnoremap <A-k> :m '<-2<CR>gv=gv
 
 vnoremap <C-c> "*y
 
-nnoremap <A-d> yyp
-inoremap <A-d> <Esc>yyp<CR>==gi
+vnoremap <Bs> <Del>
+vnoremap <C-x> <Del>
 
-nnoremap <C-q>  :let @/ = ""<CR>==
+nnoremap <C-d> yyp
+inoremap <C-d> <Esc>yyp<CR>==gi
+
+nnoremap <C-q>  :let @/ = ""<CR>
 nnoremap <C-t> :NvimTreeOpen<CR>
 
 set shiftwidth=4 smarttab
 set expandtab
+set nomodeline
 set number
 
 let g:neoformat_basic_format_trim = 1
@@ -79,8 +83,14 @@ hi link markdownError NormalFloat
 
 set grepprg=grep\ -nH
 command! -nargs=1 Search silent grep! -rIi <args> | copen
+inoremap <C-F> <Esc>:Search 
+vnoremap <C-F> :Search 
+nnoremap <C-F> :Search 
 
 vnoremap q <C-v>
+nnoremap <A-v> <C-v>
+
+autocmd BufReadPre *.asm let g:asmsyntax = "fasm"
 
 lua <<EOF
 
@@ -94,7 +104,7 @@ vim.opt.termguicolors = true
 -- empty setup using defaults
 require("nvim-tree").setup({
     view = {
-        width = 24
+        width = 40
     },
     filesystem_watchers = {
         enable = false,
@@ -219,6 +229,10 @@ nvim_lsp.pyright.setup({
 
 nvim_lsp.clangd.setup({
     cmd = {'clangd', '-header-insertion=never'},
+    capabilities=capabilities
+})
+
+nvim_lsp.zls.setup({
     capabilities=capabilities
 })
 
