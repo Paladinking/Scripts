@@ -116,9 +116,6 @@ int WalkDir_next(WalkCtx* ctx, Path** path) {
             FindClose(ctx->handle);
             ctx->handle = INVALID_HANDLE_VALUE;
             *path = NULL;
-            if (GetLastError() != ERROR_FILE_NOT_FOUND) {
-                return -1;
-            }
             return 0;
         }
         if (data.cFileName[0] == L'.' && (data.cFileName[1] == L'\0' || (
