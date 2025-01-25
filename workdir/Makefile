@@ -93,8 +93,14 @@ bin\testdll.dll: build\testdll.obj build\printf.obj build\dynamic_string.obj bui
 	link /DLL /NODEFAULTLIB /entry:DLLMain /LTCG /OUT:bin\testdll.dll build\testdll.obj build\dynamic_string.obj build\printf.obj build\glob.obj build\ntutils.lib Kernel32.lib
 	
 
-bin\test.exe: src\test.c build\glob.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib build\hashmap.obj build\whashmap.obj build\json.obj build\subprocess.obj
-	cl $(CLFLAGS) /Fe:bin\test.exe src\test.c build\glob.obj build\dynamic_string.obj build\printf.obj build\hashmap.obj build\whashmap.obj build\json.obj build\subprocess.obj build\ntutils.lib $(LINKFLAGS)
+bin\test.exe: src\test.c build\glob.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib build\hashmap.obj build\whashmap.obj build\json.obj build\subprocess.obj build\args.obj
+	cl $(CLFLAGS) /Fe:bin\test.exe src\test.c build\glob.obj build\dynamic_string.obj build\printf.obj build\hashmap.obj build\whashmap.obj build\json.obj build\subprocess.obj build\args.obj build\ntutils.lib $(LINKFLAGS)
+
+build\whashmapd.obj: src\hashmap.c src\hashmap.h src\whashmap.h build
+	gcc -g -Og -c -o build\whashmapd.obj -DHASHMAP_WIDE -DHASHMAP_CASE_INSENSITIVE src\hashmap.c
+
+bin\testd.exe: src\test.c src\glob.c src\dynamic_string.c src\printf.c build\ntutils.lib src\hashmap.c build\whashmapd.obj src\json.c src\subprocess.c src\args.c
+	gcc -g -Og -o bin\testd.exe src\test.c src\glob.c src\dynamic_string.c src\printf.c build\ntutils.lib src\hashmap.c build\whashmapd.obj src\json.c src\subprocess.c src\args.c
 
 build\kernelbase.lib: build
 	lib /MACHINE:X64 /DEF /OUT:build\kernelbase.lib /NAME:kernelbase.dll\

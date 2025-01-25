@@ -19,13 +19,24 @@ DWORD find_flag(LPWSTR* argv, int* argc, LPCWSTR flag, LPCWSTR long_flag);
  */
 int find_flag_value(LPWSTR *argv, int *argc, LPCWSTR flag, LPCWSTR long_flag, LPWSTR* dest);
 
+
+BOOL get_arg_len(const wchar_t* cmd, size_t* ix, size_t* len, BOOL* quoted, unsigned flags);
+
+// Writes to dest, returns one after last argument, or NULL if arg could not be parsed
+wchar_t* get_arg(const wchar_t* cmd, size_t *ix, wchar_t* dest, unsigned flags);
 /**
  * Convert a commandline into C-style argv and argc.
  * Returns argv, <argc> gets number of arguments.
  */
 LPWSTR* parse_command_line(LPCWSTR args, int* argc);
 
+#define ARG_OPTION_BACKSLASH_ESCAPE 1
+#define ARG_OPTION_TERMINAL_OPERANDS 2
+
+#define ARG_OPTION_STD (ARG_OPTION_BACKSLASH_ESCAPE)
 /**
- * Parse a commandline potentialy without escaping of backslashes and qoutes.
+ * Parse a commandline potentialy without escaping of backslashes.
+ * Do not use ARG_OPTION_TERMINAL_OPERANDS, as "&&" and && becomes identical.
+ * Use get_arg and get_arg_len directly for that, look at quoted parameter.
  */
-LPWSTR* parse_command_line_with(LPCWSTR args, int* argc, BOOL escape_backslash, BOOL escape_quotes);
+LPWSTR* parse_command_line_with(LPCWSTR args, int* argc, unsigned options);
