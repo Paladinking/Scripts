@@ -93,6 +93,8 @@ void DynamicMatch_evaluate(DynamicMatch* ptr);
 
 void DynamicMatch_invalidate(DynamicMatch* ptr);
 
+void DynamicMatch_invalidate_many(bool chdir);
+
 
 void NodeIterator_begin(NodeIterator* it, MatchNode* node, const wchar_t* prefix);
 
