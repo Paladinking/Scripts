@@ -69,6 +69,9 @@ build\json.obj: src\json.c src\json.h src\dynamic_string.h src\hashmap.h
 	cl /c $(CLFLAGS) src\json.c
 build\subprocess.obj: src\subprocess.c src\subprocess.h src\dynamic_string.h build
 	cl /c $(CLFLAGS) src\subprocess.c
+build\match_node.obj: src\match_node.c src\match_node.h src\subprocess.h src\args.h src\dynamic_string.h src\glob.h src\whashmap.h src\hashmap.h
+	cl /c $(CLFLAGS) src\match_node.c
+
 
 bin\pathc.exe: src\pathc.c build\path_utils.obj build\args.obj build\printf.obj build\dynamic_string.obj build\ntutils.lib bin
 	cl $(CLFLAGS) /Fe:bin\pathc.exe src\pathc.c build\printf.obj build\path_utils.obj build\args.obj build\dynamic_string.obj build\ntutils.lib $(LINKFLAGS)
@@ -93,14 +96,14 @@ bin\testdll.dll: build\testdll.obj build\printf.obj build\dynamic_string.obj bui
 	link /DLL /NODEFAULTLIB /entry:DLLMain /LTCG /OUT:bin\testdll.dll build\testdll.obj build\dynamic_string.obj build\printf.obj build\glob.obj build\ntutils.lib Kernel32.lib
 	
 
-bin\test.exe: src\test.c build\glob.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib build\hashmap.obj build\whashmap.obj build\json.obj build\subprocess.obj build\args.obj
-	cl $(CLFLAGS) /Fe:bin\test.exe src\test.c build\glob.obj build\dynamic_string.obj build\printf.obj build\hashmap.obj build\whashmap.obj build\json.obj build\subprocess.obj build\args.obj build\ntutils.lib $(LINKFLAGS)
+bin\test.exe: src\test.c build\match_node.obj build\glob.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib build\hashmap.obj build\whashmap.obj build\json.obj build\subprocess.obj build\args.obj
+	cl $(CLFLAGS) /Fe:bin\test.exe src\test.c build\glob.obj build\dynamic_string.obj build\printf.obj build\hashmap.obj build\whashmap.obj build\json.obj build\subprocess.obj build\args.obj build\match_node.obj build\ntutils.lib $(LINKFLAGS)
 
 build\whashmapd.obj: src\hashmap.c src\hashmap.h src\whashmap.h build
 	gcc -g -Og -c -o build\whashmapd.obj -DHASHMAP_WIDE -DHASHMAP_CASE_INSENSITIVE src\hashmap.c
 
-bin\testd.exe: src\test.c src\glob.c src\dynamic_string.c src\printf.c build\ntutils.lib src\hashmap.c build\whashmapd.obj src\json.c src\subprocess.c src\args.c
-	gcc -g -Og -o bin\testd.exe src\test.c src\glob.c src\dynamic_string.c src\printf.c build\ntutils.lib src\hashmap.c build\whashmapd.obj src\json.c src\subprocess.c src\args.c
+bin\testd.exe: src\test.c src\glob.c src\dynamic_string.c src\printf.c build\ntutils.lib src\hashmap.c build\whashmapd.obj src\json.c src\subprocess.c src\args.c src\match_node.c
+	gcc -g -Og -o bin\testd.exe src\test.c src\glob.c src\dynamic_string.c src\printf.c build\ntutils.lib src\hashmap.c build\whashmapd.obj src\json.c src\subprocess.c src\args.c src\match_node.c
 
 build\kernelbase.lib: build
 	lib /MACHINE:X64 /DEF /OUT:build\kernelbase.lib /NAME:kernelbase.dll\
