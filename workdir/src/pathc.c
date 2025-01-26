@@ -5,6 +5,7 @@
 #include "args.h"
 #include "path_utils.h"
 #include "printf.h"
+#include "mem.h"
 #include <tlhelp32.h>
 #include <windows.h>
 
@@ -152,8 +153,6 @@ int pathc(int argc, LPWSTR *argv, HANDLE out, HANDLE err) {
         return 2;
     }
 
-    HANDLE heap = GetProcessHeap();
-
     path_buffer.capacity = 2000;
     if (!get_envvar(var, 20 * (argc - 1), &path_buffer)) {
         _printf_h(err, "Could not get %s\n", var);
@@ -212,7 +211,6 @@ int pathc(int argc, LPWSTR *argv, HANDLE out, HANDLE err) {
 }
 
 int main() {
-    HANDLE heap = GetProcessHeap();
     LPWSTR args = GetCommandLine();
     int argc;
     LPWSTR *argv = parse_command_line_with(args, &argc, (ARG_OPTION_STD & ~ARG_OPTION_BACKSLASH_ESCAPE));
@@ -221,9 +219,9 @@ int main() {
     int status = pathc(argc, argv, out, err);
     FlushFileBuffers(out);
     FlushFileBuffers(err);
-    HeapFree(heap, 0, expanded);
+    Mem_free(expanded);
     WString_free(&path_buffer);
-    HeapFree(heap, 0, argv);
+    Mem_free(argv);
     ExitProcess(status);
     return status;
 }

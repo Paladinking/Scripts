@@ -1,6 +1,7 @@
 #pragma once
 #include <stdbool.h>
 #include <wchar.h>
+#include "mem.h"
 
 typedef unsigned string_size_t;
 

@@ -6,6 +6,7 @@
 #include <tlhelp32.h>
 #include "args.h"
 #include "printf.h"
+#include "mem.h"
 #include "path_utils.h"
 
 DWORD GetParentProcessId() {
@@ -39,10 +40,9 @@ DWORD GetParentProcessId() {
 }
 
 wchar_t** split_path(WString* path, unsigned* count) {
-    HANDLE heap = GetProcessHeap();
     *count = 0;
     unsigned cap = 16;
-    wchar_t** out = HeapAlloc(heap, 0, cap * sizeof(wchar_t*));
+    wchar_t** out = Mem_alloc(cap * sizeof(wchar_t*));
     *count = 0;
 
     unsigned i = 0;
@@ -65,7 +65,7 @@ wchar_t** split_path(WString* path, unsigned* count) {
         unsigned end = i;
         if (*count == cap) {
             cap = cap * 2;
-            out = HeapReAlloc(heap, 0, out, cap * sizeof(wchar_t*));
+            out = Mem_realloc(out, cap * sizeof(wchar_t*));
         }
         out[*count] = path->buffer + begin;
         *count += 1;
@@ -92,8 +92,8 @@ int has_file(const wchar_t* file, const wchar_t* dir, unsigned file_len, WideBuf
     unsigned dir_len = wcslen(dir);
     if (file_len + dir_len + 2 > buf->capacity) {
         buf->capacity = file_len + dir_len + 2;
-        HeapFree(GetProcessHeap(), 0, buf->ptr);
-        buf->ptr = HeapAlloc(GetProcessHeap(), 0, buf->capacity * sizeof(wchar_t));
+        Mem_free(buf->ptr);
+        buf->ptr = Mem_alloc(buf->capacity * sizeof(wchar_t));
     }
     if (dir[0] == L'"') {
         ++dir;
@@ -145,7 +145,7 @@ BOOL scan_path(wchar_t* arg, unsigned arg_len, wchar_t** path, unsigned count,
     for (unsigned i = 0; i < count; ++i) {
         int res = has_file(arg, path[i], arg_len, &work);
         if (res < 0) {
-            HeapFree(GetProcessHeap(), 0, work.ptr);
+            Mem_free(work.ptr);
             return FALSE;
         }
         if (res) {
@@ -156,7 +156,7 @@ BOOL scan_path(wchar_t* arg, unsigned arg_len, wchar_t** path, unsigned count,
         }
     }
 
-    HeapFree(GetProcessHeap(), 0, work.ptr);
+    Mem_free(work.ptr);
     return TRUE;
 }
 
@@ -198,7 +198,6 @@ const char* help_message =
     "  -e, --exact         When <file> has no file extension, find files named <file> that also have no extension.\n";
 
 int main() {
-    HANDLE heap = GetProcessHeap();
     HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
     wchar_t* args = GetCommandLine();
     int argc;
@@ -245,7 +244,7 @@ int main() {
         unsigned count;
         wchar_t** path_parts = split_path(&buf, &count);
         
-        BOOL* path_data = HeapAlloc(GetProcessHeap(), 0, count * sizeof(BOOL));
+        BOOL* path_data = Mem_alloc(count * sizeof(BOOL));
         unsigned match_count = 0;
         if (scan_path(arg, arg_len, path_parts, count, path_data, &match_count)) {
             if (match_count == 0) {
@@ -316,14 +315,14 @@ int main() {
             _wprintf_h(err, L"Error: %d", GetLastError());
         }
 
-        HeapFree(GetProcessHeap(), 0, path_data);
-        HeapFree(GetProcessHeap(), 0, path_parts);
+        Mem_free(path_data);
+        Mem_free(path_parts);
         WString_free(&buf);
     } else {
         _wprintf_h(err, L"Failed getting PATH\n");
         status = 3;
     }
 end:
-    HeapFree(GetProcessHeap(), 0, argv);
+    Mem_free(argv);
     return status;
 }

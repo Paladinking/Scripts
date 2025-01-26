@@ -3,6 +3,7 @@
 #define main entry_main
 #endif
 #include "args.h"
+#include "mem.h"
 #include "dynamic_string.h"
 #include <windows.h>
 
@@ -47,8 +48,7 @@ void sort(MapEntry *map, const unsigned start, const unsigned len) {
         }
         return;
     }
-    HANDLE heap = GetProcessHeap();
-    MapEntry *parts = HeapAlloc(heap, 0, len * sizeof(MapEntry));
+    MapEntry *parts = Mem_alloc(len * sizeof(MapEntry));
     memcpy(parts, map + start, len * sizeof(MapEntry));
 
     size_t start_1 = 0;
@@ -72,7 +72,7 @@ void sort(MapEntry *map, const unsigned start, const unsigned len) {
             ++start_2;
         }
     }
-    HeapFree(heap, 0, parts);
+    Mem_free(parts);
 }
 
 MapEntry *binsearch(MapEntry *map, const size_t len, LPSTR key) {
@@ -99,13 +99,12 @@ MapEntry *binsearch(MapEntry *map, const size_t len, LPSTR key) {
 }
 
 ParseStatus parse_translation(HANDLE file, MapEntry **map, unsigned *len) {
-    HANDLE heap = GetProcessHeap();
     LARGE_INTEGER size;
     if (!GetFileSizeEx(file, &size)) {
         CloseHandle(file);
         return PARSE_GET_ERROR;
     }
-    buffer = HeapAlloc(heap, 0, size.QuadPart + 1);
+    buffer = Mem_alloc(size.QuadPart + 1);
     if (buffer == NULL) {
         CloseHandle(file);
         return PARSE_OUT_OF_MEMORY;
@@ -124,7 +123,7 @@ ParseStatus parse_translation(HANDLE file, MapEntry **map, unsigned *len) {
         }
     }
 
-    *map = HeapAlloc(heap, 0, length * sizeof(MapEntry));
+    *map = Mem_alloc(length * sizeof(MapEntry));
     if (*map == NULL) {
         return PARSE_OUT_OF_MEMORY;
     }
@@ -134,7 +133,7 @@ ParseStatus parse_translation(HANDLE file, MapEntry **map, unsigned *len) {
     for (LONGLONG i = 0; i < size.QuadPart; ++i) {
         if (buffer[i] == '\n' || buffer[i] == '\r') {
             if (!value) {
-                HeapFree(heap, 0, *map);
+                Mem_free(*map);
                 return PARSE_INVALID_FILE;
             }
             buffer[i] = '\0';
@@ -150,7 +149,7 @@ ParseStatus parse_translation(HANDLE file, MapEntry **map, unsigned *len) {
         }
         if (buffer[i] == '=') {
             if (value) {
-                HeapFree(heap, 0, *map);
+                Mem_free(*map);
                 return PARSE_INVALID_FILE;
             }
             buffer[i] = '\0';
@@ -256,7 +255,6 @@ ReplaceStatus replace(MapEntry *map, unsigned map_len, HANDLE in, HANDLE out) {
 }
 
 int main() {
-    HANDLE heap = GetProcessHeap();
     LPWSTR args = GetCommandLine();
     int status = 0;
     int argc;
@@ -292,7 +290,7 @@ int main() {
         if (out_file == INVALID_HANDLE_VALUE) {
             WriteFile(err, "Could not open output file\n", 27, NULL, NULL);
             status = GetLastError();
-            HeapFree(heap, 0, keys_values);
+            Mem_free(keys_values);
             goto end;
         }
         ReplaceStatus s = replace(keys_values, len, template_file, out_file);
@@ -305,7 +303,7 @@ int main() {
             WriteFile(err, "Invalid template file\n", 22, NULL, NULL);
         }
         CloseHandle(out_file);
-        HeapFree(heap, 0, keys_values);
+        Mem_free(keys_values);
     } else if (s == PARSE_GET_ERROR) {
         status = GetLastError();
     } else if (s == PARSE_INVALID_FILE) {
@@ -318,7 +316,7 @@ int main() {
 
 end:
     if (buffer != NULL) {
-        HeapFree(heap, 0, buffer);
+        Mem_free(buffer);
     }
     if (template_file != INVALID_HANDLE_VALUE) {
         CloseHandle(template_file);

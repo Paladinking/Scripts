@@ -1,4 +1,5 @@
 #include "dynamic_string.h"
+#include "mem.h"
 #include <windows.h>
 
 bool String_append(String *s, const char c) {
@@ -70,9 +71,8 @@ void String_clear(String *s) {
 }
 
 bool String_create(String *s) {
-    HANDLE heap = GetProcessHeap();
     s->length = 0;
-    s->buffer = HeapAlloc(heap, 0, 4);
+    s->buffer = Mem_alloc(4);
     if (s->buffer == NULL) {
         s->capacity = 0;
         return false;
@@ -83,13 +83,12 @@ bool String_create(String *s) {
 }
 
 bool String_create_capacity(String_noinit* s, string_size_t cap) {
-    HANDLE heap = GetProcessHeap();
     s->length = 0;
     s->capacity = 4;
     while (s->capacity < cap) {
         s->capacity *= 2;
     }
-    s->buffer = HeapAlloc(heap, 0, s->capacity);
+    s->buffer = Mem_alloc(s->capacity);
     if (s->buffer == NULL) {
         s->capacity = 0;
         return false;
@@ -138,21 +137,19 @@ bool String_equals(const String* s, const String* str) {
 }
 
 void String_free(String *s) {
-    HANDLE heap = GetProcessHeap();
-    HeapFree(heap, 0, s->buffer);
+    Mem_free(s->buffer);
     s->capacity = 0;
     s->length = 0;
     s->buffer = NULL;
 }
 
 bool String_copy(String* dest, String* source) {
-    HANDLE heap = GetProcessHeap();
     dest->length = source->length;
     dest->capacity = 4;
     while (dest->capacity <= source->length) {
         dest->capacity = dest->capacity * 2;
     }
-    dest->buffer = HeapAlloc(heap, 0, dest->capacity);
+    dest->buffer = Mem_alloc(dest->capacity);
     if (dest->buffer == NULL) {
         dest->capacity = 0;
         dest->length = 0;
@@ -185,7 +182,7 @@ bool String_reserve(String* s, size_t count) {
         while (new_cap <= count) {
             new_cap *= 2;
         }
-        char* buf = HeapReAlloc(GetProcessHeap(), 0, s->buffer, new_cap);
+        char* buf = Mem_realloc(s->buffer, new_cap);
         if (buf == NULL) {
             return false;
         }
@@ -254,8 +251,8 @@ bool WString_insert_count(WString* s, string_size_t ix, const wchar_t* buf, stri
         return false;
     }
     s->length += count;
-    memmove(s->buffer + ix + count, s->buffer + ix, (s->length - ix - count) * sizeof(wchar_t));
-    memmove(s->buffer + ix, buf, count);
+    memmove(s->buffer + ix + count, s->buffer + ix, (s->length - ix - count + 1) * sizeof(wchar_t));
+    memmove(s->buffer + ix, buf, count * sizeof(wchar_t));
 
     return true;
 }
@@ -288,9 +285,8 @@ void WString_clear(WString *s) {
 }
 
 bool WString_create(WString *s) {
-    HANDLE heap = GetProcessHeap();
     s->length = 0;
-    s->buffer = HeapAlloc(heap, 0, 4 * sizeof(wchar_t));
+    s->buffer = Mem_alloc(4 * sizeof(wchar_t));
     if (s->buffer == NULL) {
         s->capacity = 0;
         return false;
@@ -301,13 +297,12 @@ bool WString_create(WString *s) {
 }
 
 bool WString_create_capacity(WString_noinit* s, string_size_t cap) {
-    HANDLE heap = GetProcessHeap();
     s->length = 0;
     s->capacity = 4;
     while (s->capacity < cap) {
         s->capacity *= 2;
     }
-    s->buffer = HeapAlloc(heap, 0, s->capacity * sizeof(wchar_t));
+    s->buffer = Mem_alloc(s->capacity * sizeof(wchar_t));
     if (s->buffer == NULL) {
         s->capacity = 0;
         return false;
@@ -355,23 +350,20 @@ bool WString_equals(const WString* s, const WString* str) {
     return memcmp(s, str, s->length * sizeof(wchar_t)) == 0;
 }
 
-
 void WString_free(WString *s) {
-    HANDLE heap = GetProcessHeap();
-    HeapFree(heap, 0, s->buffer);
+    Mem_free(s->buffer);
     s->capacity = 0;
     s->length = 0;
     s->buffer = NULL;
 }
 
 bool WString_copy(WString* dest, WString* source) {
-    HANDLE heap = GetProcessHeap();
     dest->length = source->length;
     dest->capacity = 4;
     while (dest->capacity <= source->length) {
         dest->capacity = dest->capacity * 2;
     }
-    dest->buffer = HeapAlloc(heap, 0, dest->capacity * sizeof(wchar_t));
+    dest->buffer = Mem_alloc(dest->capacity * sizeof(wchar_t));
     if (dest->buffer == NULL) {
         dest->capacity = 0;
         dest->length = 0;
@@ -404,7 +396,7 @@ bool WString_reserve(WString* s, size_t count) {
         while (new_cap <= count) {
             new_cap *= 2;
         }
-        wchar_t* buf = HeapReAlloc(GetProcessHeap(), 0, s->buffer, new_cap * sizeof(wchar_t));
+        wchar_t* buf = Mem_realloc(s->buffer, new_cap * sizeof(wchar_t));
         if (buf == NULL) {
             return false;
         }

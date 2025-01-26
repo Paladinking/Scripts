@@ -28,19 +28,45 @@ void MatchNode_set_root(MatchNode *root) {
     gRoot = root;
 }
 
-void NodeIterator_begin(NodeIterator* it, MatchNode* node) {
+
+wchar_t* find_parent_dir(wchar_t* str, unsigned len) {
+    unsigned ix = len;
+    while (ix > 0) {
+        --ix;
+        if (str[ix] == L'/' || str[ix] == L'\\') {
+            return str + ix;
+        }
+    }
+    return NULL;
+}
+
+bool has_prefix(const wchar_t* s, const wchar_t* prefix) {
+    for (unsigned ix = 0; prefix[ix] != L'\0'; ++ix) {
+        if (s[ix] == L'\0') {
+            return false;
+        }
+        if (tolower(s[ix]) != tolower(prefix[ix])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void NodeIterator_begin(NodeIterator* it, MatchNode* node, const wchar_t* prefix) {
     it->node = node;
     it->ix = 0;
     it->dyn_ix = 0;
     it->walk_ongoing = false;
+    unsigned len = wcslen(prefix);
+    WString_create_capacity(&it->prefix, len);
+    WString_append_count(&it->prefix, prefix, len); 
+
+    it->dir_separator = find_parent_dir(it->prefix.buffer, len);
 }
 
 const wchar_t* NodeIterator_next(NodeIterator* it) {
     while (1) {
         if (it->ix >= it->node->match_count) {
-            it->node = NULL;
-            it->ix = 0;
-            it->dyn_ix = 0;
             return NULL;
         }
         Match* match = &it->node->matches[it->ix];
@@ -51,11 +77,23 @@ const wchar_t* NodeIterator_next(NodeIterator* it) {
         }
         if (type == MATCH_STATIC) {
             it->ix += 1;
+            if (!has_prefix(match->static_match, it->prefix.buffer)) {
+                continue;
+            } 
             return match->static_match;
         }
         if (type == MATCH_ANY_FILE || type == MATCH_EXISTING_FILE) {
             if (!it->walk_ongoing) {
-                if (!WalkDir_begin(&it->walk_ctx, L".")) {
+                bool walk;
+                if (it->dir_separator == NULL) {
+                    walk = WalkDir_begin(&it->walk_ctx, L".");
+                } else {
+                    wchar_t old_c = *(it->dir_separator + 1);
+                    *(it->dir_separator + 1) = L'\0';
+                    walk = WalkDir_begin(&it->walk_ctx, it->prefix.buffer);
+                    *(it->dir_separator + 1) = old_c;
+                }
+                if (!walk) {
                     // Error trying to iterate working dir, skip to next
                     it->ix += 1;
                     continue;
@@ -68,6 +106,20 @@ const wchar_t* NodeIterator_next(NodeIterator* it) {
                 it->ix += 1;
                 continue;
             }
+            if (it->dir_separator == NULL) {
+                // Filter with full prefix
+                if (!has_prefix(path->path.buffer, it->prefix.buffer)) {
+                    continue;
+                } 
+                return path->path.buffer;
+            }
+            // Filter with prefix after dir_separator
+            if (!has_prefix(path->path.buffer, it->dir_separator + 1)) {
+                continue;
+            }
+
+            unsigned count = it->dir_separator - it->prefix.buffer + 1;
+            WString_insert_count(&path->path, 0, it->prefix.buffer, count);
             return path->path.buffer;
         }
         // DynamicMatch left
@@ -81,17 +133,30 @@ const wchar_t* NodeIterator_next(NodeIterator* it) {
             continue;
         }
         it->dyn_ix += 1;
+        if (!has_prefix(dyn->matches[it->dyn_ix - 1], it->prefix.buffer)) {
+            continue;
+        }
         return dyn->matches[it->dyn_ix - 1];
     }
 }
 
 // Call if you end loop before NodeIterator_next returns NULL.
-void NodeIterator_abort(NodeIterator* it) {
+void NodeIterator_stop(NodeIterator* it) {
     if (it->walk_ongoing) {
         WalkDir_abort(&it->walk_ctx);
         it->walk_ongoing = false;
     }
     it->node = NULL;
+    it->ix = 0;
+    it->dyn_ix = 0;
+    WString_free(&it->prefix);
+    it->dir_separator = NULL;
+}
+
+void NodeIterator_restart(NodeIterator* it) {
+    if (it->walk_ongoing) {
+        WalkDir_abort(&it->walk_ctx);
+    }
     it->ix = 0;
     it->dyn_ix = 0;
 }
@@ -139,7 +204,7 @@ bool reserve(void** dst, unsigned* cap, unsigned size, size_t elem_size) {
         while (*cap < size) {
             *cap *= 2;
         }
-        *dst = HeapAlloc(GetProcessHeap(), 0, *cap * elem_size);
+        *dst = Mem_alloc(*cap * elem_size);
         if (*dst == NULL) {
             *cap = 0;
             return false;
@@ -149,7 +214,7 @@ bool reserve(void** dst, unsigned* cap, unsigned size, size_t elem_size) {
         while (new_cap < size) {
             new_cap *= 2;
         }
-        void* new_ptr = HeapReAlloc(GetProcessHeap(), 0, *dst, new_cap * elem_size);
+        void* new_ptr = Mem_realloc(*dst, new_cap * elem_size);
         if (new_ptr == NULL) {
             return false;
         }
@@ -164,7 +229,7 @@ bool reserve(void** dst, unsigned* cap, unsigned size, size_t elem_size) {
 
 // Adds to global structures
 DynamicMatch* DynamicMatch_create(wchar_t* cmd, enum Invalidation invalidation, wchar_t sep) {
-    DynamicMatch* n = HeapAlloc(GetProcessHeap(), 0, sizeof(DynamicMatch));
+    DynamicMatch* n = Mem_alloc(sizeof(DynamicMatch));
     if (n == NULL) {
         return NULL;
     }
@@ -177,12 +242,12 @@ DynamicMatch* DynamicMatch_create(wchar_t* cmd, enum Invalidation invalidation, 
     n->node_capacity = 0;
     n->nodes = NULL;
     if (!RESERVE(&n->nodes, &n->node_capacity, 1, *n->nodes)) {
-        HeapFree(GetProcessHeap(), 0, n);
+        Mem_free(n);
     }
 
     if (!RESERVE(&gDynamic_matches, &gDynamic_capacity, gDynamic_count + 1, DynamicMatch*)) {
-        HeapFree(GetProcessHeap(), 0, n->nodes);
-        HeapFree(GetProcessHeap(), 0, n);
+        Mem_free(n->nodes);
+        Mem_free(n);
         return NULL;
     }
     gDynamic_matches[gDynamic_count] = n;
@@ -241,7 +306,7 @@ void DynamicMatch_evaluate(DynamicMatch* ptr) {
         return;
     }
 
-    unsigned char* b = HeapAlloc(GetProcessHeap(), 0, size);
+    unsigned char* b = Mem_alloc(size);
     if (b == 0) {
         WString_free(&buf);
         ptr->matches = &empty_match;
@@ -314,7 +379,7 @@ void DynamicMatch_invalidate(DynamicMatch* ptr) {
         }
     }
 
-    HeapFree(GetProcessHeap(), 0, ptr->matches);
+    Mem_free(ptr->matches);
     ptr->matches = NULL;
     ptr->match_count = 0;
 }
@@ -323,7 +388,7 @@ void DynamicMatch_invalidate(DynamicMatch* ptr) {
 bool NodeBuilder_create(NodeBuilder* builder) {
     static uint32_t postfix = 0;
 
-    MatchNode* node = HeapAlloc(GetProcessHeap(), 0, sizeof(MatchNode));
+    MatchNode* node = Mem_alloc(sizeof(MatchNode));
     if (node == NULL) {
         return false;
     }
@@ -439,9 +504,9 @@ void NodeBuilder_abort(NodeBuilder* builder) {
         }
     }
     if (builder->node->matches != NULL) {
-        HeapFree(GetProcessHeap(), 0, builder->node->matches);
+        Mem_free(builder->node->matches);
     }
-    HeapFree(GetProcessHeap(), 0, builder->node);
+    Mem_free(builder->node);
 }
 
 
@@ -516,9 +581,8 @@ Match* find_next_match(MatchNode* current, wchar_t* str, unsigned len) {
     return NULL;
 }
 
-MatchNode* find_final(const wchar_t *cmd, unsigned* offset) {
-    WString workbuf;
-    WString_create(&workbuf);
+MatchNode* find_final(const wchar_t *cmd, size_t* offset, WString* rem) {
+    WString_clear(rem);
 
     MatchNode* current = gRoot;
     size_t ix = 0;
@@ -531,19 +595,31 @@ MatchNode* find_final(const wchar_t *cmd, unsigned* offset) {
     unsigned options = ARG_OPTION_TERMINAL_OPERANDS | 
                        ARG_OPTION_BACKSLASH_ESCAPE;
     while (get_arg_len(cmd, &pos, &len, &quoted, options)) {
-        WString_clear(&workbuf);
-        WString_reserve(&workbuf, len + 6);
-        get_arg(cmd, &ix, workbuf.buffer, options);
+        if (cmd[pos] == L'\0') {
+            // This argument should be prefix for final
+            *offset = ix;
+            while (cmd[*offset] == L' ' || cmd[*offset] == L'\t') {
+                ++(*offset);
+            }
+            WString_clear(rem);
+            WString_reserve(rem, len);
+            get_arg(cmd, &ix, rem->buffer, options);
+            rem->length = len;
+            return current;
+        }
+        WString_clear(rem);
+        WString_reserve(rem, len + 6);
+        get_arg(cmd, &ix, rem->buffer, options);
 
-        workbuf.length = len;
+        rem->length = len;
         ++count;
         pos = ix;
         if (!quoted && len > 0) {
-            if (workbuf.buffer[0] == L'&' || workbuf.buffer[0]  == L'|') {
+            if (rem->buffer[0] == L'&' || rem->buffer[0]  == L'|') {
                 current = gRoot;
                 continue;
             }
-            if (workbuf.buffer[0] == L'<') {
+            if (rem->buffer[0] == L'<') {
                 if (current == gExisting_file || current == gAny_file) {
                     // Make sure complete is not destroyed by writing eg << <<
                     Node_set_child(gExisting_file, current->matches[0].child);
@@ -552,7 +628,7 @@ MatchNode* find_final(const wchar_t *cmd, unsigned* offset) {
                 }
                 current = gExisting_file;
                 continue;
-            } else if (workbuf.buffer[0] == L'>') {
+            } else if (rem->buffer[0] == L'>') {
                 if (current == gExisting_file || current == gAny_file) {
                     // Make sure complete is not destroyed by writing eg >> >>
                     Node_set_child(gAny_file, current->matches[0].child);
@@ -564,12 +640,12 @@ MatchNode* find_final(const wchar_t *cmd, unsigned* offset) {
             }
         }
 
-        Match* next = find_next_match(current, workbuf.buffer, len);
+        Match* next = find_next_match(current, rem->buffer, len);
         if (next != NULL) {
             current = next->child;
         }
     }
-
-    WString_free(&workbuf);
+    *offset = pos;
+    WString_clear(rem);
     return current;
 }

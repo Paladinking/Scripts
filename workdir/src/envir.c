@@ -5,6 +5,7 @@
 #include "printf.h"
 #include "args.h"
 #include "path_utils.h"
+#include "mem.h"
 
 /* CREATE_PROG asm in FASM
 format binary
@@ -264,7 +265,6 @@ DWORD GetEnvFile(wchar_t* buf, size_t len) {
 }
 
 DWORD FindEnvFileEntry(HANDLE file, const wchar_t* entry, size_t *len, wchar_t** data) {
-    HANDLE heap = GetProcessHeap();
     size_t entry_len = wcslen(entry); 
     if (entry_len > 200) {
         return ERROR_INVALID_PARAMETER;
@@ -309,24 +309,24 @@ DWORD FindEnvFileEntry(HANDLE file, const wchar_t* entry, size_t *len, wchar_t**
                 size = size - sizeof(wchar_t) * (entry_len + 1) - sizeof(size_t);
                 size_t total_read = 0;
 
-                char* buf = HeapAlloc(GetProcessHeap(), 0, size);
+                char* buf = Mem_alloc(size);
                 if (buf == NULL) {
                     return ERROR_OUTOFMEMORY;
                 }
                 while (total_read < size) {
                     if (!ReadFile(file, buf + total_read, size - total_read, &read, NULL)) {
-                        HeapFree(GetProcessHeap(), 0, buf);
+                        Mem_free(buf);
                         return GetLastError();
                     }
                     if (read == 0) {
-                        HeapFree(GetProcessHeap(), 0, buf);
+                        Mem_free(buf);
                         // Cannot return EOF, since that indicates entry not found.
                         return ERROR_BAD_LENGTH;
                     }
                     total_read += read;
                 }
                 if (!SetFilePointerEx(file, file_pointer, NULL, FILE_BEGIN)) {
-                    HeapFree(GetProcessHeap(), 0, buf);
+                    Mem_free(buf);
                     return GetLastError();
                 }
                 *data = (wchar_t*) buf;
@@ -387,14 +387,14 @@ DWORD ListEnvFile(const wchar_t* file_name) {
                 goto end;
             }
             if (name_size == capacity) {
-                wchar_t* new_buf = HeapAlloc(GetProcessHeap(), 0, 2 * capacity);
+                wchar_t* new_buf = Mem_alloc(2 * capacity);
                 if (new_buf == NULL) {
                     res = ERROR_OUTOFMEMORY;
                     goto end;
                 }
                 memcpy(new_buf, buf, name_size);
                 if (allocated) {
-                    HeapFree(GetProcessHeap(), 0, buf);
+                    Mem_free(buf);
                 } else {
                     allocated = TRUE;
                 }
@@ -414,7 +414,7 @@ DWORD ListEnvFile(const wchar_t* file_name) {
     }
 end:
     if (allocated) {
-        HeapFree(GetProcessHeap(), 0, buf);
+        Mem_free(buf);
     }
     UnlockFile(file, 0, 0, 1, 0);
     CloseHandle(file);
@@ -601,7 +601,7 @@ DWORD ReadEnvFile(const wchar_t* file_name, const wchar_t* entry_name, HANDLE pr
     CloseHandle(t);
     VirtualFreeEx(process, mem, 0, MEM_RELEASE);
 end:
-    HeapFree(GetProcessHeap(), 0, data);
+    Mem_free(data);
     return  res;
 }
 
@@ -940,7 +940,7 @@ end:
     if (hProcess != NULL) {
         CloseHandle(hProcess);
     }
-    HeapFree(GetProcessHeap(), 0, argv);
+    Mem_free(argv);
 
     return status;
 }

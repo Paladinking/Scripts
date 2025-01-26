@@ -31,4 +31,6 @@ void WalkDir_abort(WalkCtx* ctx);
 
 bool read_text_file(String_noinit* str, const wchar_t* filename);
 
+bool append_file(const char* str, const wchar_t* filename);
+
 #endif

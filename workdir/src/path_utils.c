@@ -1,5 +1,6 @@
 #define UNICODE
 #include "path_utils.h"
+#include "mem.h"
 
 BOOL get_envvar(LPCWSTR name, DWORD hint, WString *res) {
     BOOL free = FALSE;
@@ -54,9 +55,8 @@ WString *read_envvar(LPCWSTR name, EnvBuffer *env) {
             return &(env->vars[i].val);
         }
     }
-    HANDLE heap = GetProcessHeap();
     if (env->size == env->capacity) {
-        EnvVar *buf = HeapAlloc(heap, 0, env->capacity * 2 * sizeof(EnvVar));
+        EnvVar *buf = Mem_alloc(env->capacity * 2 * sizeof(EnvVar));
         if (buf == NULL) {
             return NULL;
         }
@@ -70,7 +70,7 @@ WString *read_envvar(LPCWSTR name, EnvBuffer *env) {
     env->vars[env->size].val.length = 0;
     if (get_envvar(name, 0, &(env->vars[env->size].val))) {
         DWORD len = (wcslen(name) + 1) * sizeof(WCHAR);
-        LPWSTR new_name = HeapAlloc(heap, 0, len);
+        LPWSTR new_name = Mem_alloc(len);
         if (new_name == NULL) {
             return NULL;
         }
@@ -84,12 +84,11 @@ WString *read_envvar(LPCWSTR name, EnvBuffer *env) {
 }
 
 void free_env(EnvBuffer *env) {
-    HANDLE heap = GetProcessHeap();
     for (DWORD i = 0; i < env->size; ++i) {
         WString_free(&env->vars[i].val);
-        HeapFree(heap, 0, (LPWSTR)env->vars[i].name);
+        Mem_free((LPWSTR)env->vars[i].name);
     }
-    HeapFree(heap, 0, env->vars);
+    Mem_free(env->vars);
     env->capacity = 0;
     env->size = 0;
 }
@@ -215,7 +214,7 @@ OpStatus path_prune(PathBuffer *path) {
     PathBuffer res;
     WString_create_capacity(&res, path->capacity);
 
-    LPWSTR work_buf = HeapAlloc(GetProcessHeap(), 0, 256 * sizeof(WCHAR));
+    LPWSTR work_buf = Mem_alloc(256 * sizeof(WCHAR));
     unsigned work_cap = 256;
 
     unsigned i = 0;
@@ -237,9 +236,8 @@ OpStatus path_prune(PathBuffer *path) {
 
         unsigned size = i - begin;
         if (size + 1 > work_cap) {
-            HeapFree(GetProcessHeap(), 0, work_buf);
-            work_buf =
-                HeapAlloc(GetProcessHeap(), 0, (size + 1) * sizeof(WCHAR));
+            Mem_free(work_buf);
+            work_buf = Mem_alloc((size + 1) * sizeof(WCHAR));
             work_cap = size + 1;
             if (work_buf == NULL) {
                 WString_free(&res);
@@ -254,9 +252,8 @@ OpStatus path_prune(PathBuffer *path) {
             if (res.length == 0) {
                 if (size + 2 > res.capacity) {
                     res.capacity = size + 2;
-                    HeapFree(GetProcessHeap(), 0, res.buffer);
-                    res.buffer = HeapAlloc(GetProcessHeap(), 0,
-                                           res.capacity * sizeof(WCHAR));
+                    Mem_free(res.buffer);
+                    res.buffer = Mem_alloc(res.capacity * sizeof(WCHAR));
                 }
                 res.length = size + 1;
                 memcpy(res.buffer, work_buf, size * sizeof(WCHAR));
@@ -265,8 +262,8 @@ OpStatus path_prune(PathBuffer *path) {
             } else {
                 OpStatus status = path_add(work_buf, &res, FALSE, FALSE);
                 if (status > OP_NO_CHANGE) {
-                    HeapFree(GetProcessHeap(), 0, work_buf);
-                    HeapFree(GetProcessHeap(), 0, res.buffer);
+                    Mem_free(work_buf);
+                    Mem_free(res.buffer);
                     return status;
                 }
                 if (status == OP_SUCCESS) {
@@ -283,7 +280,7 @@ OpStatus path_prune(PathBuffer *path) {
         }
         ++i;
     }
-    HeapFree(GetProcessHeap(), 0, work_buf);
+    Mem_free(work_buf);
     WString_free(path);
     path->buffer = res.buffer;
     path->length = res.length;
@@ -392,7 +389,6 @@ OpStatus path_add(LPWSTR arg, PathBuffer *path_buffer, BOOL before,
 }
 
 OpStatus expand_path(LPWSTR path, LPWSTR *dest, DWORD *dest_cap) {
-    HANDLE heap = GetProcessHeap();
     if (path[0] == L'"') {
         ++path;
         DWORD index = 1;
@@ -406,8 +402,8 @@ OpStatus expand_path(LPWSTR path, LPWSTR *dest, DWORD *dest_cap) {
         return OP_INVALID_PATH;
     }
     if (expanded_size > *dest_cap) {
-        HeapFree(heap, 0, *dest);
-        *dest = HeapAlloc(heap, 0, (expanded_size + 1) * sizeof(WCHAR));
+        Mem_free(*dest);
+        *dest = Mem_alloc((expanded_size + 1) * sizeof(WCHAR));
         if (expanded == NULL) {
             *dest_cap = 0;
             return OP_OUT_OF_MEMORY;

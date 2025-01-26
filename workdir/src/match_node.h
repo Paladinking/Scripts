@@ -65,6 +65,8 @@ typedef struct NodeIterator {
     unsigned dyn_ix;
     bool walk_ongoing;
     WalkCtx walk_ctx;
+    WString prefix;
+    wchar_t* dir_separator;
 } NodeIterator;
 
 typedef struct NodeBuilder {
@@ -92,11 +94,13 @@ void DynamicMatch_evaluate(DynamicMatch* ptr);
 void DynamicMatch_invalidate(DynamicMatch* ptr);
 
 
-void NodeIterator_begin(NodeIterator* it, MatchNode* node);
+void NodeIterator_begin(NodeIterator* it, MatchNode* node, const wchar_t* prefix);
 
 const wchar_t* NodeIterator_next(NodeIterator* it);
 
-void NodeIterator_abort(NodeIterator* it);
+void NodeIterator_stop(NodeIterator* it);
+
+void NodeIterator_restart(NodeIterator* it);
 
 
 bool NodeBuilder_create(NodeBuilder* builder);
@@ -118,6 +122,10 @@ void Node_set_child(MatchNode* node, MatchNode* child);
 
 Match* find_next_match(MatchNode* current, wchar_t* str, unsigned len);
 
-MatchNode* find_final(const wchar_t *cmd, unsigned* offset);
+// Find MatchNode* that should be used for autocomplete for cmd
+// <offset> will be set to ix in cmd contaning arg to complete.
+// <rem> will contain *only* final argument to complete.
+// <offset> is at end and <rem> empty in case cmd ends with space.
+MatchNode* find_final(const wchar_t *cmd, size_t* offset, WString* rem);
 
 #endif // MATCH_NODE_H_00

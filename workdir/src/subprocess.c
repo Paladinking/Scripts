@@ -2,6 +2,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <stdint.h>
+#include "mem.h"
 
 bool subprocess_run(const wchar_t *cmd, String *out, unsigned int timeout_millies, unsigned long* exit_code) {
     STARTUPINFOW si;
@@ -25,7 +26,7 @@ bool subprocess_run(const wchar_t *cmd, String *out, unsigned int timeout_millie
     si.hStdOutput = hWrite;
 
     size_t cmd_len = wcslen(cmd);
-    wchar_t* cmd_buf = HeapAlloc(GetProcessHeap(), 0, (cmd_len + 1)* sizeof(wchar_t));
+    wchar_t* cmd_buf = Mem_alloc((cmd_len + 1)* sizeof(wchar_t));
     if (cmd_buf == NULL) {
         CloseHandle(hRead);
         CloseHandle(hWrite);
@@ -36,7 +37,7 @@ bool subprocess_run(const wchar_t *cmd, String *out, unsigned int timeout_millie
     if (!CreateProcessW(NULL, cmd_buf, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
         CloseHandle(hRead);
         CloseHandle(hWrite);
-        HeapFree(GetProcessHeap(), 0, cmd_buf);
+        Mem_free(cmd_buf);
         return false;
     }
     CloseHandle(hWrite);
@@ -106,6 +107,6 @@ cleanup:
     if (o.hEvent) {
         CloseHandle(o.hEvent);
     }
-    HeapFree(GetProcessHeap(), 0, cmd_buf);
+    Mem_free(cmd_buf);
     return status;
 }

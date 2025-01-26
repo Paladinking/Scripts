@@ -3,6 +3,7 @@
 #include "printf.h"
 #include "hashmap.h"
 #include "match_node.h"
+#include "args.h"
 
 int main() {
     MatchNode_init();
@@ -36,11 +37,17 @@ int main() {
     NodeBuilder_add_any(&b, file);
     MatchNode_set_root(NodeBuilder_finalize(&b));
 
-    MatchNode* final = find_final(L"git add", NULL);
+    size_t offset, len;
+    const wchar_t* cmd = L"git add ";
 
-    _wprintf(L"Final: %d, %d, %d, %d\n", final->hash_postfix[1], final->hash_postfix[2], final->hash_postfix[3], final->hash_postfix[4]);
+    WString rem;
+    WString_create(&rem);
+    MatchNode* final = find_final(cmd, &offset, &rem);
+
+    _wprintf(L"Final: %d, %d, %s\n", offset, len, rem.buffer);
+
     NodeIterator it;
-    NodeIterator_begin(&it, final);
+    NodeIterator_begin(&it, final, rem.buffer);
     const wchar_t* s1;
     while ((s1 = NodeIterator_next(&it)) != NULL) {
         _wprintf(L"%s\n", s1);
@@ -51,10 +58,6 @@ int main() {
     String res;
     String_create(&res);
     unsigned long exit_code;
-    if (!subprocess_run(L"git for-each-ref --format=%(refname:short) refs/heads", 
-        &res, 1000, &exit_code)) {
-        _wprintf(L"Error\n");
-    }
     _wprintf(L"%S", res.buffer);
 
     String json_str;

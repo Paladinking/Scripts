@@ -1,5 +1,6 @@
 #define UNICODE
 #include "args.h"
+#include "mem.h"
 
 DWORD find_flag(LPWSTR *argv, int *argc, LPCWSTR flag, LPCWSTR long_flag) {
     DWORD count = 0;
@@ -210,7 +211,6 @@ wchar_t* get_arg(const wchar_t* cmd, size_t *ix, wchar_t* dest, unsigned flags) 
 }
 
 LPWSTR* parse_command_line_with(const LPCWSTR args, int* argc, unsigned options) {
-    HANDLE heap = GetProcessHeap();
     *argc = 0;
     size_t i = 0;
     size_t size = 0;
@@ -223,7 +223,7 @@ LPWSTR* parse_command_line_with(const LPCWSTR args, int* argc, unsigned options)
     }
 
     size = size * sizeof(WCHAR) + (sizeof(LPWSTR) + sizeof(WCHAR)) * (*argc);
-    LPWSTR* argv = HeapAlloc(heap, 0, size);
+    LPWSTR* argv = Mem_alloc(size);
     if (argv == NULL) {
         return NULL;
     } 

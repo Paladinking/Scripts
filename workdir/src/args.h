@@ -22,7 +22,7 @@ int find_flag_value(LPWSTR *argv, int *argc, LPCWSTR flag, LPCWSTR long_flag, LP
 
 BOOL get_arg_len(const wchar_t* cmd, size_t* ix, size_t* len, BOOL* quoted, unsigned flags);
 
-// Writes to dest, returns one after last argument, or NULL if arg could not be parsed
+// Writes to dest, returns one after last written in dest, or NULL if arg could not be parsed
 wchar_t* get_arg(const wchar_t* cmd, size_t *ix, wchar_t* dest, unsigned flags);
 /**
  * Convert a commandline into C-style argv and argc.

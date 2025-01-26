@@ -64,13 +64,20 @@ bool is_file(const wchar_t* str) {
 bool WalkDir_begin(WalkCtx* ctx, const wchar_t* dir) {
     WString* s = &ctx->p.path;
     WString_create(s);
+
+    if (dir[0] == L'/' && ((dir[1] >= 'a' && dir[1] <= 'z') || (dir[1] >= 'A' && dir[1] <= 'Z')) && (dir[2] == L'\0' || dir[2] == L'/' || dir[2] == L'\\')) {
+        WString_append(s, dir[1]);
+        WString_append(s, L':');
+        dir += 2;
+    }
+
     WString_extend(s, dir);
 
-    for (unsigned ix = 0; dir[ix] != L'\0'; ++ix) {
-        if (dir[ix] == L'/') {
+    for (unsigned ix = 0; ix < s->length; ++ix) {
+        if (s->buffer[ix] == L'/') {
             s->buffer[ix] = L'\\';
         }
-        if (dir[ix] == L'?' || dir[ix] == L'*') {
+        if (s->buffer[ix] == L'?' || s->buffer[ix] == L'*') {
             ctx->handle = INVALID_HANDLE_VALUE;
             WString_free(s);
             return false;
