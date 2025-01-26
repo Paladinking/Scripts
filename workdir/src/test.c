@@ -15,19 +15,29 @@ enum Invalidation {
 #define EXTRA_ANY_FILES 4
 #define EXTRA_DEFAULT 8
 
-struct CmpNode;
+#define HASH_POSTFIX_LEN 5
+
+struct MatchNode;
+struct Match;
 
 typedef struct DynamicMatch {
     // First is length of first string, followed by first string
     // After that, length of second string etc...
-    wchar_t* matches; // NULL when invalidated
+    wchar_t** matches; // NULL when invalidated
     wchar_t* cmd;
     unsigned match_count;
+
+    // List of postfix and child for all nodes contaning this 
+    struct {
+        struct MatchNode* parent;
+        struct Match* match;
+    }* nodes;
+    unsigned node_count;
+    unsigned node_capacity;
+
     enum Invalidation invalidation;
     wchar_t separator;
 } DynamicMatch;
-
-struct MatchNode;
 
 typedef struct Match {
     enum {
@@ -48,12 +58,15 @@ typedef struct MatchNode {
     int file_ix;
     int any_ix;
 
-    wchar_t hash_postfix[5]; // Prefix used in global hashmap for finding next node
+    wchar_t hash_postfix[HASH_POSTFIX_LEN]; // Postfix used in global hashmap for finding next node
 } MatchNode;
+
+void DynamicMatch_evaluate(DynamicMatch* ptr);
 
 typedef struct NodeIterator {
     MatchNode* node;
     unsigned ix;
+    unsigned dyn_ix;
     bool walk_ongoing;
     WalkCtx walk_ctx;
 } NodeIterator;
@@ -61,6 +74,7 @@ typedef struct NodeIterator {
 void NodeIterator_begin(NodeIterator* it, MatchNode* node) {
     it->node = node;
     it->ix = 0;
+    it->dyn_ix = 0;
     it->walk_ongoing = false;
 }
 
@@ -69,6 +83,7 @@ const wchar_t* NodeIterator_next(NodeIterator* it) {
         if (it->ix >= it->node->match_count) {
             it->node = NULL;
             it->ix = 0;
+            it->dyn_ix = 0;
             return NULL;
         }
         Match* match = &it->node->matches[it->ix];
@@ -98,10 +113,18 @@ const wchar_t* NodeIterator_next(NodeIterator* it) {
             }
             return path->path.buffer;
         }
-        // DynamicMatch left...
+        // DynamicMatch left
         DynamicMatch* dyn = match->dynamic_match;
-        it->ix += 1;
-        return L"TODO";
+        if (it->dyn_ix == 0) {
+            DynamicMatch_evaluate(dyn);
+        }
+        if (it->dyn_ix >= dyn->match_count) {
+            it->ix += 1;
+            it->dyn_ix = 0;
+            continue;
+        }
+        it->dyn_ix += 1;
+        return dyn->matches[it->dyn_ix - 1];
     }
 }
 
@@ -113,6 +136,7 @@ void NodeIterator_abort(NodeIterator* it) {
     }
     it->node = NULL;
     it->ix = 0;
+    it->dyn_ix = 0;
 }
 
 WHashMap gNodes;
@@ -120,6 +144,10 @@ WHashMap gNodes;
 unsigned gDynamic_count = 0;
 unsigned gDynamic_capacity = 0;
 DynamicMatch** gDynamic_matches = NULL;
+
+MatchNode* gRoot; // Root of autocomplete graph
+MatchNode* gAny_file; // Special node used for '>'
+MatchNode* gExisting_file; // Special node used for '<'
 
 
 bool is_filelike(const wchar_t* str, unsigned len) {
@@ -186,7 +214,7 @@ bool reserve(void** dst, unsigned* cap, unsigned size, size_t elem_size) {
 
 
 // Adds to global structures
-DynamicMatch* DynamicMatches_create(wchar_t* cmd, enum Invalidation invalidation, wchar_t sep) {
+DynamicMatch* DynamicMatch_create(wchar_t* cmd, enum Invalidation invalidation, wchar_t sep) {
     DynamicMatch* n = HeapAlloc(GetProcessHeap(), 0, sizeof(DynamicMatch));
     if (n == NULL) {
         return NULL;
@@ -196,7 +224,15 @@ DynamicMatch* DynamicMatches_create(wchar_t* cmd, enum Invalidation invalidation
     n->invalidation = invalidation;
     n->separator = sep;
     n->cmd = cmd;
+    n->node_count = 0;
+    n->node_capacity = 0;
+    n->nodes = NULL;
+    if (!RESERVE(&n->nodes, &n->node_capacity, 1, *n->nodes)) {
+        HeapFree(GetProcessHeap(), 0, n);
+    }
+
     if (!RESERVE(&gDynamic_matches, &gDynamic_capacity, gDynamic_count + 1, DynamicMatch*)) {
+        HeapFree(GetProcessHeap(), 0, n->nodes);
         HeapFree(GetProcessHeap(), 0, n);
         return NULL;
     }
@@ -205,14 +241,133 @@ DynamicMatch* DynamicMatches_create(wchar_t* cmd, enum Invalidation invalidation
     return n;
 }
 
-
-void DynamicMatches_evaluate(DynamicMatch* ptr) {
+// Adds to global structures
+void DynamicMatch_evaluate(DynamicMatch* ptr) {
     // Already valid
-    if (ptr->cmd != NULL) {
+    if (ptr->matches != NULL) {
+        return;
+    }
+
+    static wchar_t* empty_match = L"";
+    ptr->match_count = 0;
+    String out;
+    String_create(&out);
+    unsigned long exit_code;
+    if (!subprocess_run(ptr->cmd, &out, 1000, &exit_code)) {
+        String_free(&out);
+        ptr->matches = &empty_match;
+        return;
+    }
+
+    WString buf;
+    if (!WString_create(&buf) || !WString_from_utf8_bytes(&buf, out.buffer, out.length)) {
+        String_free(&out);
+        ptr->matches = &empty_match;
+        return;
+    }
+    String_free(&out);
+
+    unsigned size = 0;
+    unsigned len = 0;
+    for (unsigned ix = 0; ix <= buf.length; ++ix) {
+        if (ptr->separator == L'\n' && buf.buffer[ix] == L'\r') {
+            buf.buffer[ix] = L'\n';
+        }
+        if (buf.buffer[ix] == L'0' || buf.buffer[ix] == ptr->separator) {
+            if (len == 0) {
+                continue;
+            }
+            size += sizeof(wchar_t*) + sizeof(wchar_t);
+            len = 0;
+            ptr->match_count += 1;
+            continue;
+        }
+        size += sizeof(wchar_t);
+        len += 1;
+    }
+
+    if (ptr->match_count == 0) { // This avoids potential memory leak of zero-sized allocation.
+        WString_free(&buf);
+        ptr->matches = &empty_match;
+        return;
+    }
+
+    unsigned char* b = HeapAlloc(GetProcessHeap(), 0, size);
+    if (b == 0) {
+        WString_free(&buf);
+        ptr->matches = &empty_match;
+        return;
+    }
+    wchar_t* data = (wchar_t*)(b + ptr->match_count * sizeof(wchar_t*));
+    ptr->matches = (wchar_t**) b;
+
+    ptr->match_count = 0;
+    wchar_t* last_data = data;
+    len = 0;
+    for (unsigned ix = 0; ix <= buf.length; ++ix) {
+        if (buf.buffer[ix] == L'0' || buf.buffer[ix] == ptr->separator) {
+            if (len == 0 || len > 0xffff) {
+                continue;
+            }
+            ptr->matches[ptr->match_count] = last_data;
+            ptr->match_count += 1;
+            *data = L'\0';
+            ++data;
+            last_data = data;
+            len = 0;
+            continue;
+        }
+        *data = buf.buffer[ix];
+        ++data;
+        len += 1;
+    }
+
+    for (int j = 0; j < ptr->node_count; ++j) {
+        wchar_t* hash_postfix = ptr->nodes[j].parent->hash_postfix;
+        for (unsigned ix = 0; ix < ptr->match_count; ++ix) {
+            WString_clear(&buf);
+            WString_extend(&buf, ptr->matches[ix]);
+            WString_append_count(&buf, hash_postfix, HASH_POSTFIX_LEN);
+
+            WHashElement* entry = WHashMap_Get(&gNodes, buf.buffer);
+            if (entry->value == NULL) {
+                entry->value = ptr->nodes[j].match;
+            }
+        }
+    }
+
+    WString_free(&buf);
+}
+
+void DynamicMatch_invalidate(DynamicMatch* ptr) {
+    if (ptr->matches == NULL) {
+        return;
+    }
+    if (ptr->match_count == 0) {
+        ptr->matches = NULL;
         return;
     }
     WString buf;
-    WString_create(&buf);
+    WString_create_capacity(&buf, 20);
+
+
+    for (int j = 0; j < ptr->node_count; ++j) {
+        wchar_t* hash_postfix = ptr->nodes[j].parent->hash_postfix;
+        for (unsigned ix = 0; ix < ptr->match_count; ++ix) {
+            WString_clear(&buf);
+            WString_extend(&buf, ptr->matches[ix]);
+            WString_append_count(&buf, hash_postfix, HASH_POSTFIX_LEN);
+
+            Match* m = WHashMap_Value(&gNodes, buf.buffer);
+            if (m == ptr->nodes[j].match) {
+                WHashMap_Remove(&gNodes, buf.buffer);
+            }
+        }
+    }
+
+    HeapFree(GetProcessHeap(), 0, ptr->matches);
+    ptr->matches = NULL;
+    ptr->match_count = 0;
 }
  
 
@@ -350,13 +505,18 @@ MatchNode* NodeBuilder_finalize(NodeBuilder* builder) {
     WString_create(&hashbuf);
 
     for (unsigned i = 0; i < node->match_count; ++i) {
-        if (node->matches[i].type != MATCH_STATIC) {
-            continue;
+        if (node->matches[i].type == MATCH_STATIC) {
+            WString_extend(&hashbuf, node->matches[i].static_match);
+            WString_append_count(&hashbuf, node->hash_postfix, HASH_POSTFIX_LEN);
+            WHashMap_Insert(&gNodes, hashbuf.buffer, &node->matches[i]);
+            WString_clear(&hashbuf);
+        } else if (node->matches[i].type == MATCH_DYNAMIC) {
+            DynamicMatch* dyn = node->matches[i].dynamic_match;
+            RESERVE(&dyn->nodes, &dyn->node_capacity, dyn->node_count + 1, *dyn->nodes);
+            dyn->nodes[dyn->node_count].parent = builder->node;
+            dyn->nodes[dyn->node_count].match = &node->matches[i];
+            dyn->node_count += 1;
         }
-        WString_extend(&hashbuf, node->matches[i].static_match);
-        WString_append_count(&hashbuf, node->hash_postfix, 5);
-        WHashMap_Insert(&gNodes, hashbuf.buffer, &node->matches[i]);
-        WString_clear(&hashbuf);
     }
 
     WString_free(&hashbuf);
@@ -418,9 +578,6 @@ bool char_is_separator(wchar_t c) {
 }
 
 
-MatchNode* gRoot; // Root of autocomplete graph
-MatchNode* gAny_file; // Special node used for '>'
-MatchNode* gExisting_file; // Special node used for '<'
 
 MatchNode* find_final(const wchar_t *cmd, unsigned* offset) {
     WString workbuf;
@@ -513,8 +670,11 @@ int main() {
     NodeBuilder_add_any(&b, file);
     gRoot = NodeBuilder_finalize(&b);
 
+    DynamicMatch* dyn = DynamicMatch_create(L"git for-each-ref --format=%(refname:short) refs/heads", NEVER, L'\n');
+
     NodeBuilder_create(&b);
     NodeBuilder_add_files(&b, false, NULL);
+    NodeBuilder_add_dynamic(&b, dyn, NULL);
     NodeBuilder_add_any(&b, NULL);
     gAny_file = NodeBuilder_finalize(&b);
 
@@ -524,6 +684,24 @@ int main() {
     gExisting_file = NodeBuilder_finalize(&b);
 
     MatchNode* final = find_final(L"git add", NULL);
+
+    WString cmd_test;
+    WString_create(&cmd_test);
+    WString_extend(&cmd_test, L"temp");
+    WString_append_count(&cmd_test, gAny_file->hash_postfix, HASH_POSTFIX_LEN);
+    DynamicMatch_evaluate(dyn);
+
+    Match* ptr = WHashMap_Value(&gNodes, cmd_test.buffer);
+    _wprintf(L"%p, %p\n", ptr->child, gAny_file);
+
+    DynamicMatch_invalidate(dyn);
+
+    ptr = WHashMap_Value(&gNodes, cmd_test.buffer);
+    _wprintf(L"%p, %p\n", ptr, gAny_file);
+
+    DynamicMatch_evaluate(dyn);
+    ptr = WHashMap_Value(&gNodes, cmd_test.buffer);
+    _wprintf(L"%p, %p\n", ptr, gAny_file);
 
     _wprintf(L"Final: %d, %d, %d, %d\n", final->hash_postfix[1], final->hash_postfix[2], final->hash_postfix[3], final->hash_postfix[4]);
     NodeIterator it;
