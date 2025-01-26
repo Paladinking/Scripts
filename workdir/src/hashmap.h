@@ -37,6 +37,14 @@
 #undef ckey_t
 
 #ifdef HASHMAP_WIDE
+
+#ifdef HASHMAP_LINKED
+#ifndef HASHMAP_WIDE_LINKED
+#undef HASHMAP_LINKED
+#define HASHMAP_WIDE_UNLINKED
+#endif
+#endif
+
 #define ckey_t wchar_t
 #ifdef HASHMAP_CASE_INSENSITIVE
 #define keycmp(a, b) _wcsicmp(a, b)
@@ -61,7 +69,15 @@
 #define HashMap_RemoveGet WHashMap_RemoveGet
 #define HashMap_Freeze WHashMap_Freeze
 #define HashMap_FreeFrozen WHashMap_FreeFrozen
+
+#ifdef HASHMAP_LINKED
+#define HashMapIterator WHashMapIterator
+#define HashMapIter_Begin WHashMapIter_Begin
+#define HashMapIter_Next WHashMapIter_Next
+#endif 
+
 #else
+
 #define ckey_t char
 #ifdef HASHMAP_CASE_INSENSITIVE
 #define keycmp(a, b) _stricmp(a, b)
@@ -71,9 +87,16 @@
 #define keylen(k) strlen(k)
 #endif
 
+
 typedef struct HashElement {
     const ckey_t* const key;
     void* value;
+#ifdef HASHMAP_LINKED
+    uint32_t next_bucket_ix;
+    uint32_t next_elem_ix;
+    uint32_t prev_bucket_ix;
+    uint32_t prev_elem_ix;
+#endif
 } HashElement;
 
 typedef struct HashBucket {
@@ -86,6 +109,12 @@ typedef struct HashMap {
     HashBucket* buckets;
     uint32_t bucket_count;
     uint32_t element_count;
+#ifdef HASHMAP_LINKED
+    uint32_t first_bucket_ix;
+    uint32_t first_elem_ix;
+    uint32_t last_bucket_ix;
+    uint32_t last_elem_ix;
+#endif
 } HashMap;
 
 typedef struct HashMapFrozen {
@@ -118,5 +147,26 @@ int HashMap_RemoveGet(HashMap* map, const ckey_t* key, void** old_val);
 int HashMap_Freeze(const HashMap* map, HashMapFrozen* out);
 
 void HashMap_FreeFrozen(HashMapFrozen* map);
+
+
+#ifdef HASHMAP_LINKED
+
+typedef struct HashMapIterator {
+    HashMap* map;
+    uint32_t bucket_ix;
+    uint32_t elem_ix;
+    uint32_t ix;
+} HashMapIterator;
+
+void HashMapIter_Begin(HashMapIterator* it, HashMap* map);
+
+HashElement* HashMapIter_Next(HashMapIterator* it);
+
+#endif
+
+#ifdef HASHMAP_WIDE_UNLINKED
+#undef HASHMAP_WIDE_UNLINKED
+#define HASHMAP_LINKED
+#endif
 
 #endif
