@@ -4,7 +4,8 @@
 #include <Psapi.h>
 #include "printf.h"
 #include "dynamic_string.h"
-#include "glob.h"
+#include "match_node.h"
+#include "mem.h"
 #include <limits.h>
 
 // TODO:
@@ -102,36 +103,14 @@ int instruction_length(unsigned char* data, unsigned len) {
     return -1;
 }
 
-typedef struct SearchContext {
-    WString cmd_base;
-    WalkCtx dir_ctx;
-    WString dir;
-    BOOL has_quotes;
-
-    const WString* commands;
-    unsigned command_count;
-    unsigned command_ix;
-} SearchContext;
-
-wchar_t* find_parent_dir(wchar_t* str, unsigned len) {
-    unsigned ix = len;
-    while (ix > 0) {
-        --ix;
-        if (str[ix] == L'/' || str[ix] == L'\\') {
-            return str + ix;
-        }
-    }
-    return NULL;
-}
-
 bool char_needs_quotes(wchar_t c) {
     return c == L' ' || c == L'+' || c == L'=' || c == L'(' || c == L')' || 
             c == L'{' || c == '}' || c == L'%' || c == L'[' || c == L']';
 }
 
-bool str_needs_quotes(const WString* str) {
-    for (unsigned i = 0; i < str->length; ++i) {
-        wchar_t c = str->buffer[i];
+bool str_needs_quotes(const wchar_t* str) {
+    for (unsigned i = 0; i < str[i] != L'\0'; ++i) {
+        wchar_t c = str[i];
         if (char_needs_quotes(c)) {
             return true;
         }
@@ -139,104 +118,48 @@ bool str_needs_quotes(const WString* str) {
     return false;
 }
 
-bool filter(const WString* str, void* ctx) {
-    WString* base = &((SearchContext*)ctx)->cmd_base;
-    if (base->length > str->length) {
-        return false;
+
+typedef struct SearchContext {
+    NodeIterator it;
+    bool active_it;
+} SearchContext;
+
+bool get_autocomplete(MatchNode* node, SearchContext* it, WString* out, WString* rem, bool changed) {
+    if (changed && it->active_it) {
+        NodeIterator_stop(&it->it);
+        it->active_it = false;
     }
-    for (unsigned ix = 0; ix < base->length; ++ix) {
-        if (towlower(str->buffer[ix]) != towlower(base->buffer[ix])) {
+    WString_clear(out);
+
+    const wchar_t* buf;
+    if (it->active_it) {
+        buf = NodeIterator_next(&it->it);
+        if (buf == NULL) {
+            NodeIterator_restart(&it->it);
+            buf = NodeIterator_next(&it->it);
+            if (buf == NULL) {
+                return false;
+            }
+        } 
+    } else {
+        NodeIterator_begin(&it->it, node, rem->buffer);
+        it->active_it = true;
+        buf = NodeIterator_next(&it->it);
+        if (buf == NULL) {
             return false;
         }
+    }
+
+    if (str_needs_quotes(buf)) {
+        WString_append(out, L'"');
+        WString_extend(out, buf);
+        WString_append(out, L'"');
+    } else {
+        WString_extend(out, buf);
     }
     return true;
 }
 
-BOOL get_autocomplete(WString* in, DWORD ix, WString* out, SearchContext* context, BOOL changed) {
-    WString_clear(out);
-    if (changed) {
-        WalkDir_abort(&context->dir_ctx);
-        WString_clear(&context->cmd_base);
-        WString_clear(&context->dir);
-        wchar_t* sep = find_parent_dir(in->buffer + ix, in->length - ix);
-        context->command_ix = 0;
-        if (sep == NULL) {
-            context->has_quotes = FALSE;
-            WString_append_count(&context->cmd_base, in->buffer + ix, in->length - ix);
-            WalkDir_begin(&context->dir_ctx, L".");
-        } else {
-            context->has_quotes = in->buffer[ix] == L'"';
-            if (context->has_quotes) {
-                ++ix;
-            }
-            unsigned offset = sep - (in->buffer + ix);
-            unsigned remaining = in->length - ix - offset;
-            if (context->has_quotes && in->buffer[ix + offset - 1] == L'"') {
-                --offset;
-            } else if (context->has_quotes && sep[remaining - 1] == L'"') {
-                --remaining;
-            }
-            WString_append_count(&context->dir, in->buffer + ix, offset);
-            WString_append(&context->dir, *sep);
-            WString_append_count(&context->cmd_base, sep + 1, remaining - 1);
-            WalkDir_begin(&context->dir_ctx, context->dir.buffer);
-        }
-    }
-
-    const WString* line = NULL;
-    Path* path = NULL;
-    bool commands = context->dir.length == 0;
-
-    while (commands && context->command_ix < context->command_count) {
-        ++context->command_ix;
-        if (filter(&context->commands[context->command_ix - 1], context)) {
-            line = &context->commands[context->command_ix - 1];
-            break;
-        }
-    }
-    while (!line) {
-        if (WalkDir_next(&context->dir_ctx, &path) <= 0) {
-            const wchar_t* dir = commands ? L"." : context->dir.buffer;
-            WalkDir_begin(&context->dir_ctx, dir);
-            context->command_ix = 0;
-            while (commands && context->command_ix < context->command_count) {
-                ++context->command_ix;
-                if (filter(&context->commands[context->command_ix - 1], context)) {
-                    line = &context->commands[context->command_ix - 1];
-                    break;
-                }
-            }
-            while (!line) {
-                if (WalkDir_next(&context->dir_ctx, &path) <= 0) {
-                    return FALSE;
-                }
-                if (filter(&path->path, context)) {
-                    line = &path->path;
-                    break;
-                }
-            }
-            break;
-        }
-        if (filter(&path->path, context)) {
-            line = &path->path;
-            break;
-        }
-    }
-    BOOL quote = context->has_quotes;
-    if (!quote && (str_needs_quotes(&context->dir) || str_needs_quotes(line))) {
-        quote = TRUE;
-    }
-
-    if (quote) {
-        WString_append(out, L'"');
-    }
-    WString_append_count(out, context->dir.buffer, context->dir.length);
-    WString_append_count(out, line->buffer, line->length);
-    if (quote) {
-        WString_append(out, L'"');
-    }
-    return TRUE;
-}
 
 typedef BOOL(WINAPI* ReadConsoleW_t)(HANDLE, LPVOID, DWORD, LPDWORD, PCONSOLE_READCONSOLE_CONTROL);
 
@@ -244,12 +167,18 @@ ReadConsoleW_t ReadConsoleW_Old;
 
 WString commands[1] = {L"git", 0, 3};
 
-BOOL WINAPI ReadConsoleW_Hook(HANDLE hConsoleInput, LPVOID lpBuffer, DWORD nNumberOfCharsToRead, LPDWORD lpNumberOfCharsRead, 
+__declspec(dllexport) BOOL WINAPI ReadConsoleW_Hook(HANDLE hConsoleInput, LPVOID lpBuffer, DWORD nNumberOfCharsToRead, LPDWORD lpNumberOfCharsRead, 
         PCONSOLE_READCONSOLE_CONTROL pInputControl
     ) {
     HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
     WString auto_complete;
+    MatchNode* last_node = NULL;
+    WString rem;
     if (!WString_create(&auto_complete)) {
+        return FALSE;
+    }
+    if (!WString_create(&rem)) {
+        WString_free(&auto_complete);
         return FALSE;
     }
 
@@ -259,13 +188,7 @@ BOOL WINAPI ReadConsoleW_Hook(HANDLE hConsoleInput, LPVOID lpBuffer, DWORD nNumb
     in.length = 0;
 
     SearchContext context;
-    context.dir_ctx.handle = INVALID_HANDLE_VALUE;
-    WString_create(&context.cmd_base);
-    WString_create(&context.dir);
-    context.command_count = 1;
-    context.commands = commands;
-
-    BOOL has_complete = FALSE;
+    context.active_it = false;
 read:
     if (!ReadConsoleW_Old(hConsoleInput, lpBuffer, nNumberOfCharsToRead, lpNumberOfCharsRead, pInputControl)) {
         goto fail;
@@ -276,9 +199,11 @@ read:
 
     for (DWORD ix = 0; ix < in.length; ++ix) {
         if (in.buffer[ix] == '\r') {
-            WString_free(&context.dir);
-            WString_free(&context.cmd_base);
             WString_free(&auto_complete);
+            WString_free(&rem);
+            if (context.active_it) {
+                NodeIterator_stop(&context.it);
+            }
             return TRUE;
         }
     }
@@ -290,77 +215,80 @@ read:
     if (!GetConsoleScreenBufferInfo(out, &info)) {
         goto fail;
     }
-    --in.length;
+    // Remove '\t' and append '\0'
+    WString_pop(&in, 1);
+
+    size_t offset;
+    MatchNode* final = find_final(in.buffer, &offset, &rem);
+
     COORD pos = info.dwCursorPosition;
-    int ix = 0;
-    unsigned quote = 0;
-    for (; ix < in.length; ++ix) {
-        wchar_t c = in.buffer[ix];
-        if (c == L'"') {
-            if (quote) {
-                quote = 0;
-            } else {
-                quote = 1;
-            }
-        }
-    }
-    while (1) {
-        if (ix == 0) {
-            break;
-        }
-        wchar_t c = in.buffer[ix - 1];
-        if (quote == 0 && (char_needs_quotes(c) || c == L'&' || c == L'|' || c == L'<' || c == L'>')) {
-            break;
-        }
-        --ix;
-        if (pos.X == 0) {
-            pos.X = info.dwSize.X - 1;
-            pos.Y -= 1;
-        } else {
-            pos.X -= 1;
-        }
-        if (in.buffer[ix] == L'"') {
-            if (quote) {
-                break;
-            } else {
-                quote = 1;
-            }
-        }
+
+    unsigned wordlen = in.length - offset;
+    bool changed = false;
+    if (last_node != final || wordlen != auto_complete.length ||
+        memcmp(in.buffer + offset, auto_complete.buffer, wordlen * sizeof(wchar_t)) != 0) {
+        changed = true;
     }
 
-    unsigned wordlen = in.length - ix;
-    BOOL changed = FALSE;
-    if (!has_complete || wordlen != auto_complete.length ||
-        memcmp(in.buffer + ix, auto_complete.buffer, wordlen * sizeof(wchar_t)) != 0) {
-        changed = TRUE;
-    }
-
-    has_complete = get_autocomplete(&in, ix, &auto_complete, &context, changed);
-
-    if (has_complete) {
-        in.length = ix;
+    if (get_autocomplete(final, &context, &auto_complete, &rem, changed)) {
+        last_node = final;
+        size_t ix = in.length;
+        in.length = offset;
         if (in.length + auto_complete.length >= in.capacity) {
             goto fail;
         }
         WString_append_count(&in, auto_complete.buffer, auto_complete.length);
+
+        DWORD written;
+        if (auto_complete.length < wordlen) {
+            while (ix > offset + auto_complete.length) {
+                if (pos.X == 0) {
+                    pos.X = info.dwSize.X - 1;
+                    pos.Y -= 1;
+                } else {
+                    pos.X -= 1;
+                }
+                --ix;
+            }
+            FillConsoleOutputCharacterW(out, L' ', wordlen - auto_complete.length, pos, &written);
+        }
+
+        while (ix > offset) {
+            if (pos.X == 0) {
+                pos.X = info.dwSize.X - 1;
+                pos.Y -= 1;
+            } else {
+                pos.X -= 1;
+            }
+            --ix;
+        }
+
+        CONSOLE_CURSOR_INFO i;
+        i.dwSize = 100;
+        i.bVisible = FALSE;
+        SetConsoleCursorInfo(out, &i);
+
+        if (!SetConsoleCursorPosition(out, pos)) {
+            goto fail;
+        }
+
+        WriteConsoleW(out, in.buffer + ix, in.length - ix, &written, NULL);
+
+        i.bVisible = TRUE;
+        SetConsoleCursorInfo(out, &i);
+    } else {
+        last_node = NULL;
     }
-
-    DWORD written;
-    FillConsoleOutputCharacterW(out, L' ', wordlen, pos, &written);
-
-    if (!SetConsoleCursorPosition(out, pos)) {
-        goto fail;
-    }
-
-    WriteConsoleW(out, in.buffer + ix, in.length - ix, &written, NULL);
-
 
     pInputControl->nInitialChars = in.length;
 
     goto read;
 fail:
-    WString_free(&context.dir);
-    WString_free(&context.cmd_base);
+    WString_free(&rem);
+    if (context.active_it) {
+        NodeIterator_stop(&context.it);
+    }
+
     WString_free(&auto_complete);
     return FALSE;
 }
@@ -405,7 +333,7 @@ __declspec(dllexport) DWORD entry() {
 
     // Copy the begining of the function to separate place in memory,
     // and write a jump back to the rest of function at the end.
-    unsigned char* save_addr = HeapAlloc(GetProcessHeap(), 0, prelude_len + JMPABS_SIZE);
+    unsigned char* save_addr = Mem_alloc(prelude_len + JMPABS_SIZE);
     memcpy(save_addr, src_addr, prelude_len);
     long long old_addr = (long long)(src_addr + prelude_len);
     save_addr[prelude_len] = 0xff;
@@ -439,6 +367,37 @@ __declspec(dllexport) DWORD entry() {
     VirtualProtect(src_addr, prelude_len, old_protect, &old_protect);
 
     FlushInstructionCache(GetCurrentProcess(), src_addr, 1 + sizeof(delta));
+
+    MatchNode_init();
+    NodeBuilder b;
+    NodeBuilder_create(&b);
+    NodeBuilder_add_fixed(&b, L"Hello world", 11, NULL);
+    NodeBuilder_add_files(&b, false, NULL);
+    MatchNode* git_add = NodeBuilder_finalize(&b);
+
+    NodeBuilder_create(&b);
+    MatchNode* git_status = NodeBuilder_finalize(&b);
+
+    NodeBuilder_create(&b);
+    NodeBuilder_add_fixed(&b, L"add", wcslen(L"add"), git_add);
+    NodeBuilder_add_fixed(&b, L"status", wcslen(L"status"), git_status);
+    MatchNode* git = NodeBuilder_finalize(&b);
+
+    NodeBuilder_create(&b);
+    NodeBuilder_add_files(&b, true, NULL);
+    MatchNode* grep = NodeBuilder_finalize(&b);
+
+    NodeBuilder_create(&b);
+    NodeBuilder_add_files(&b, true, NULL);
+    MatchNode* file = NodeBuilder_finalize(&b);
+    
+    NodeBuilder_create(&b);
+    NodeBuilder_add_fixed(&b, L"grep", wcslen(L"grep"), grep);
+    NodeBuilder_add_fixed(&b, L"git", wcslen(L"git"), git);
+    NodeBuilder_add_files(&b, true, NULL);
+    NodeBuilder_add_any(&b, file);
+
+    MatchNode_set_root(NodeBuilder_finalize(&b));
 
     return 0;
 }

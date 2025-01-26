@@ -7,13 +7,12 @@ bool JsonObject_create(JsonObject* obj) {
 }
 
 void JsonObject_free(JsonObject* obj) {
-    HANDLE heap = GetProcessHeap();
     HashMap* map = &obj->data;
     for (uint32_t i = 0; i < map->bucket_count; ++i) {
         for (uint32_t j = 0; j < map->buckets[i].size; ++j) {
             JsonType* type = map->buckets[i].data[j].value;
             JsonType_free(type);
-            HeapFree(heap, 0, type);
+            Mem_free(type);
         } 
     }
     HashMap_Free(&obj->data);
@@ -27,7 +26,7 @@ bool JsonObject_insert(JsonObject* obj, const char* str, JsonType type) {
     if (elem->value != NULL) {
         JsonType_free(elem->value);
     } else {
-        elem->value = HeapAlloc(GetProcessHeap(), 0, sizeof(JsonType));
+        elem->value = Mem_alloc(sizeof(JsonType));
         if (elem->value == NULL) {
             return false;
         }
@@ -154,12 +153,12 @@ bool JsonObject_remove(JsonObject* obj, const char* key) {
         return false;
     }
     JsonType_free(val);
-    HeapFree(GetProcessHeap(), 0, val);
+    Mem_free(val);
     return true;
 }
 
 bool JsonList_create(JsonList* list) {
-    list->data = HeapAlloc(GetProcessHeap(), 0, 4 * sizeof(JsonType));
+    list->data = Mem_alloc(4 * sizeof(JsonType));
     if (list->data == NULL) {
         list->capacity = 0;
         list->size = 0;
@@ -174,15 +173,14 @@ void JsonList_free(JsonList* list) {
     for (unsigned ix = 0; ix < list->size; ++ix) {
         JsonType_free(list->data + ix);
     }
-    HeapFree(GetProcessHeap(), 0, list->data);
+    Mem_free(list->data);
 }
 
 
 bool JsonList_append(JsonList* list, JsonType val) {
     if (list->size == list->capacity) {
         unsigned cap = list->capacity == 0 ? 4 : list->capacity * 2;
-        JsonType* data = HeapReAlloc(GetProcessHeap(), 0, list->data, 
-                                     sizeof(JsonType) * cap);
+        JsonType* data = Mem_realloc(list->data, sizeof(JsonType) * cap);
         if (data == NULL) {
             return false;
         }
@@ -248,8 +246,7 @@ bool JsonList_insert(JsonList* list, unsigned ix, JsonType val) {
     }
     if (list->size == list->capacity) {
         unsigned cap = list->capacity == 0 ? 4 : list->capacity * 2;
-        JsonType* data = HeapReAlloc(GetProcessHeap(), 0, list->data, 
-                                     sizeof(JsonType) * cap);
+        JsonType* data = Mem_realloc(list->data, sizeof(JsonType) * cap);
         if (data == NULL) {
             return false;
         }

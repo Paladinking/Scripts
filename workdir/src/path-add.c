@@ -3,6 +3,7 @@
 #define main entry_main
 #endif
 #include "args.h"
+#include "mem.h"
 #include "dynamic_string.h"
 #include "path_utils.h"
 #include "printf.h"
@@ -43,7 +44,6 @@ DWORD GetParentProcessId() {
 LPSTR read_paths_file(LPCWSTR name, LPCWSTR ext, LPCWSTR binpath,
                       DWORD *count) {
     HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
-    HANDLE heap = GetProcessHeap();
 
     WCHAR dir[256];
     WCHAR drive[10];
@@ -68,7 +68,7 @@ LPSTR read_paths_file(LPCWSTR name, LPCWSTR ext, LPCWSTR binpath,
         CloseHandle(hPaths);
         return NULL;
     }
-    LPSTR buffer = HeapAlloc(heap, 0, size.QuadPart + 1);
+    LPSTR buffer = Mem_alloc(size.QuadPart + 1);
     if (buffer == NULL) {
         CloseHandle(hPaths);
         return NULL;
@@ -77,7 +77,7 @@ LPSTR read_paths_file(LPCWSTR name, LPCWSTR ext, LPCWSTR binpath,
     if (!ReadFile(hPaths, buffer, size.QuadPart, &read, NULL) ||
         read != size.QuadPart) {
         CloseHandle(hPaths);
-        HeapFree(heap, 0, buffer);
+        Mem_free(buffer);
         return NULL;
     }
     CloseHandle(hPaths);
@@ -186,7 +186,6 @@ OpStatus parse_env_file(LPSTR file, DWORD count, LPSTR file_name,
 OpStatus add_paths(LPSTR paths, DWORD count, LPSTR name, LPCWSTR binpath) {
     HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
     HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
-    HANDLE heap = GetProcessHeap();
     LPSTR line = paths;
     DWORD name_len = strlen(name);
     OpStatus res = OP_NO_CHANGE;
@@ -250,7 +249,7 @@ OpStatus add_paths(LPSTR paths, DWORD count, LPSTR name, LPCWSTR binpath) {
                            add_buffer.buffer);
             } else {
                 OpStatus status = parse_env_file(file, lines, line, len);
-                HeapFree(heap, 0, file);
+                Mem_free(file);
                 if (status == OP_SUCCESS) {
                     res = OP_SUCCESS;
                 } else if (status > OP_INVALID_PATH) {
@@ -304,7 +303,6 @@ const char *help_message =
     "All other lines are again ignored.\n";
 
 int main() {
-    HANDLE heap = GetProcessHeap();
     LPWSTR args = GetCommandLine();
     int argc;
     int status = 0;
@@ -330,7 +328,7 @@ int main() {
     HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
     environment.capacity = 4;
     environment.size = 0;
-    environment.vars = HeapAlloc(heap, 0, 4 * sizeof(EnvVar));
+    environment.vars = Mem_alloc(4 * sizeof(EnvVar));
     if (environment.vars == NULL) {
         status = 6;
         goto end;
@@ -350,7 +348,7 @@ int main() {
         goto end;
     }
     DWORD arg_capacity = 20;
-    LPWSTR arg_buffer = HeapAlloc(heap, 0, arg_capacity);
+    LPWSTR arg_buffer = Mem_alloc(arg_capacity);
 
     BOOL changed = FALSE;
 
@@ -368,12 +366,12 @@ int main() {
             status = res;
 
             String_free(&buffer);
-            HeapFree(heap, 0, paths_data);
+            Mem_free(paths_data);
             goto end;
         }
     }
     String_free(&buffer);
-    HeapFree(heap, 0, paths_data);
+    Mem_free(paths_data);
     if (!changed) {
         status = 1;
         goto end;
@@ -400,8 +398,8 @@ end:
     WString_free(&add_buffer);
     FlushFileBuffers(out);
     FlushFileBuffers(err);
-    HeapFree(heap, 0, expanded);
-    HeapFree(heap, 0, argv);
+    Mem_free(expanded);
+    Mem_free(argv);
     ExitProcess(status);
     return status;
 }

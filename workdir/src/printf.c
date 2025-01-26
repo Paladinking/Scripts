@@ -1,5 +1,6 @@
 #define UNICODE
 #include "printf.h"
+#include "mem.h"
 #include <stdarg.h>
 #ifdef __cplusplus
 extern "C" {
@@ -49,13 +50,13 @@ int _printf_h(HANDLE dest, const char *fmt, ...) {
         WriteConsoleA(dest, buf, count, NULL, NULL);
     } else {
         HANDLE heap = GetProcessHeap();
-        char *buf = (char *)HeapAlloc(heap, 0, count);
+        char *buf = (char *)Mem_alloc(count);
         if (buf == NULL) {
             return -1;
         }
         _vsnprintf(buf, count, fmt, args);
         outputa(dest, buf, count);
-        HeapFree(heap, 0, buf);
+        Mem_free(buf);
     }
     va_end(args);
     return count;
@@ -72,7 +73,7 @@ void outputw(HANDLE out, wchar_t* data, size_t size) {
         if (outsize <= 1024) {
             output = buf;
         } else {
-            output = (char*)HeapAlloc(GetProcessHeap(), 0, outsize);
+            output = (char*)Mem_alloc(outsize);
             if (output == NULL) {
                 return;
             }
@@ -87,7 +88,7 @@ void outputw(HANDLE out, wchar_t* data, size_t size) {
             written += w;
         }
         if (outsize > 1024) {
-            HeapFree(GetProcessHeap(), 0, output);
+            Mem_free(output);
         }
     }
 }
@@ -104,14 +105,13 @@ int _wprintf_h(HANDLE dest, const wchar_t *fmt, ...) {
         _vsnwprintf(buf, count, fmt, args);
         outputw(dest, buf, count);
     } else {
-        HANDLE heap = GetProcessHeap();
-        wchar_t *buf = (wchar_t *)HeapAlloc(heap, 0, count * sizeof(wchar_t));
+        wchar_t *buf = (wchar_t *)Mem_alloc(count * sizeof(wchar_t));
         if (buf == NULL) {
             return -1;
         }
         _vsnwprintf(buf, count, fmt, args);
         outputw(dest, buf, count);
-        HeapFree(heap, 0, buf);
+        Mem_free(buf);
     }
     va_end(args);
     return count;

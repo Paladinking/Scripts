@@ -43,67 +43,67 @@ build:
 bin:
 	-@ if NOT EXIST "bin" mkdir "bin"
 	
-build\dynamic_string.obj: src\dynamic_string.c src\dynamic_string.h build
+build\dynamic_string.obj: src\dynamic_string.c src\dynamic_string.h src\mem.h build
 	cl /c $(CLFLAGS) src\dynamic_string.c
-build\args.obj: src\args.c src\args.h build
+build\args.obj: src\args.c src\args.h src\mem.h build
 	cl /c $(CLFLAGS) src\args.c
-build\printf.obj: src\printf.c src\printf.h build
+build\printf.obj: src\printf.c src\printf.h src\mem.h build
 	cl /c $(CLFLAGS) src\printf.c
-build\path_utils.obj: src\path_utils.c src\path_utils.h build
+build\path_utils.obj: src\path_utils.c src\path_utils.h src\mem.h build
 	cl /c $(CLFLAGS) src\path_utils.c
-build\string_conv.obj: src\string_conv.c src\string_conv.h build
-	cl /c $(CLFLAGS) src\string_conv.c
-build\cli.obj: src\cli.c src\cli.h src\dynamic_string.h build
+build\cli.obj: src\cli.c src\cli.h src\dynamic_string.h src\mem.h build
 	cl /c $(CLFLAGS) src\cli.c
 build\unicode_width.obj: src\unicode_width.c src\unicode_width.h build
 	cl /c $(CLFLAGS) src\unicode_width.c
-build\testdll.obj: src\testdll.c
+build\testdll.obj: src\testdll.c src\mem.h src\match_node.h src\subprocess.h src\args.h src\dynamic_string.h src\whashmap.h src\hashmap.h
 	cl /c $(CLFLAGS) src\testdll.c
-build\glob.obj: src\glob.c src\glob.h build
+build\glob.obj: src\glob.c src\glob.h src\dynamic_string.h src\mem.h build
 	cl /c $(CLFLAGS) src\glob.c
-build\hashmap.obj: src\hashmap.c src\hashmap.h build
+build\hashmap.obj: src\hashmap.c src\hashmap.h src\mem.h build
 	cl /c $(CLFLAGS) src\hashmap.c
-build\whashmap.obj: src\hashmap.c src\hashmap.h src\whashmap.h build
+build\whashmap.obj: src\hashmap.c src\hashmap.h src\whashmap.h src\mem.h build
 	cl /c $(CLFLAGS) /Fo:build\whashmap.obj /DHASHMAP_WIDE /DHASHMAP_CASE_INSENSITIVE src\hashmap.c
-build\json.obj: src\json.c src\json.h src\dynamic_string.h src\hashmap.h
+build\json.obj: src\json.c src\json.h src\dynamic_string.h src\hashmap.h src\mem.h
 	cl /c $(CLFLAGS) src\json.c
-build\subprocess.obj: src\subprocess.c src\subprocess.h src\dynamic_string.h build
+build\subprocess.obj: src\subprocess.c src\subprocess.h src\dynamic_string.h src\mem.h build
 	cl /c $(CLFLAGS) src\subprocess.c
-build\match_node.obj: src\match_node.c src\match_node.h src\subprocess.h src\args.h src\dynamic_string.h src\glob.h src\whashmap.h src\hashmap.h
+build\match_node.obj: src\match_node.c src\match_node.h src\subprocess.h src\args.h src\dynamic_string.h src\glob.h src\whashmap.h src\hashmap.h src\mem.h
 	cl /c $(CLFLAGS) src\match_node.c
+build\mem.obj: src\mem.c build
+	cl /c $(CLFLAGS) src\mem.c
 
 
-bin\pathc.exe: src\pathc.c build\path_utils.obj build\args.obj build\printf.obj build\dynamic_string.obj build\ntutils.lib bin
-	cl $(CLFLAGS) /Fe:bin\pathc.exe src\pathc.c build\printf.obj build\path_utils.obj build\args.obj build\dynamic_string.obj build\ntutils.lib $(LINKFLAGS)
-bin\parse-template.exe: src\parse-template.c build\args.obj build\dynamic_string.obj build\ntutils.lib bin
-	cl $(CLFLAGS) /Fe:bin\parse-template.exe src\parse-template.c build\args.obj build\dynamic_string.obj build\ntutils.lib chkstk.obj $(LINKFLAGS)
-bin\path-add.exe: src\path-add.c build\ntutils.lib build\path_utils.obj build\args.obj build\printf.obj build\dynamic_string.obj bin
-	cl $(CLFLAGS) /Fe:bin\path-add.exe src\path-add.c build\ntutils.lib build\path_utils.obj build\args.obj build\printf.obj build\dynamic_string.obj $(LINKFLAGS)
-bin\envir.exe: src\envir.c build\ntutils.lib build\printf.obj build\args.obj build\path_utils.obj build\dynamic_string.obj bin
-	cl $(CLFLAGS) /Fe:bin\envir.exe src\envir.c build\ntutils.lib build\printf.obj build\args.obj build\dynamic_string.obj build\path_utils.obj $(LINKFLAGS)
-bin\search.exe: src\search.c build\ntutils.lib build\printf.obj build\path_utils.obj build\dynamic_string.obj build\args.obj bin
-	cl $(CLFLAGS) /Fe:bin\search.exe src\search.c build\ntutils.lib build\printf.obj build\dynamic_string.obj build\args.obj build\path_utils.obj User32.lib $(LINKFLAGS)
+bin\pathc.exe: src\pathc.c build\path_utils.obj build\args.obj build\printf.obj build\dynamic_string.obj build\mem.obj build\ntutils.lib bin
+	cl $(CLFLAGS) /Fe:bin\pathc.exe src\pathc.c build\printf.obj build\path_utils.obj build\args.obj build\dynamic_string.obj build\mem.obj build\ntutils.lib $(LINKFLAGS)
+bin\parse-template.exe: src\parse-template.c build\args.obj build\dynamic_string.obj build\mem.obj build\ntutils.lib bin
+	cl $(CLFLAGS) /Fe:bin\parse-template.exe src\parse-template.c build\args.obj build\dynamic_string.obj build\mem.obj build\ntutils.lib chkstk.obj $(LINKFLAGS)
+bin\path-add.exe: src\path-add.c build\ntutils.lib build\path_utils.obj build\args.obj build\printf.obj build\dynamic_string.obj build\mem.obj bin
+	cl $(CLFLAGS) /Fe:bin\path-add.exe src\path-add.c build\ntutils.lib build\path_utils.obj build\args.obj build\printf.obj build\mem.obj build\dynamic_string.obj $(LINKFLAGS)
+bin\envir.exe: src\envir.c build\ntutils.lib build\printf.obj build\args.obj build\path_utils.obj build\dynamic_string.obj build\mem.obj bin
+	cl $(CLFLAGS) /Fe:bin\envir.exe src\envir.c build\ntutils.lib build\printf.obj build\args.obj build\dynamic_string.obj build\mem.obj build\path_utils.obj $(LINKFLAGS)
+bin\search.exe: src\search.c build\ntutils.lib build\printf.obj build\path_utils.obj build\dynamic_string.obj build\mem.obj build\args.obj bin
+	cl $(CLFLAGS) /Fe:bin\search.exe src\search.c build\ntutils.lib build\printf.obj build\dynamic_string.obj build\args.obj build\mem.obj build\path_utils.obj User32.lib $(LINKFLAGS)
 bin\picker.exe: src\picker.c build\printf.obj build\dynamic_string.obj build\ntutils.lib
-	cl $(CLFLAGS) /D _WINDOWS /Fe:bin\picker.exe src\picker.c build\ntutils.lib build\printf.obj build\dynamic_string.obj User32.lib Gdi32.lib $(LINKFLAGSW)
+	cl $(CLFLAGS) /D _WINDOWS /Fe:bin\picker.exe src\picker.c build\ntutils.lib build\printf.obj build\mem.obj build\dynamic_string.obj User32.lib Gdi32.lib $(LINKFLAGSW)
 bin\path-edit.exe: src\path-edit.c build\cli.obj build\dynamic_string.obj build\printf.obj build\unicode_width.obj build\ntutils.lib
-	cl $(CLFLAGS) /Fe:bin\path-edit.exe src\path-edit.c build\cli.obj build\printf.obj build\dynamic_string.obj build\unicode_width.obj build\ntutils.lib chkstk.obj $(LINKFLAGS)
-bin\path-select.exe: src\path-select.c build\printf.obj build\args.obj build\path_utils.obj build\dynamic_string.obj build\ntutils.lib build\kernelbase.lib
-	cl $(CLFLAGS) /Fe:bin\path-select.exe src\path-select.c build\printf.obj build\args.obj build\path_utils.obj build\dynamic_string.obj build\ntutils.lib build\kernelbase.lib $(LINKFLAGS)
-bin\inject.exe: src\inject.c build\printf.obj build\ntutils.lib
-	cl $(CLFLAGS) /Fe:bin\inject.exe src\inject.c build\printf.obj build\ntutils.lib chkstk.obj build\dynamic_string.obj $(LINKFLAGS)
+	cl $(CLFLAGS) /Fe:bin\path-edit.exe src\path-edit.c build\cli.obj build\printf.obj build\dynamic_string.obj build\mem.obj build\unicode_width.obj build\ntutils.lib chkstk.obj $(LINKFLAGS)
+bin\path-select.exe: src\path-select.c build\printf.obj build\args.obj build\path_utils.obj build\dynamic_string.obj build\mem.obj build\ntutils.lib build\kernelbase.lib
+	cl $(CLFLAGS) /Fe:bin\path-select.exe src\path-select.c build\printf.obj build\args.obj build\path_utils.obj build\dynamic_string.obj build\mem.obj build\ntutils.lib build\kernelbase.lib $(LINKFLAGS)
+bin\inject.exe: src\inject.c build\printf.obj build\mem.obj build\ntutils.lib
+	cl $(CLFLAGS) /Fe:bin\inject.exe src\inject.c build\printf.obj build\ntutils.lib chkstk.obj build\mem.obj build\dynamic_string.obj $(LINKFLAGS)
 
-bin\testdll.dll: build\testdll.obj build\printf.obj build\dynamic_string.obj build\glob.obj build\ntutils.lib
-	link /DLL /NODEFAULTLIB /entry:DLLMain /LTCG /OUT:bin\testdll.dll build\testdll.obj build\dynamic_string.obj build\printf.obj build\glob.obj build\ntutils.lib Kernel32.lib
+bin\testdll.dll: build\testdll.obj build\printf.obj build\dynamic_string.obj build\glob.obj build\match_node.obj build\subprocess.obj build\whashmap.obj build\args.obj build\mem.obj build\ntutils.lib
+	link /DLL /NODEFAULTLIB /entry:DLLMain /LTCG /OUT:bin\testdll.dll build\testdll.obj build\dynamic_string.obj build\printf.obj build\glob.obj build\mem.obj build\match_node.obj build\subprocess.obj build\whashmap.obj build\args.obj build\ntutils.lib Kernel32.lib
 	
 
-bin\test.exe: src\test.c build\match_node.obj build\glob.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib build\hashmap.obj build\whashmap.obj build\json.obj build\subprocess.obj build\args.obj
-	cl $(CLFLAGS) /Fe:bin\test.exe src\test.c build\glob.obj build\dynamic_string.obj build\printf.obj build\hashmap.obj build\whashmap.obj build\json.obj build\subprocess.obj build\args.obj build\match_node.obj build\ntutils.lib $(LINKFLAGS)
+bin\test.exe: src\test.c build\match_node.obj build\glob.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib build\hashmap.obj build\whashmap.obj build\mem.obj build\json.obj build\subprocess.obj build\args.obj
+	cl $(CLFLAGS) /Fe:bin\test.exe src\test.c build\glob.obj build\dynamic_string.obj build\printf.obj build\hashmap.obj build\whashmap.obj build\json.obj build\subprocess.obj build\args.obj build\match_node.obj build\mem.obj build\ntutils.lib $(LINKFLAGS)
 
 build\whashmapd.obj: src\hashmap.c src\hashmap.h src\whashmap.h build
 	gcc -g -Og -c -o build\whashmapd.obj -DHASHMAP_WIDE -DHASHMAP_CASE_INSENSITIVE src\hashmap.c
 
-bin\testd.exe: src\test.c src\glob.c src\dynamic_string.c src\printf.c build\ntutils.lib src\hashmap.c build\whashmapd.obj src\json.c src\subprocess.c src\args.c src\match_node.c
-	gcc -g -Og -o bin\testd.exe src\test.c src\glob.c src\dynamic_string.c src\printf.c build\ntutils.lib src\hashmap.c build\whashmapd.obj src\json.c src\subprocess.c src\args.c src\match_node.c
+bin\testd.exe: src\test.c src\glob.c src\dynamic_string.c src\printf.c build\ntutils.lib src\hashmap.c build\whashmapd.obj src\json.c src\subprocess.c src\args.c src\match_node.c src\mem.c
+	gcc -g -Og -o bin\testd.exe src\test.c src\glob.c src\dynamic_string.c src\printf.c build\ntutils.lib src\hashmap.c build\whashmapd.obj src\json.c src\subprocess.c src\args.c src\match_node.c src\mem.c
 
 build\kernelbase.lib: build
 	lib /MACHINE:X64 /DEF /OUT:build\kernelbase.lib /NAME:kernelbase.dll\
@@ -120,7 +120,7 @@ build\ntutils.lib: build
 	 /EXPORT:memset=memset /EXPORT:wcscmp=wcscmp /EXPORT:strcmp=strcmp\
 	 /EXPORT:_fltused=_fltused /EXPORT:wcschr=wcschr /EXPORT:wcsrchr=wcsrchr\
 	 /EXPORT:strtol=strtol /EXPORT:wcsncmp=wcsncmp /EXPORT:memcmp=memcmp\
-	 /EXPORT:tolower=tolower /EXPORT:strncmp=strncmp
+	 /EXPORT:tolower=tolower /EXPORT:strncmp=strncmp /EXPORT:_snprintf=_snprintf
 
 bin\err.exe: script\err.exe bin
 	type script\err.exe > bin\err.exe

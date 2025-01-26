@@ -1,5 +1,6 @@
 #define UNICODE
 #include "cli.h"
+#include "mem.h"
 #include "printf.h"
 #include "unicode_width.h"
 
@@ -49,8 +50,7 @@ BOOL CliListNode_setwidth(CliListNode *node, unsigned ix,
                                             SHORT width, DWORD end_ix) {
     while (node->row_capacity <= ix) {
         DWORD new_cap = node->row_capacity * 2;
-        RowData *rows = HeapReAlloc(GetProcessHeap(), 0, node->row_data,
-                                  new_cap * sizeof(RowData));
+        RowData *rows = Mem_realloc(node->row_data, new_cap * sizeof(RowData));
         if (rows == NULL) {
             return FALSE;
         }
@@ -138,7 +138,7 @@ BOOL CliListNode_insert_pair(CliListNode *node, unsigned ix, wchar_t c1, wchar_t
 
 void CliListNode_free(CliListNode *node) {
     WString_free(&node->data);
-    HeapFree(GetProcessHeap(), 0, node->row_data);
+    Mem_free(node->row_data);
 }
 
 BOOL CliListNode_create(CliListNode *node, DWORD flags, WString *data) {
@@ -158,7 +158,7 @@ BOOL CliListNode_create(CliListNode *node, DWORD flags, WString *data) {
             return FALSE;
         }
     }
-    node->row_data = HeapAlloc(GetProcessHeap(), 0, 4 * sizeof(RowData));
+    node->row_data = Mem_alloc(4 * sizeof(RowData));
     if (node->row_data == NULL) {
         WString_free(&node->data);
         return FALSE;
@@ -323,20 +323,19 @@ void full_draw(CliList *list, CONSOLE_SCREEN_BUFFER_INFO *cInfo) {
 
 CliList *CliList_create(const wchar_t *header, WString *elements,
                         DWORD count, DWORD flags) {
-    CliList *list = HeapAlloc(GetProcessHeap(), 0, sizeof(CliList));
+    CliList *list = Mem_alloc(sizeof(CliList));
     if (list == NULL) {
         return list;
     }
 
-    list->elements =
-        HeapAlloc(GetProcessHeap(), 0, sizeof(CliListNode) * count);
+    list->elements = Mem_alloc(sizeof(CliListNode) * count);
     if (list->elements == NULL) {
-        HeapFree(GetProcessHeap(), 0, list);
+        Mem_free(list);
         return NULL;
     }
     if (!WString_create(&list->scratch_buffer)) {
-        HeapFree(GetProcessHeap(), 0, list->elements);
-        HeapFree(GetProcessHeap(), 0, list);
+        Mem_free(list->elements);
+        Mem_free(list);
         return NULL;
     }
 
@@ -348,8 +347,8 @@ CliList *CliList_create(const wchar_t *header, WString *elements,
                     CliListNode_free(&list->elements[j]);
                 }
                 WString_free(&list->scratch_buffer);
-                HeapFree(GetProcessHeap(), 0, list->elements);
-                HeapFree(GetProcessHeap(), 0, list);
+                Mem_free(list->elements);
+                Mem_free(list);
                 return NULL;
             }
         }
@@ -357,11 +356,11 @@ CliList *CliList_create(const wchar_t *header, WString *elements,
         for (DWORD i = 0; i < count; ++i) {
             if (!CliListNode_create(&list->elements[i], 0, &elements[i])) {
                 for (DWORD j = 0; j < i; ++j) {
-                    HeapFree(GetProcessHeap(), 0, list->elements[i].row_data);
+                    Mem_free(list->elements[i].row_data);
                 }
                 WString_free(&list->scratch_buffer);
-                HeapFree(GetProcessHeap(), 0, list->elements);
-                HeapFree(GetProcessHeap(), 0, list);
+                Mem_free(list->elements);
+                Mem_free(list);
                 return NULL;
             }
         }
@@ -679,8 +678,7 @@ DWORD CliList_run(CliList *list) {
                     _wprintf_h(out, L"\x1b[1L\x1b[5\x20q");
                 }
                 if (list->elements_capacity == list->element_count) {
-                    CliListNode *el = HeapReAlloc(
-                        GetProcessHeap(), 0, list->elements,
+                    CliListNode *el = Mem_realloc(list->elements,
                         list->elements_capacity * 2 * sizeof(CliListNode));
                     if (el == NULL) {
                         res = ERROR_OUTOFMEMORY;
@@ -742,5 +740,5 @@ void CliList_free(CliList *list) {
         CliListNode_free(&list->elements[i]);
     }
     WString_free(&list->scratch_buffer);
-    HeapFree(GetProcessHeap(), 0, list);
+    Mem_free(list);
 }
