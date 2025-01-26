@@ -160,12 +160,11 @@ bool get_autocomplete(MatchNode* node, SearchContext* it, WString* out, WString*
     return true;
 }
 
+WString workdir;
 
 typedef BOOL(WINAPI* ReadConsoleW_t)(HANDLE, LPVOID, DWORD, LPDWORD, PCONSOLE_READCONSOLE_CONTROL);
 
 ReadConsoleW_t ReadConsoleW_Old;
-
-WString commands[1] = {L"git", 0, 3};
 
 __declspec(dllexport) BOOL WINAPI ReadConsoleW_Hook(HANDLE hConsoleInput, LPVOID lpBuffer, DWORD nNumberOfCharsToRead, LPDWORD lpNumberOfCharsRead, 
         PCONSOLE_READCONSOLE_CONTROL pInputControl
@@ -189,12 +188,18 @@ __declspec(dllexport) BOOL WINAPI ReadConsoleW_Hook(HANDLE hConsoleInput, LPVOID
 
     SearchContext context;
     context.active_it = false;
+
+    get_workdir(&rem);
+    bool chdir = !WString_equals(&rem, &workdir);
+    if (chdir) {
+        WString_clear(&workdir);
+        WString_append_count(&workdir, rem.buffer, rem.length);
+    }
+    DynamicMatch_invalidate_many(chdir);
 read:
     if (!ReadConsoleW_Old(hConsoleInput, lpBuffer, nNumberOfCharsToRead, lpNumberOfCharsRead, pInputControl)) {
         goto fail;
     }
-    DWORD events;
-    GetNumberOfConsoleInputEvents(hConsoleInput, &events);
     in.length = *lpNumberOfCharsRead;
 
     for (DWORD ix = 0; ix < in.length; ++ix) {
@@ -379,8 +384,15 @@ __declspec(dllexport) DWORD entry() {
     MatchNode* git_status = NodeBuilder_finalize(&b);
 
     NodeBuilder_create(&b);
+    NodeBuilder_add_files(&b, true, NULL);
+    DynamicMatch* dyn = DynamicMatch_create(L"git for-each-ref --format=%(refname:short) refs/heads", INVALID_CHDIR, '\n');
+    NodeBuilder_add_dynamic(&b, dyn, NULL);
+    MatchNode* git_show = NodeBuilder_finalize(&b);
+
+    NodeBuilder_create(&b);
     NodeBuilder_add_fixed(&b, L"add", wcslen(L"add"), git_add);
     NodeBuilder_add_fixed(&b, L"status", wcslen(L"status"), git_status);
+    NodeBuilder_add_fixed(&b, L"show", wcslen(L"show"), git_show);
     MatchNode* git = NodeBuilder_finalize(&b);
 
     NodeBuilder_create(&b);
@@ -398,6 +410,8 @@ __declspec(dllexport) DWORD entry() {
     NodeBuilder_add_any(&b, file);
 
     MatchNode_set_root(NodeBuilder_finalize(&b));
+
+    WString_create(&workdir);
 
     return 0;
 }

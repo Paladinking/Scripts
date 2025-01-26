@@ -353,6 +353,15 @@ void DynamicMatch_evaluate(DynamicMatch* ptr) {
     WString_free(&buf);
 }
 
+void DynamicMatch_invalidate_many(bool chdir) {
+    for (unsigned ix = 0; ix < gDynamic_count; ++ix) {
+        DynamicMatch* dyn = gDynamic_matches[ix];
+        if (dyn->invalidation == INVALID_ALWAYS || (chdir && dyn->invalidation == INVALID_CHDIR)) {
+            DynamicMatch_invalidate(dyn);
+        }
+    }
+}
+
 void DynamicMatch_invalidate(DynamicMatch* ptr) {
     if (ptr->matches == NULL) {
         return;
@@ -487,6 +496,7 @@ bool NodeBuilder_add_any(NodeBuilder* builder, MatchNode* child) {
     }
     Match* match = &builder->node->matches[builder->node->match_count];
     match->type = MATCH_ANY;
+    match->child = child;
     builder->node->any_ix = count - 1;
     builder->node->match_count = count;
 
@@ -594,6 +604,13 @@ MatchNode* find_final(const wchar_t *cmd, size_t* offset, WString* rem) {
 
     unsigned options = ARG_OPTION_TERMINAL_OPERANDS | 
                        ARG_OPTION_BACKSLASH_ESCAPE;
+
+    for (unsigned ix = 0; ix < current->match_count; ++ix) {
+        if (current->matches[ix].type == MATCH_DYNAMIC) {
+            DynamicMatch_evaluate(current->matches[ix].dynamic_match);
+        }
+    }
+
     while (get_arg_len(cmd, &pos, &len, &quoted, options)) {
         if (cmd[pos] == L'\0') {
             // This argument should be prefix for final
@@ -643,6 +660,11 @@ MatchNode* find_final(const wchar_t *cmd, size_t* offset, WString* rem) {
         Match* next = find_next_match(current, rem->buffer, len);
         if (next != NULL) {
             current = next->child;
+            for (unsigned ix = 0; ix < current->match_count; ++ix) {
+                if (current->matches[ix].type == MATCH_DYNAMIC) {
+                    DynamicMatch_evaluate(current->matches[ix].dynamic_match);
+                }
+            }
         }
     }
     *offset = pos;
