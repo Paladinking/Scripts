@@ -1,6 +1,9 @@
 #ifndef JSON_C_H
 #define JSON_C_H
 
+#ifndef HASHMAP_LINKED
+#define HASHMAP_LINKED
+#endif
 #include "hashmap.h"
 #include "dynamic_string.h"
 

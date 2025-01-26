@@ -1,59 +1,11 @@
 #include "glob.h"
 #include "json.h"
 #include "printf.h"
-#include "hashmap.h"
 #include "match_node.h"
 #include "args.h"
 
 int main() {
     MatchNode_init();
-
-    NodeBuilder b;
-    NodeBuilder_create(&b);
-    NodeBuilder_add_fixed(&b, L"Hello world", 11, NULL);
-    NodeBuilder_add_files(&b, false, NULL);
-    MatchNode* git_add = NodeBuilder_finalize(&b);
-
-    NodeBuilder_create(&b);
-    MatchNode* git_status = NodeBuilder_finalize(&b);
-
-    NodeBuilder_create(&b);
-    NodeBuilder_add_fixed(&b, L"add", wcslen(L"add"), git_add);
-    NodeBuilder_add_fixed(&b, L"status", wcslen(L"status"), git_status);
-    MatchNode* git = NodeBuilder_finalize(&b);
-
-    NodeBuilder_create(&b);
-    NodeBuilder_add_files(&b, true, NULL);
-    MatchNode* grep = NodeBuilder_finalize(&b);
-
-    NodeBuilder_create(&b);
-    NodeBuilder_add_files(&b, true, NULL);
-    MatchNode* file = NodeBuilder_finalize(&b);
-    
-    NodeBuilder_create(&b);
-    NodeBuilder_add_fixed(&b, L"grep", wcslen(L"grep"), grep);
-    NodeBuilder_add_fixed(&b, L"git", wcslen(L"git"), git);
-    NodeBuilder_add_files(&b, true, NULL);
-    NodeBuilder_add_any(&b, file);
-    MatchNode_set_root(NodeBuilder_finalize(&b));
-
-    size_t offset, len;
-    const wchar_t* cmd = L"git add ";
-
-    WString rem;
-    WString_create(&rem);
-    MatchNode* final = find_final(cmd, &offset, &rem);
-
-    _wprintf(L"Final: %d, %d, %s\n", offset, len, rem.buffer);
-
-    NodeIterator it;
-    NodeIterator_begin(&it, final, rem.buffer);
-    const wchar_t* s1;
-    while ((s1 = NodeIterator_next(&it)) != NULL) {
-        _wprintf(L"%s\n", s1);
-    }
-
-    return 0;
 
     String res;
     String_create(&res);
@@ -65,87 +17,67 @@ int main() {
         return 1;
     }
 
-
     JsonObject obj;
-    if (!json_parse_object(json_str.buffer, &obj, NULL)) {
-        _wprintf(L"Failed parsing json file\n");
+    String error_msg;
+    if (!json_parse_object(json_str.buffer, &obj, &error_msg)) {
+        _wprintf(L"Failed parsing json file: %S\n", error_msg.buffer);
         String_free(&json_str);
+        String_free(&error_msg);
         return 1;
     }
     String_free(&json_str);
 
-    JsonList* desc = JsonObject_get_list(&obj, "description");
-    if (desc != NULL) {
-        for (DWORD i = 0; i < desc->size; ++i) {
-            String* line = JsonList_get_string(desc, i);
-            if (line != NULL) {
-                _wprintf(L"%S\n", line->buffer);
+    JsonObject* extr = JsonObject_get_obj(&obj, "extern");
+    HashMap extr_map;
+    HashMap_Create(&extr_map);
+
+    if (extr != NULL) {
+        HashMapIterator it;
+        HashMapIter_Begin(&it, &extr->data);
+        HashElement* elem;
+        while ((elem = HashMapIter_Next(&it)) != NULL) {
+            JsonType* type = elem->value;
+            if (type->type != JSON_OBJECT) {
+                continue;
             }
+            JsonObject* dyn_obj = &type->object;
+
+            String* cmd = JsonObject_get_string(dyn_obj, "cmd");
+            String* sep = JsonObject_get_string(dyn_obj, "separator");
+            String* inval = JsonObject_get_string(dyn_obj, "invalidation");
+            if (cmd == NULL || sep == NULL || inval == NULL || cmd->length == 0 ||
+                inval->length == 0) {
+                _wprintf(L"Invalid extern spec for %S\n", elem->key);
+                continue;
+            }
+            WString wcmd;
+            WString_create(&wcmd);
+            // use buffer for separator as well
+            if (!WString_from_utf8_bytes(&wcmd, sep->buffer, sep->length) || wcmd.length != 1) {
+                _wprintf(L"Invalid separator for %S\n", elem->key);
+                WString_free(&wcmd);
+                continue;
+            } 
+            wchar_t sep_char = wcmd.buffer[0];
+            if (!WString_from_utf8_bytes(&wcmd, cmd->buffer, cmd->length)) {
+                _wprintf(L"Invalid command from %S\n", elem->key);
+                WString_free(&wcmd);
+            }
+            enum Invalidation invalidation = INVALID_NEVER;
+            if (inval->buffer[0] == 'c' || inval->buffer[0] == 'C') {
+                invalidation = INVALID_CHDIR;
+            } else if (inval->buffer[0] == 'a' || inval->buffer[0] == 'A') {
+                invalidation = INVALID_ALWAYS;
+            }
+            DynamicMatch* match = DynamicMatch_create(wcmd.buffer, invalidation, sep_char);
+            HashMap_Insert(&extr_map, elem->key, match);
+
+            _wprintf(L"%S cmd: \"%s\", sep: 0x%x, invalid: %d\n", 
+                     elem->key, wcmd.buffer, sep_char, invalidation);
+            WString_free(&wcmd);
         }
+
     }
-
-
-    return 0;
-    WString s;
-    WString_create(&s);
-    get_workdir(&s);
-    HashMap m1;
-    WHashMap m2;
-    
-    HashMap_Create(&m1);
-    WHashMap_Create(&m2);
-
-    WalkCtx ctk;
-    WalkDir_begin(&ctk, s.buffer);
-    Path* path;
-    while (WalkDir_next(&ctk, &path) > 0) {
-        String s;
-        String_create(&s);
-        String_from_utf16_str(&s, path->path.buffer);
-        HashMap_Insert(&m1, s.buffer, (void*)path->is_dir);
-        String_free(&s);
-        WHashMap_Insert(&m2, path->path.buffer, (void*)path->is_dir);
-        _wprintf(L"%s: %u\n", path->path.buffer, path->is_dir);
-    }
-    _wprintf(L"-----------------------------\n");
-
-    WalkDir_begin(&ctk, s.buffer);
-    while (WalkDir_next(&ctk, &path) > 0) {
-        String s;
-        String_create(&s);
-        String_from_utf16_str(&s, path->path.buffer);
-        bool dir = (bool)WHashMap_Value(&m2, path->path.buffer);
-        bool dir2 = (bool)HashMap_Value(&m1, s.buffer);
-        _wprintf(L"%s: %u %u %u\n", path->path.buffer, path->is_dir, dir, dir2);
-        String_free(&s);
-    }
-    WHashMapFrozen m3;
-    WHashMap_Freeze(&m2, &m3);
-    WHashMap_Free(&m2);
-    HashMapFrozen m4;
-    HashMap_Freeze(&m1, &m4);
-    HashMap_Free(&m1);
-
-    _wprintf(L"-----------------------------\n");
-    WalkDir_begin(&ctk, s.buffer);
-    while (WalkDir_next(&ctk, &path) > 0) {
-        String s;
-        String_create(&s);
-        String_from_utf16_str(&s, path->path.buffer);
-        bool dir = (bool)WHashMap_Value(&m3.map, path->path.buffer);
-        bool dir2 = (bool)HashMap_Value(&m4.map, s.buffer);
-        _wprintf(L"%s: %u %u %u\n", path->path.buffer, path->is_dir, dir, dir2);
-        String_free(&s);
-    }
-    WHashElement *e = WHashMap_Find(& m3.map, L"JSON.EXE");
-    if (e == NULL) {
-        _wprintf(L"null\n");
-    } else {
-        _wprintf(L"%s: %u\n", e->key, (bool)e->value);
-    }
-
-    WHashMap_FreeFrozen(&m3);
-    HashMap_FreeFrozen(&m4);
 
     return 0;
 }

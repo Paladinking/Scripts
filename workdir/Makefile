@@ -60,7 +60,7 @@ build\testdll.obj: src\testdll.c src\mem.h src\match_node.h src\subprocess.h src
 build\glob.obj: src\glob.c src\glob.h src\dynamic_string.h src\mem.h build
 	cl /c $(CLFLAGS) src\glob.c
 build\hashmap.obj: src\hashmap.c src\hashmap.h src\mem.h build
-	cl /c $(CLFLAGS) src\hashmap.c
+	cl /c $(CLFLAGS) /DHASHMAP_LINKED src\hashmap.c
 build\whashmap.obj: src\hashmap.c src\hashmap.h src\whashmap.h src\mem.h build
 	cl /c $(CLFLAGS) /Fo:build\whashmap.obj /DHASHMAP_WIDE /DHASHMAP_CASE_INSENSITIVE src\hashmap.c
 build\json.obj: src\json.c src\json.h src\dynamic_string.h src\hashmap.h src\mem.h
@@ -103,7 +103,7 @@ build\whashmapd.obj: src\hashmap.c src\hashmap.h src\whashmap.h build
 	gcc -g -Og -c -o build\whashmapd.obj -DHASHMAP_WIDE -DHASHMAP_CASE_INSENSITIVE src\hashmap.c
 
 bin\testd.exe: src\test.c src\glob.c src\dynamic_string.c src\printf.c build\ntutils.lib src\hashmap.c build\whashmapd.obj src\json.c src\subprocess.c src\args.c src\match_node.c src\mem.c
-	gcc -g -Og -o bin\testd.exe src\test.c src\glob.c src\dynamic_string.c src\printf.c build\ntutils.lib src\hashmap.c build\whashmapd.obj src\json.c src\subprocess.c src\args.c src\match_node.c src\mem.c
+	gcc -g -Og -o bin\testd.exe -DHASHMAP_LINKED src\test.c src\glob.c src\dynamic_string.c src\printf.c build\ntutils.lib src\hashmap.c build\whashmapd.obj src\json.c src\subprocess.c src\args.c src\match_node.c src\mem.c
 
 build\kernelbase.lib: build
 	lib /MACHINE:X64 /DEF /OUT:build\kernelbase.lib /NAME:kernelbase.dll\

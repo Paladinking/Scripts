@@ -21,6 +21,12 @@ void HashMap_Free(HashMap* map) {
     }
     map->element_count = 0;
     map->bucket_count = 0;
+#ifdef HASHMAP_LINKED
+    map->first_bucket_ix = 0;
+    map->first_elem_ix = 0;
+    map->last_bucket_ix = 0;
+    map->last_elem_ix = 0;
+#endif
     HASHMAP_FREE_FN(map->buckets);
     map->buckets = NULL;
 }
@@ -29,6 +35,12 @@ int HashMap_Allocate(HashMap* map, uint32_t bucket_count) {
     map->element_count = 0;
     map->bucket_count = bucket_count;
     map->buckets = HASHMAP_ALLOC_FN(bucket_count * sizeof(HashBucket));
+#ifdef HASHMAP_LINKED
+    map->first_bucket_ix = 0;
+    map->first_elem_ix = 0;
+    map->last_bucket_ix = 0;
+    map->last_elem_ix = 0;
+#endif
 #ifdef HASHMAP_ALLOC_ERROR
     if (map->buckets == NULL) {
         map->bucket_count = 0;
@@ -58,6 +70,12 @@ void HashMap_Clear(HashMap* map) {
         map->buckets[i].size = 0;
     }
     map->element_count = 0;
+#ifdef HASHMAP_LINKED
+    map->first_bucket_ix = 0;
+    map->first_elem_ix = 0;
+    map->last_bucket_ix = 0;
+    map->last_elem_ix = 0;
+#endif
 }
 
 int HashMap_Create(HashMap* map) {
@@ -69,7 +87,11 @@ static uint64_t hash(const ckey_t* str) {
     int c;
     while ((c = *str++)) {
 #ifdef HASHMAP_CASE_INSENSITIVE
+#ifdef HASHMAP_WIDE
+        c = towlower(c);
+#else
         c = tolower(c);
+#endif
 #endif
         hash = ((hash << 5) + hash) + c;
     }
@@ -115,6 +137,21 @@ static int HashMap_AddElement(HashMap* map, HashBucket* bucket, HashElement elem
         bucket->data = new_data;
         bucket->capacity = bucket->size * 2;
     }
+#ifdef HASHMAP_LINKED
+    uint32_t bucket_ix = bucket - map->buckets;
+    if (map->element_count == 0) {
+        map->first_bucket_ix = bucket_ix;
+        map->first_elem_ix = bucket->size;
+    } else {
+        element.prev_bucket_ix = map->last_bucket_ix;
+        element.prev_elem_ix = map->last_elem_ix;
+        HashElement* last = &map->buckets[map->last_bucket_ix].data[map->last_elem_ix];
+        last->next_bucket_ix = bucket_ix;
+        last->next_elem_ix = bucket->size;
+    }
+    map->last_bucket_ix = bucket_ix;
+    map->last_elem_ix = bucket->size;
+#endif
     memcpy(bucket->data + bucket->size, &element, sizeof(HashElement));
     ++(bucket->size);
     ++(map->element_count);
@@ -172,17 +209,41 @@ void* HashMap_Value(HashMap* map, const ckey_t* key) {
     return element->value;
 }
 
+static void HashMap_RemoveElement(HashMap* map, HashBucket* bucket, HashElement* element) {
+    uint32_t elem_ix = element - bucket->data;
+#ifdef HASHMAP_LINKED
+    uint32_t bucket_ix = bucket - map->buckets;
+    if (bucket_ix == map->first_bucket_ix && elem_ix == map->first_elem_ix) {
+        map->first_bucket_ix = element->next_bucket_ix;
+        map->first_elem_ix = element->next_elem_ix;
+    } else {
+        HashElement* prev = &map->buckets[element->prev_bucket_ix].data[element->prev_elem_ix];
+        prev->next_bucket_ix = element->next_bucket_ix;
+        prev->next_elem_ix = element->next_elem_ix;
+    }
+    if (bucket_ix == map->last_bucket_ix && elem_ix == map->last_elem_ix) {
+        map->last_bucket_ix = element->prev_bucket_ix;
+        map->last_elem_ix = element->prev_elem_ix;
+    } else {
+        HashElement* next = &map->buckets[element->next_bucket_ix].data[element->next_elem_ix];
+        next->prev_bucket_ix = element->prev_bucket_ix;
+        next->prev_elem_ix = element->prev_elem_ix;
+    }
+
+#endif
+    HASHMAP_FREE_FN((char*)element->key);
+    memmove(element, element + 1, (bucket->size - elem_ix - 1) * sizeof(HashElement));
+    --bucket->size;
+    --map->element_count;
+}
+
 int HashMap_Remove(HashMap* map, const ckey_t* key) {
     HashBucket* bucket;
     HashElement* element = HashMap_GetElement(map, key, &bucket);
     if (element == NULL) {
         return 0;
     }
-    HASHMAP_FREE_FN((char*)element->key);
-    uint32_t ix = element - bucket->data;
-    memmove(element, element + 1, (bucket->size - ix - 1) * sizeof(HashElement));
-    --bucket->size;
-    --map->element_count;
+    HashMap_RemoveElement(map, bucket, element);
     return 1;
 }
 
@@ -193,15 +254,14 @@ int HashMap_RemoveGet(HashMap* map, const ckey_t* key, void** old_val) {
         return 0;
     }
     *old_val = element->value;
-    HASHMAP_FREE_FN((char*)element->key);
-    uint32_t ix = element - bucket->data;
-    memmove(element, element + 1, (bucket->size - ix - 1) * sizeof(HashElement));
-    --bucket->size;
-    --map->element_count;
+    HashMap_RemoveElement(map, bucket, element);
     return 1;
 }
 
 int HashMap_Freeze(const HashMap* map, HashMapFrozen *out) {
+#ifdef HASHMAP_LINKED
+    return 0; // TODO: support this
+#else
     uint64_t size = sizeof(HashBucket) * map->bucket_count + sizeof(HashElement) * map->element_count;
     for (uint32_t i = 0; i < map->bucket_count; ++i) {
         for (uint32_t j = 0; j < map->buckets[i].size; ++j) {
@@ -245,6 +305,7 @@ int HashMap_Freeze(const HashMap* map, HashMapFrozen *out) {
     out->data_size = size;
 
     return 1;
+#endif
 }
 
 void HashMap_FreeFrozen(HashMapFrozen *map) {
@@ -253,3 +314,25 @@ void HashMap_FreeFrozen(HashMapFrozen *map) {
     map->map.bucket_count = 0;
     map->data_size = 0;
 }
+
+
+#ifdef HASHMAP_LINKED
+void HashMapIter_Begin(HashMapIterator* it, HashMap* map) {
+    it->map = map;
+    it->ix = 0;
+    it->bucket_ix = map->first_bucket_ix;
+    it->elem_ix = map->first_elem_ix;
+}
+
+HashElement* HashMapIter_Next(HashMapIterator* it) {
+    if (it->ix >= it->map->element_count) {
+        return NULL;
+    }
+    HashElement* elem = &it->map->buckets[it->bucket_ix].data[it->elem_ix];
+    it->ix += 1;
+    it->bucket_ix = elem->next_bucket_ix;
+    it->elem_ix = elem->next_elem_ix;
+
+    return elem;
+}
+#endif

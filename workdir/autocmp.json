@@ -1,0 +1,28 @@
+{
+    "root": {
+        "git": {
+            "status": {},
+            "add": {
+                "&FILE": {}
+            },
+            "": {}
+        }
+    },
+    "extern": {
+        "&branches": {
+            "cmd": "git for-each-ref --format=%(refname:short) refs/heads",
+            "separator": "\n",
+            "invalidation": "chdir"
+        }
+    },
+    "description": [
+        "&<extern> gives an extern command",
+        "&FILE matches file that exists",
+        "&FILELIKE matches anything file-like",
+        "&DEFAULT matches anything",
+
+        "For now, separator cannot be null",
+
+        "invalidation values: chdir, always, never"
+    ]
+}
