@@ -5,6 +5,8 @@ import collections
 import builtins
 import socket
 import struct
+import ctypes
+import zlib
 from math import sin, cos, pi, sqrt, log, factorial
 
 old_bin = bin
@@ -162,7 +164,6 @@ def c_array(data):
         return "{" + str([c for c in data])[1:-1] + "}"
     return "{" + str([c for c in data])[1:-1] + "}"
 
-
 def send_file(con, name, data=None):
     if isinstance(con, tuple):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -205,12 +206,29 @@ def get_file(con, write=True):
         name += con.recv(min(4096, name_size - len(name)))
     b_data_size = con.recv(8)
     data_size = struct.unpack('<Q', b_data_size)[0]
-    data = b''
-    while len(data) < data_size:
-        data += con.recv(min(4096, data_size - len(data)))
-    if write:
-        with open(name.decode('utf-8', errors='ignore'), 'wb') as file:
-            file.write(data)
+    print(f"Getting {name}, {data_size} bytes")
+    chunk = data_size / 100
+    goal = chunk
+    if not write:
+        data = b''
+    else:
+        out = open(name.decode('utf-8', errors='ignore'), 'wb')
+    data_len = 0
+    while data_len < data_size:
+        data_chunk = con.recv(min(4096, data_size - data_len))
+        data_len += len(data_chunk)
+        if not write:
+            data += data_chunk
+        else:
+            out.write(data_chunk)
+        if data_len > goal:
+            print(data_len)
+            goal += chunk
+    if not write:
+        return (name, data)
+    else:
+        out.close()
+        return data_len
 
 class Void:
     def __init__(*args, **kwars):
