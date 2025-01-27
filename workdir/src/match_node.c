@@ -2,6 +2,21 @@
 #include "subprocess.h"
 #include "args.h"
 
+WHashMap gNodes;
+
+uint32_t gDynamic_count = 0;
+uint32_t gDynamic_capacity = 0;
+DynamicMatch** gDynamic_matches = NULL;
+
+uint32_t gNode_count = 0;
+uint32_t gNode_capacity = 0;
+MatchNode** gNode_list = NULL;
+
+MatchNode* gRoot; // Root of autocomplete graph
+MatchNode* gAny_file; // Special node used for '>'
+MatchNode* gExisting_file; // Special node used for '<'
+
+
 
 void MatchNode_init() {
     WHashMap_Create(&gNodes);
@@ -18,10 +33,41 @@ void MatchNode_init() {
     gExisting_file = NodeBuilder_finalize(&b);
 }
 
+void MatchNode_reset() {
+    WHashMap_Clear(&gNodes);
+
+    for (uint32_t ix = 0; ix < gDynamic_count; ++ix) {
+        DynamicMatch* dyn = gDynamic_matches[ix];
+        if (dyn->matches != NULL && dyn->match_count != 0) {
+            Mem_free(dyn->matches);
+        }
+        Mem_free(dyn->cmd);
+        Mem_free(dyn->nodes);
+        Mem_free(dyn);
+    }
+    gDynamic_count = 0;
+
+    for (uint32_t ix = 0; ix < gNode_count; ++ix) {
+        MatchNode* node = gNode_list[ix];
+        for (uint32_t i = 0; i < node->match_count; ++i) {
+            if (node->matches[i].type == MATCH_STATIC) {
+                Mem_free(node->matches[i].static_match);
+            }
+        }
+        Mem_free(node->matches);
+        Mem_free(node);
+    }
+    gNode_count = 0;
+    gRoot = NULL;
+}
+
 void MatchNode_free() {
-    // TODO:
-    // Currenty no reason to write, since there is no point
-    // to call this function.
+    MatchNode_reset();
+    WHashMap_Free(&gNodes);
+    Mem_free(gNode_list);
+    Mem_free(gDynamic_matches);
+    gDynamic_capacity = 0;
+    gNode_capacity = 0;
 }
 
 void MatchNode_set_root(MatchNode *root) {
@@ -161,16 +207,6 @@ void NodeIterator_restart(NodeIterator* it) {
     it->dyn_ix = 0;
 }
 
-WHashMap gNodes;
-
-unsigned gDynamic_count = 0;
-unsigned gDynamic_capacity = 0;
-DynamicMatch** gDynamic_matches = NULL;
-
-MatchNode* gRoot; // Root of autocomplete graph
-MatchNode* gAny_file; // Special node used for '>'
-MatchNode* gExisting_file; // Special node used for '<'
-
 bool is_filelike(const wchar_t* str, unsigned len) {
     if (len == 0) {
         return false;
@@ -245,7 +281,8 @@ DynamicMatch* DynamicMatch_create(wchar_t* cmd, enum Invalidation invalidation, 
         Mem_free(n);
     }
 
-    if (!RESERVE(&gDynamic_matches, &gDynamic_capacity, gDynamic_count + 1, DynamicMatch*)) {
+    if (!RESERVE(&gDynamic_matches, &gDynamic_capacity, gDynamic_count + 1,
+                 DynamicMatch*)) {
         Mem_free(n->nodes);
         Mem_free(n);
         return NULL;
@@ -274,7 +311,8 @@ void DynamicMatch_evaluate(DynamicMatch* ptr) {
     }
 
     WString buf;
-    if (!WString_create(&buf) || !WString_from_utf8_bytes(&buf, out.buffer, out.length)) {
+    if (!WString_create(&buf) ||
+        !WString_from_utf8_bytes(&buf, out.buffer, out.length)) {
         String_free(&out);
         ptr->matches = &empty_match;
         return;
@@ -356,7 +394,8 @@ void DynamicMatch_evaluate(DynamicMatch* ptr) {
 void DynamicMatch_invalidate_many(bool chdir) {
     for (unsigned ix = 0; ix < gDynamic_count; ++ix) {
         DynamicMatch* dyn = gDynamic_matches[ix];
-        if (dyn->invalidation == INVALID_ALWAYS || (chdir && dyn->invalidation == INVALID_CHDIR)) {
+        if (dyn->invalidation == INVALID_ALWAYS ||
+            (chdir && dyn->invalidation == INVALID_CHDIR)) {
             DynamicMatch_invalidate(dyn);
         }
     }
@@ -388,6 +427,7 @@ void DynamicMatch_invalidate(DynamicMatch* ptr) {
         }
     }
 
+    WString_free(&buf);
     Mem_free(ptr->matches);
     ptr->matches = NULL;
     ptr->match_count = 0;
@@ -527,6 +567,11 @@ MatchNode* NodeBuilder_finalize(NodeBuilder* builder) {
 
     WString hashbuf;
     WString_create(&hashbuf);
+
+    if (RESERVE(&gNode_list, &gNode_capacity, gNode_count + 1, MatchNode*)) {
+        gNode_list[gNode_count] = node;
+        gNode_count += 1;
+    }
 
     for (unsigned i = 0; i < node->match_count; ++i) {
         if (node->matches[i].type == MATCH_STATIC) {

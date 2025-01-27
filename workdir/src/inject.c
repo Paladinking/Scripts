@@ -68,7 +68,7 @@ int main() {
         return 1;
     }
 
-    LPVOID entry = GetProcAddress(dll, "entry");
+    LPVOID entry = GetProcAddress(dll, "reload");
     if (entry == NULL) {
         _printf("Failed getting dll entry function\n");
         FreeLibrary(dll);

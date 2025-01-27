@@ -166,5 +166,7 @@ int main() {
     HashMap_Free(&extr_map);
     JsonObject_free(&obj);
 
+    MatchNode_free();
+
     return 0;
 }
