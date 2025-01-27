@@ -58,8 +58,8 @@ LPSTR read_paths_file(LPCWSTR name, LPCWSTR ext, LPCWSTR binpath,
         return NULL;
     }
 
-    HANDLE hPaths = CreateFile(path_file, GENERIC_READ, FILE_SHARE_READ, NULL,
-                               OPEN_EXISTING, 0, NULL);
+    HANDLE hPaths = CreateFileW(path_file, GENERIC_READ, FILE_SHARE_READ, NULL,
+                                OPEN_EXISTING, 0, NULL);
     if (hPaths == INVALID_HANDLE_VALUE) {
         return NULL;
     }
@@ -303,7 +303,7 @@ const char *help_message =
     "All other lines are again ignored.\n";
 
 int main() {
-    LPWSTR args = GetCommandLine();
+    LPWSTR args = GetCommandLineW();
     int argc;
     int status = 0;
 
@@ -319,7 +319,7 @@ int main() {
         goto end;
     }
 
-    DWORD mod_res = GetModuleFileName(NULL, gBinpath, 260);
+    DWORD mod_res = GetModuleFileNameW(NULL, gBinpath, 260);
     if (mod_res == 260 || mod_res == 0) {
         status = 8;
         goto end;
@@ -347,8 +347,6 @@ int main() {
         status = 3;
         goto end;
     }
-    DWORD arg_capacity = 20;
-    LPWSTR arg_buffer = Mem_alloc(arg_capacity);
 
     BOOL changed = FALSE;
 
