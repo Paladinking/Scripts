@@ -216,7 +216,12 @@ read:
     }
     if (in.length == 0 || in.buffer[in.length - 1] != L'\t') {
         // A CTR-C event can trigger ReadConsoleW_Old to return without '\t'
-        goto fail;
+        WString_free(&auto_complete);
+        WString_free(&rem);
+        if (context.active_it) {
+            NodeIterator_stop(&context.it);
+        }
+        return TRUE;
     }
     CONSOLE_SCREEN_BUFFER_INFO info;
     if (!GetConsoleScreenBufferInfo(out, &info)) {
