@@ -10,7 +10,6 @@
 #include <limits.h>
 
 // TODO:
-// Commands and arguments from file
 // Do not double complete when commands and files have same name
 
 static int refcount = 0;
