@@ -44,8 +44,8 @@ int main() {
     }
 
     wchar_t modbuf[1025];
-    if (!find_file_relative(modbuf, 1024, L"testdll.dll", true)) {
-        _printf("Could not find testdll.dll\n");
+    if (!find_file_relative(modbuf, 1024, L"autocmp.dll", true)) {
+        _printf("Could not find autocmp.dll\n");
         return 1;
     }
     _wprintf(L"Found dll at %s\n", modbuf);
