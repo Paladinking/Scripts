@@ -9,6 +9,8 @@
  */
 bool get_workdir(WString* str);
 
+bool find_file_relative(wchar_t* buf, size_t size, const wchar_t *filename, bool exist);
+
 bool is_file(const wchar_t* str);
 
 typedef struct _Path {

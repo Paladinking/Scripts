@@ -61,6 +61,47 @@ bool is_file(const wchar_t* str) {
     return GetFileAttributesW(str) != INVALID_FILE_ATTRIBUTES;
 }
 
+
+bool find_file_relative(wchar_t* buf, size_t size, const wchar_t *filename, bool exists) {
+    HMODULE mod;
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                            GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            (wchar_t*)find_file_relative, &mod)) {
+        return false;
+    }
+
+    DWORD res = GetModuleFileNameW(mod, buf, size);
+    if (res == 0 || res >= size) {
+        return false;
+    }
+    const wchar_t* ext = wcsrchr(filename, L'.');
+    size_t name_len;
+    if (ext == NULL) {
+        name_len = wcslen(filename);
+    } else {
+        name_len = ext - filename;
+    }
+    wchar_t name_buf[512];
+    if (name_len > 512) {
+        return 0;
+    }
+    memcpy(name_buf, filename, name_len * sizeof(wchar_t));
+    name_buf[name_len] = L'\0';
+    wchar_t drive[10], dir[1024];
+    if (_wsplitpath_s(buf, drive, 10, dir, 1024, NULL, 0, NULL, 0) != 0) {
+        return false;
+    }
+    if (_wmakepath_s(buf, size, drive, dir, name_buf, ext) != 0) {
+        return false;
+    }
+    if (!exists) {
+        return true;
+    }
+    DWORD attr = GetFileAttributesW(buf);
+    return attr != INVALID_FILE_ATTRIBUTES &&
+           (attr & FILE_ATTRIBUTE_DIRECTORY) == 0;
+}
+
 bool WalkDir_begin(WalkCtx* ctx, const wchar_t* dir) {
     WString* s = &ctx->p.path;
     WString_create(s);

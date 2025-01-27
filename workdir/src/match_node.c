@@ -559,10 +559,6 @@ void Node_set_child(MatchNode* node, MatchNode* child) {
 // <str> should have 6 byte space for postfix + null-terminator
 // quotes should be gone from str
 Match* find_next_match(MatchNode* current, wchar_t* str, unsigned len) {
-    // Quick case
-    if (current->match_count == 1) {
-        return &current->matches[0];
-    }
     str[len + 0] = current->hash_postfix[0];
     str[len + 1] = current->hash_postfix[1];
     str[len + 2] = current->hash_postfix[2];

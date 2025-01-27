@@ -47,7 +47,7 @@ int _printf_h(HANDLE dest, const char *fmt, ...) {
     if (count < 1024) { // Note: not inclusive for NULL terminator
         char buf[1024];
         _vsnprintf(buf, count, fmt, args);
-        WriteConsoleA(dest, buf, count, NULL, NULL);
+        outputa(dest, buf, count);
     } else {
         HANDLE heap = GetProcessHeap();
         char *buf = (char *)Mem_alloc(count);
