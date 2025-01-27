@@ -82,6 +82,7 @@ extern MatchNode* gAny_file; // Special node used for '>'
 extern MatchNode* gExisting_file; // Special node used for '<'
 
 void MatchNode_init();
+void MatchNode_reset();
 void MatchNode_free();
 
 void MatchNode_set_root(MatchNode* root);

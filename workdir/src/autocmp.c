@@ -335,8 +335,7 @@ bool add_node(NodeBuilder* builder, const char* key, HashMap* extr_map, MatchNod
     return true;
 }
 
-
-__declspec(dllexport) DWORD entry() {
+bool load_json() {
     wchar_t json_buf[1025];
     if (!find_file_relative(json_buf, 1024, L"autocmp.json", true)) {
         _printf("Could not find autocmp.json\n");
@@ -366,13 +365,6 @@ __declspec(dllexport) DWORD entry() {
         JsonObject_free(&obj);
         return 1;
     }
-
-    ++refcount;
-    if (refcount > 1) {
-        _printf("Already active\n");
-        return 1;
-    }
-    MatchNode_init();
 
     HashMap extr_map;
     HashMap_Create(&extr_map);
@@ -476,6 +468,25 @@ __declspec(dllexport) DWORD entry() {
     HashMap_Free(&extr_map);
     JsonObject_free(&obj);
 
+    return true;
+}
+
+
+__declspec(dllexport) DWORD entry() {
+    if (refcount > 0) {
+        _printf("Already active\n");
+        return 1;
+    }
+    ++refcount;
+
+    MatchNode_init();
+
+    if (!load_json()) {
+        NodeBuilder b;
+        NodeBuilder_create(&b);
+        MatchNode_set_root(NodeBuilder_finalize(&b));
+    }
+
     WString_create(&workdir);
 
     HANDLE mod = GetModuleHandle(L"KernelBase.dll");
@@ -541,6 +552,22 @@ __declspec(dllexport) DWORD entry() {
     VirtualProtect(src_addr, prelude_len, old_protect, &old_protect);
 
     FlushInstructionCache(GetCurrentProcess(), src_addr, 1 + sizeof(delta));
+    return 0;
+}
+
+
+__declspec(dllexport) DWORD reload() {
+    if (refcount == 0) {
+        return entry();
+    }
+
+    MatchNode_reset();
+    if (!load_json()) {
+        NodeBuilder b;
+        NodeBuilder_create(&b);
+        MatchNode_set_root(NodeBuilder_finalize(&b));
+        return 1;
+    }
     return 0;
 }
 

@@ -11,9 +11,25 @@
                 "&branches": {
                     "&FILELIKE": null
                 }
+            },
+            "branch": null,
+            "commit": null,
+            "clone": null,
+            "diff": {
+                "&FILE": {
+                    "&FILE": null
+                },
+                "&branches": {
+                    "&FILE": null
+                }
             }
         },
         "python": null,
+        "poetry": {
+            "enter": null,
+            "shell": null,
+            "run": null
+        },
         "&FILE": null
     },
     "extern": {

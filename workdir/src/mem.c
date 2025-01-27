@@ -6,6 +6,9 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <stdarg.h>
+#include <stdint.h>
+
+static uint64_t alloc_count = 0;
 
 bool append_file(const char* str, const wchar_t* filename) {
     HANDLE file = CreateFileW(filename, FILE_APPEND_DATA,
@@ -31,18 +34,24 @@ extern int _vsnprintf(char *buffer, size_t count, const char *format,
 
 void* Mem_alloc_dbg(size_t size, int lineno, const char* file) {
     void* ptr = HeapAlloc(GetProcessHeap(), 0, size);
+    if (ptr != NULL) {
+        alloc_count += 1;
+    }
 
     char buf[1024];
-    _snprintf(buf, 1024, "Alloc %p: %s:%d\n", ptr, file, lineno);
+    _snprintf(buf, 1024, "Alloc %p (%llu): %s:%d\n", ptr, alloc_count, file, lineno);
 
     append_file(buf, L"mem_debug.txt");
     return ptr;
 }
 
 void Mem_free_dbg(void* ptr, int lineno, const char* file) {
+    if (ptr != NULL) {
+        alloc_count -= 1;
+    }
 
     char buf[1024];
-    _snprintf(buf, 1024, "Free %p: %s:%d\n", ptr, file, lineno);
+    _snprintf(buf, 1024, "Free %p (%llu): %s:%d\n", ptr, alloc_count, file, lineno);
 
     append_file(buf, L"mem_debug.txt");
 
@@ -52,7 +61,7 @@ void Mem_free_dbg(void* ptr, int lineno, const char* file) {
 void* Mem_realloc_dbg(void* ptr, size_t size, int lineno, const char* file) {
     void *new_ptr = HeapReAlloc(GetProcessHeap(), 0, ptr, size);
     char buf[1024];
-    _snprintf(buf, 1024, "Realloc %p, %p: %s:%d\n", ptr, new_ptr, file, lineno);
+    _snprintf(buf, 1024, "Realloc %p, %p (%llu): %s:%d\n", ptr, new_ptr, alloc_count, file, lineno);
 
     append_file(buf, L"mem_debug.txt");
 
