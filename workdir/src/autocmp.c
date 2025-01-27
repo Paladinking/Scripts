@@ -341,6 +341,7 @@ bool load_json() {
         _printf("Could not find autocmp.json\n");
         return 1;
     }
+    _wprintf(L"Found json at %s\n", json_buf);
 
     String json_str;
     if (!read_text_file(&json_str, json_buf)) {
