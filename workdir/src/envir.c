@@ -340,7 +340,7 @@ DWORD FindEnvFileEntry(HANDLE file, const wchar_t* entry, size_t *len, wchar_t**
     }
 }
 
-DWORD ListEnvFile(const wchar_t* file_name) {
+DWORD ListEnvFile(const wchar_t* file_name, bool quiet) {
     HANDLE file = CreateFile(file_name,
                              GENERIC_READ,
                              FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -364,7 +364,9 @@ DWORD ListEnvFile(const wchar_t* file_name) {
     LARGE_INTEGER offset, fp;
     fp.QuadPart = 0;
 
-    _printf("Saved environment entries:\n");
+    if (!quiet) {
+        _printf("Saved environment entries:\n");
+    }
     DWORD count;
     while(1) {
         size_t entry_size;
@@ -405,7 +407,11 @@ DWORD ListEnvFile(const wchar_t* file_name) {
             ++name_size;
         } while (c != L'\0');
 
-        _printf(" %S\n", buf);
+        if (quiet) {
+            _printf("%S\n", buf);
+        } else {
+            _printf(" %S\n", buf);
+        }
         offset.QuadPart = fp.QuadPart + entry_size;
         if (!SetFilePointerEx(file, offset, &fp, FILE_BEGIN)) {
             res = GetLastError();
@@ -627,7 +633,7 @@ const char* help_message  = "usage: envir [--help] <commnand> [<arg>]\n\n"
                             "  size           Print the size of the stack\n"
                             "  id, i          Print the id of the stack\n"
                             "  remove <Entry> Remove global environment entry <Entry>\n"
-                            "  list           List all global environment entries\n\n"
+                            "  list [-q]      List all global environment entries\n\n"
                             "The size of the stack is limited to 64 entries, after that push will fail.\n"
                             "The id in generated based on the process id of the parent process.\n";
 
@@ -683,6 +689,8 @@ int main() {
     BOOL flag = FALSE;
     if (action == STACK_FILE_SAVE || action == STACK_CLEAR) {
         flag = find_flag(argv, &argc, L"-f", L"--force") > 0;
+    } else if (action == STACK_FILE_LIST) {
+        flag = find_flag(argv, &argc, L"-q", L"--quiet") > 0;
     }
     if (action >= STACK_FILE_SAVE && argc < 3) {
         _printf_h(err, "Missing argument\n");
@@ -852,7 +860,7 @@ int main() {
                 goto end;
             }
         } else {
-            status = ListEnvFile(env_file);
+            status = ListEnvFile(env_file, flag);
         }
     } else if (action == STACK_SAVE || action == STACK_PUSH) {
         if (action == STACK_PUSH || env_stack_length == 0) {
