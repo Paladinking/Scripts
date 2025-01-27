@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <tlhelp32.h>
 #include "printf.h"
+#include "glob.h"
 
 DWORD GetParentProcessId() {
     // Get the current process ID
@@ -43,31 +44,14 @@ int main() {
     }
 
     wchar_t modbuf[1025];
-    DWORD res = GetModuleFileName(NULL, modbuf, 1024);
-    if (res == 0 || res >= 1024) {
-        _printf("Failed getting module path\n");
+    if (!find_file_relative(modbuf, 1024, L"testdll.dll", true)) {
+        _printf("Could not find testdll.dll\n");
         return 1;
     }
-    wchar_t drive[10], dir[1024];
-    if (_wsplitpath_s(modbuf, drive, 10, dir, 1024, NULL, 0, NULL, 0) != 0) {
-        _printf("Failed getting directory\n");
-        return 1;
-    }
-    if (_wmakepath_s(modbuf, 1024, drive, dir, L"testdll", L"dll") != 0) {
-        _printf("Failed getting directory\n");
-        return 1;
-    }
-
-    DWORD attr = GetFileAttributesW(modbuf);
-    if (attr == INVALID_FILE_ATTRIBUTES || (attr & FILE_ATTRIBUTE_DIRECTORY)) {
-        _printf("File testdll.dll does not exits\n");
-        return 1;
-    }
-
     _wprintf(L"Found dll at %s\n", modbuf);
 
     LPVOID loadLibararyAddr = (LPVOID) GetProcAddress(
-            GetModuleHandle(L"kernel32.dll"), "LoadLibraryW");
+            GetModuleHandleW(L"kernel32.dll"), "LoadLibraryW");
 
     HANDLE hParent = OpenProcess(PROCESS_ALL_ACCESS, FALSE, parent);
     if (hParent == NULL) {
