@@ -12,7 +12,7 @@ all: bin\pathc.exe \
 	bin\path-edit.exe \
 	bin\path-select.exe \
 	bin\inject.exe \
-	bin\testdll.dll \
+	bin\autocmp.dll \
 	bin\2to3.bat \
 	bin\cal.bat \
 	bin\cleanenv.bat \
@@ -34,6 +34,7 @@ all: bin\pathc.exe \
 	bin\xkcd-keywords.txt \
 	bin\xkcd-titles.txt \
 	bin\xkcd.bat \
+	bin\autocmp.json \
 #	bin\path-add.bat \
 #	bin\path-add.ps1
 
@@ -55,8 +56,8 @@ build\cli.obj: src\cli.c src\cli.h src\dynamic_string.h src\mem.h build
 	cl /c $(CLFLAGS) src\cli.c
 build\unicode_width.obj: src\unicode_width.c src\unicode_width.h build
 	cl /c $(CLFLAGS) src\unicode_width.c
-build\testdll.obj: src\testdll.c src\mem.h src\match_node.h src\subprocess.h src\args.h src\dynamic_string.h src\whashmap.h src\hashmap.h
-	cl /c $(CLFLAGS) src\testdll.c
+build\autocmp.obj: src\autocmp.c src\mem.h src\match_node.h src\subprocess.h src\args.h src\dynamic_string.h src\whashmap.h src\hashmap.h
+	cl /c $(CLFLAGS) src\autocmp.c
 build\glob.obj: src\glob.c src\glob.h src\dynamic_string.h src\mem.h build
 	cl /c $(CLFLAGS) src\glob.c
 build\hashmap.obj: src\hashmap.c src\hashmap.h src\mem.h build
@@ -89,15 +90,15 @@ bin\path-edit.exe: src\path-edit.c build\cli.obj build\dynamic_string.obj build\
 	cl $(CLFLAGS) /Fe:bin\path-edit.exe src\path-edit.c build\cli.obj build\printf.obj build\dynamic_string.obj build\mem.obj build\unicode_width.obj build\ntutils.lib chkstk.obj $(LINKFLAGS)
 bin\path-select.exe: src\path-select.c build\printf.obj build\args.obj build\path_utils.obj build\dynamic_string.obj build\mem.obj build\ntutils.lib build\kernelbase.lib
 	cl $(CLFLAGS) /Fe:bin\path-select.exe src\path-select.c build\printf.obj build\args.obj build\path_utils.obj build\dynamic_string.obj build\mem.obj build\ntutils.lib build\kernelbase.lib $(LINKFLAGS)
-bin\inject.exe: src\inject.c build\printf.obj build\mem.obj build\ntutils.lib
-	cl $(CLFLAGS) /Fe:bin\inject.exe src\inject.c build\printf.obj build\ntutils.lib chkstk.obj build\mem.obj build\dynamic_string.obj $(LINKFLAGS)
+bin\inject.exe: src\inject.c build\printf.obj build\mem.obj build\glob.obj build\ntutils.lib
+	cl $(CLFLAGS) /Fe:bin\inject.exe src\inject.c build\printf.obj build\glob.obj build\ntutils.lib chkstk.obj build\mem.obj build\dynamic_string.obj $(LINKFLAGS)
 
-bin\testdll.dll: build\testdll.obj build\printf.obj build\dynamic_string.obj build\glob.obj build\match_node.obj build\subprocess.obj build\whashmap.obj build\args.obj build\mem.obj build\ntutils.lib
-	link /DLL /NODEFAULTLIB /entry:DLLMain /LTCG /OUT:bin\testdll.dll build\testdll.obj build\dynamic_string.obj build\printf.obj build\glob.obj build\mem.obj build\match_node.obj build\subprocess.obj build\whashmap.obj build\args.obj build\ntutils.lib Kernel32.lib
+bin\autocmp.dll: build\autocmp.obj build\printf.obj build\dynamic_string.obj build\glob.obj build\match_node.obj build\subprocess.obj build\whashmap.obj build\args.obj build\hashmap.obj build\json.obj build\mem.obj build\ntutils.lib
+	link /DLL /NODEFAULTLIB /entry:DLLMain /LTCG /OUT:bin\autocmp.dll build\autocmp.obj build\dynamic_string.obj build\printf.obj build\glob.obj build\mem.obj build\match_node.obj build\subprocess.obj build\whashmap.obj build\args.obj build\hashmap.obj build\json.obj chkstk.obj build\ntutils.lib Kernel32.lib
 	
 
 bin\test.exe: src\test.c build\match_node.obj build\glob.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib build\hashmap.obj build\whashmap.obj build\mem.obj build\json.obj build\subprocess.obj build\args.obj
-	cl $(CLFLAGS) /Fe:bin\test.exe src\test.c build\glob.obj build\dynamic_string.obj build\printf.obj build\hashmap.obj build\whashmap.obj build\json.obj build\subprocess.obj build\args.obj build\match_node.obj build\mem.obj build\ntutils.lib $(LINKFLAGS)
+	cl $(CLFLAGS) /Fe:bin\test.exe src\test.c build\glob.obj build\dynamic_string.obj build\printf.obj build\hashmap.obj build\whashmap.obj build\json.obj build\subprocess.obj build\args.obj build\match_node.obj build\mem.obj chkstk.obj build\ntutils.lib $(LINKFLAGS)
 
 build\whashmapd.obj: src\hashmap.c src\hashmap.h src\whashmap.h build
 	gcc -g -Og -c -o build\whashmapd.obj -DHASHMAP_WIDE -DHASHMAP_CASE_INSENSITIVE src\hashmap.c
@@ -162,6 +163,10 @@ bin\xkcd-keywords.txt: script\xkcd-keywords.txt bin
 	type script\xkcd-keywords.txt > bin\xkcd-keywords.txt
 bin\xkcd-titles.txt: script\xkcd-titles.txt bin
 	type script\xkcd-titles.txt > bin\xkcd-titles.txt
+
+
+bin\autocmp.json: autocmp.json bin
+	type autocmp.json > bin\autocmp.json
 
 script\translations:
 	@echo  File script\translations missing

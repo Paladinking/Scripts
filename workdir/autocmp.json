@@ -1,12 +1,19 @@
 {
     "root": {
         "git": {
-            "status": {},
-            "add": {
-                "&FILE": {}
+            "status": {
+                "&FILE": null
             },
-            "": {}
-        }
+            "add": {
+                "&FILE": null
+            },
+            "checkout": {
+                "&branches": {
+                    "&FILELIKE": null
+                }
+            }
+        },
+        "&FILE": null
     },
     "extern": {
         "&branches": {
