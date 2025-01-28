@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <tlhelp32.h>
 #include "printf.h"
+#include "args.h"
 #include "glob.h"
 
 DWORD GetParentProcessId() {
@@ -37,25 +38,34 @@ unsigned char func[] = {83, 85, 72, 131, 236, 72, 72, 137, 203, 72, 141, 75, 16,
 
 
 int main() {
+    HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
     DWORD parent = GetParentProcessId();
     if (parent == 0) {
-        _printf("Could not get parent process id\n");
+        _printf_h(err, "Could not get parent process id\n");
         return 1;
     }
 
+    int argc;
+    wchar_t** argv = parse_command_line(GetCommandLineW(), &argc);
+
+    bool substitute = find_flag(argv, &argc, L"-s", L"--substitute") > 0;
+    bool verbose = find_flag(argv, &argc, L"-v", L"--verbose") > 0;
+
     wchar_t modbuf[1025];
     if (!find_file_relative(modbuf, 1024, L"autocmp.dll", true)) {
-        _printf("Could not find autocmp.dll\n");
+        _printf_h(err, "Could not find autocmp.dll\n");
         return 1;
     }
-    _wprintf(L"Found dll at %s\n", modbuf);
+    if (verbose) {
+        _wprintf(L"Found dll at %s\n", modbuf);
+    }
 
     LPVOID loadLibararyAddr = (LPVOID) GetProcAddress(
             GetModuleHandleW(L"kernel32.dll"), "LoadLibraryW");
 
     HANDLE hParent = OpenProcess(PROCESS_ALL_ACCESS, FALSE, parent);
     if (hParent == NULL) {
-        _printf("Could not open parent process handle\n");
+        _printf_h(err, "Could not open parent process handle\n");
         return 1;
     }
 
@@ -63,14 +73,15 @@ int main() {
 
     HMODULE dll = LoadLibraryW(modbuf);
     if (dll == NULL) {
-        _wprintf(L"Failed loading library %s\n", modbuf);
+        _wprintf_h(err, L"Failed loading library %s\n", modbuf);
         CloseHandle(hParent);
         return 1;
     }
 
-    LPVOID entry = GetProcAddress(dll, "reload");
+    const char* entry_point = substitute ? "reload_with_cmd" : "reload";
+    LPVOID entry = GetProcAddress(dll, entry_point);
     if (entry == NULL) {
-        _printf("Failed getting dll entry function\n");
+        _printf_h(err, "Failed getting dll entry function\n");
         FreeLibrary(dll);
         CloseHandle(hParent);
         return 1;
@@ -78,7 +89,7 @@ int main() {
 
     wchar_t* name = VirtualAllocEx(hParent, NULL, len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (name == NULL || !WriteProcessMemory(hParent, name, modbuf, len, NULL)) {
-        _printf("Failed allocating path buffer\n");
+        _printf_h(err, "Failed allocating path buffer\n");
         FreeLibrary(dll);
         CloseHandle(hParent);
         return 1;
@@ -86,7 +97,7 @@ int main() {
 
     HANDLE hThread;
     if (!(hThread = CreateRemoteThread(hParent, NULL, 0, loadLibararyAddr, name, 0, NULL))) {
-        _printf("Failed creating remote thread\n");
+        _printf_h(err, "Failed creating remote thread\n");
         VirtualFreeEx(hParent, name, 0, MEM_RELEASE);
         FreeLibrary(dll);
         CloseHandle(hParent);
@@ -98,7 +109,7 @@ int main() {
     VirtualFreeEx(hParent, name, 0, MEM_RELEASE);
 
     if (!(hThread = CreateRemoteThread(hParent, NULL, 0, entry, NULL, 0, NULL))) {
-        _printf("Failed executing thread entry\n");
+        _printf_h(err, "Failed executing thread entry\n");
         FreeLibrary(dll);
         CloseHandle(hParent);
         return 1;

@@ -304,7 +304,7 @@ void DynamicMatch_evaluate(DynamicMatch* ptr) {
     String out;
     String_create(&out);
     unsigned long exit_code;
-    if (!subprocess_run(ptr->cmd, &out, 1000, &exit_code)) {
+    if (!subprocess_run(ptr->cmd, &out, 1000, &exit_code, SUBPROCESS_STDERR_NONE)) {
         String_free(&out);
         ptr->matches = &empty_match;
         return;

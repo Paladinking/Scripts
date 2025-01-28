@@ -406,6 +406,26 @@ bool WString_reserve(WString* s, size_t count) {
     return true;
 }
 
+bool WString_from_con_bytes(WString* dest, const char* s, size_t count, UINT code_point) {
+    DWORD size = MultiByteToWideChar(code_point, 0, s, count, NULL, 0);
+    if (!WString_reserve(dest, size)) {
+        return false;
+    }
+    size = MultiByteToWideChar(code_point, 0, s, count, dest->buffer, size);
+    if (size == 0) {
+        return false;
+    }
+    dest->length = size;
+    dest->buffer[size] = L'\0';
+
+    return true;
+}
+
+bool WString_from_con_str(WString* dest, const char* s, UINT code_point) {
+    size_t len = strlen(s);
+    return WString_from_con_bytes(dest, s, len, code_point);
+}
+
 bool WString_from_utf8_bytes(WString* dest, const char* s, size_t count) {
     UINT code_point = 65001;
     DWORD size = MultiByteToWideChar(code_point, 0, s, count, NULL, 0);

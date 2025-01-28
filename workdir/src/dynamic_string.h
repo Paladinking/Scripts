@@ -119,6 +119,10 @@ bool WString_copy(WString_noinit* dest, WString* source);
 // Increase capacity to allow `count` elements
 bool WString_reserve(WString* s, size_t count);
 
+bool WString_from_con_bytes(WString* dest, const char* s, size_t count, UINT code_point);
+
+bool WString_from_con_str(WString* dest, const char* s, UINT code_point);
+
 bool WString_from_utf8_bytes(WString* dest, const char* s, size_t count);
 
 bool WString_from_utf8_str(WString* dest, const char* s);
