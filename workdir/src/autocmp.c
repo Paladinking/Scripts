@@ -6,6 +6,7 @@
 #include "dynamic_string.h"
 #include "json.h"
 #include "match_node.h"
+#include "subprocess.h"
 #include "mem.h"
 #include <limits.h>
 
@@ -118,6 +119,99 @@ bool str_needs_quotes(const wchar_t* str) {
     return false;
 }
 
+void substitue_commands(wchar_t *str, DWORD *len, DWORD capacity) {
+    wchar_t *pos = str;
+    if (*len == 0) {
+        return;
+    }
+    String outbuf;
+    String_create(&outbuf);
+    WString wbuf;
+    WString_create(&wbuf);
+
+    wchar_t last = str[*len - 1];
+    wchar_t end_par = 0;
+    if (last == L')' || last == L'}' || last == L']') {
+        end_par = last;
+    }
+    str[*len - 1] = L'\0';
+    while (pos < str + *len) {
+        wchar_t *dlr = wcschr(pos, L'$');
+        if (dlr == NULL) {
+            break;
+        }
+        pos = dlr + 1;
+        wchar_t par = *pos;
+        if (par == L'(') {
+            par = L')';
+        } else if (par == L'{') {
+            par = L'}';
+        } else if (par == L'[') {
+            par = L']';
+        } else {
+            continue;
+        }
+        wchar_t *close = wcschr(pos, par);
+        bool at_end = false;
+        if (close == NULL) {
+            if (end_par == par) {
+                at_end = true;
+                close = str + *len - 1;
+            } else {
+                break;
+            }
+        }
+        DWORD cmd_len = close - pos + 2;
+        *close = L'\0';
+        String_clear(&outbuf);
+        WString_clear(&wbuf);
+        unsigned long errorcode;
+        if (!subprocess_run(pos + 1, &outbuf, 5000, &errorcode, SUBPROCESS_STDIN_DEVNULL)) {
+            String_clear(&outbuf);
+        }
+        if (outbuf.length > 0 &&
+            !WString_from_utf8_bytes(&wbuf, outbuf.buffer, outbuf.length)) {
+            _wprintf(L"Failed decoding to utf-16\n");
+            WString_clear(&wbuf);
+        }
+        WString_replaceall(&wbuf, L'\n', L' ');
+        WString_replaceall(&wbuf, L'\r', L' ');
+        WString_replaceall(&wbuf, L'\t', L' ');
+        while (wbuf.length > 0 && wbuf.buffer[wbuf.length - 1] == L' ') {
+            WString_pop(&wbuf, 1);
+        }
+        DWORD counter = 0;
+        while (wbuf.length > counter && wbuf.buffer[counter] == L' ') {
+            ++counter;
+        }
+        WString_remove(&wbuf, 0, counter);
+
+        if ((*len + wbuf.length - cmd_len < capacity)) {
+            DWORD start = (pos - 1) - str;
+            DWORD old_end = 1 + close - str;
+            DWORD rem = *len - old_end;
+            DWORD new_end = start + wbuf.length;
+            memmove(str + new_end, str + old_end, rem * sizeof(wchar_t));
+            memcpy(str + start, wbuf.buffer, wbuf.length * sizeof(wchar_t));
+            *len = *len - cmd_len + wbuf.length;
+            if (at_end) {
+                last = str[*len - 1];
+                break;
+            }
+            close = str + new_end - 1;
+        } else {
+            if (at_end) {
+                break;
+            }
+            *close = par;
+        }
+        pos = close + 1;
+    }
+    str[*len - 1] = last;
+    String_free(&outbuf);
+    WString_free(&wbuf);
+}
+
 
 typedef struct SearchContext {
     NodeIterator it;
@@ -160,6 +254,7 @@ bool get_autocomplete(MatchNode* node, SearchContext* it, WString* out, WString*
     return true;
 }
 
+bool gDo_command_sub = false;
 WString workdir;
 
 typedef BOOL(WINAPI* ReadConsoleW_t)(HANDLE, LPVOID, DWORD, LPDWORD, PCONSOLE_READCONSOLE_CONTROL);
@@ -209,6 +304,10 @@ read:
             WString_free(&rem);
             if (context.active_it) {
                 NodeIterator_stop(&context.it);
+            }
+            if (gDo_command_sub) {
+                substitue_commands(lpBuffer, lpNumberOfCharsRead,
+                                   nNumberOfCharsToRead);
             }
             return TRUE;
         }
@@ -335,23 +434,24 @@ bool add_node(NodeBuilder* builder, const char* key, HashMap* extr_map, MatchNod
 }
 
 bool load_json() {
+    HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
     wchar_t json_buf[1025];
     if (!find_file_relative(json_buf, 1024, L"autocmp.json", true)) {
-        _printf("Could not find autocmp.json\n");
+        _printf_h(err, "Could not find autocmp.json\n");
         return 1;
     }
-    _wprintf(L"Found json at %s\n", json_buf);
+    _wprintf(L"Loading %s\n", json_buf);
 
     String json_str;
     if (!read_text_file(&json_str, json_buf)) {
-        _printf("Could not read autocmp.json\n");
+        _printf_h(err, "Could not read autocmp.json\n");
         return 1;
     }
 
     JsonObject obj;
     String error_msg;
     if (!json_parse_object(json_str.buffer, &obj, &error_msg)) {
-        _wprintf(L"Failed parsing json file: %S\n", error_msg.buffer);
+        _wprintf_h(err, L"Failed parsing json file: %S\n", error_msg.buffer);
         String_free(&json_str);
         String_free(&error_msg);
         return 1;
@@ -361,7 +461,7 @@ bool load_json() {
     JsonObject *extr = JsonObject_get_obj(&obj, "extern");
     JsonObject* root_obj = JsonObject_get_obj(&obj, "root");
     if (root_obj == NULL) {
-        _wprintf(L"Missing root node\n");
+        _printf_h(err, "Missing root node\n");
         JsonObject_free(&obj);
         return 1;
     }
@@ -385,7 +485,7 @@ bool load_json() {
             String *inval = JsonObject_get_string(dyn_obj, "invalidation");
             if (cmd == NULL || sep == NULL || inval == NULL ||
                 cmd->length == 0 || inval->length == 0) {
-                _wprintf(L"Invalid extern spec for %S\n", elem->key);
+                _wprintf_h(err, L"Invalid extern spec for %S\n", elem->key);
                 continue;
             }
             WString wcmd;
@@ -393,13 +493,13 @@ bool load_json() {
             // use buffer for separator as well
             if (!WString_from_utf8_bytes(&wcmd, sep->buffer, sep->length) ||
                 wcmd.length != 1) {
-                _wprintf(L"Invalid separator for %S\n", elem->key);
+                _wprintf_h(err, L"Invalid separator for %S\n", elem->key);
                 WString_free(&wcmd);
                 continue;
             }
             wchar_t sep_char = wcmd.buffer[0];
             if (!WString_from_utf8_bytes(&wcmd, cmd->buffer, cmd->length)) {
-                _wprintf(L"Invalid command from %S\n", elem->key);
+                _wprintf_h(err, L"Invalid command from %S\n", elem->key);
                 WString_free(&wcmd);
                 continue;
             }
@@ -443,7 +543,7 @@ bool load_json() {
                 continue;
             }
             if (stack_ix >= 31) {
-                _wprintf(L"Too deep nesting in tree\n");
+                _printf_h(err, "Too deep nesting in tree\n");
                 add_node(node, elem->key, &extr_map, NULL, &workbuf);
                 continue;
             }
@@ -489,7 +589,8 @@ __declspec(dllexport) DWORD entry() {
 
     WString_create(&workdir);
 
-    HANDLE mod = GetModuleHandle(L"KernelBase.dll");
+    HANDLE mod = GetModuleHandleW(L"KernelBase.dll");
+    HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
 
     unsigned char* src_addr = (unsigned char*)GetProcAddress(mod, "ReadConsoleW");
     unsigned char* hook_addr = (unsigned char*)ReadConsoleW_Hook;
@@ -497,7 +598,7 @@ __declspec(dllexport) DWORD entry() {
     // Find a 32-bit relative offset from start of function and the hook function.
     long long full_delta = hook_addr - (src_addr + JMPREL_SIZE);
     if (full_delta > INT_MAX || full_delta < INT_MIN) {
-        _printf("Failed creating hook: Dll mapped too far away in memory\n");
+        _printf_h(err, "Failed creating hook: Dll mapped too far away in memory\n");
         return -1;
     }
     int delta = full_delta;
@@ -512,7 +613,7 @@ __declspec(dllexport) DWORD entry() {
         prelude_len += len;
     }
     if (prelude_len < JMPREL_SIZE) {
-        _printf("Failed creating hook: Bad function prelude\n");
+        _printf_h(err, "Failed creating hook: Bad function prelude\n");
         return -1;
     }
 
@@ -533,7 +634,7 @@ __declspec(dllexport) DWORD entry() {
     // might make memory that expects to be writable readonly.
     // Using VirtualAlloc solves this, but crashes when memory is read from other thread...
     if (!VirtualProtect(save_addr, prelude_len + JMPABS_SIZE, PAGE_EXECUTE_READWRITE, &old_protect)) {
-        _printf("Failed creating hook: Could not make page executable\n");
+        _printf_h(err, "Failed creating hook: Could not make page executable\n");
         return -1;
     }
     ReadConsoleW_Old = (ReadConsoleW_t)save_addr;
@@ -541,7 +642,7 @@ __declspec(dllexport) DWORD entry() {
 
     // Make the original function memory writable.
     if (!VirtualProtect(src_addr, prelude_len, PAGE_EXECUTE_READWRITE, &old_protect)) {
-        _printf("Failed creating hook: Could not make page writable\n");
+        _printf_h(err, "Failed creating hook: Could not make page writable\n");
         return -1;
     }
     // Write relative jump to the hook at begining of original function.
@@ -552,11 +653,12 @@ __declspec(dllexport) DWORD entry() {
     VirtualProtect(src_addr, prelude_len, old_protect, &old_protect);
 
     FlushInstructionCache(GetCurrentProcess(), src_addr, 1 + sizeof(delta));
+
+    SetEnvironmentVariableW(L"AUTOCMP_ACTIVE", L"1");
     return 0;
 }
 
-
-__declspec(dllexport) DWORD reload() {
+DWORD run() {
     if (refcount == 0) {
         return entry();
     }
@@ -569,6 +671,17 @@ __declspec(dllexport) DWORD reload() {
         return 1;
     }
     return 0;
+}
+
+__declspec(dllexport) DWORD reload_with_cmd() {
+    gDo_command_sub = true;
+    return run();
+}
+
+
+__declspec(dllexport) DWORD reload() {
+    gDo_command_sub = false;
+    return run();
 }
 
 
