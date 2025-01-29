@@ -22,6 +22,13 @@
                 "&branches": {
                     "&FILE": null
                 }
+            },
+            "restore": {
+                "&FILE": null
+            },
+            "reset": {
+                "&FILE": null,
+                "&branches": null
             }
         },
         "python": {
@@ -47,7 +54,18 @@
             "push": {},
             "pop": {}
         },
-        "&FILE": null
+        "enter": {
+            "windsond": {},
+            "toolbox": {},
+            "toebiters": {},
+            "scripts": {}
+        },
+        "&FILE": {
+            "&FILE": null
+        },
+        "&DEFAULT": {
+            "&FILE": null
+        }
     },
     "extern": {
         "&branches": {
