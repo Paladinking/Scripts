@@ -5,8 +5,14 @@
 #include <windows.h>
 
 bool subprocess_run(const wchar_t *cmd, String *out,
-                    unsigned int timeout_millies, unsigned long *exit_code,
-                    unsigned opts) {
+        unsigned int timeout_millies, unsigned long *exit_code,
+        unsigned opts) {
+    return subprocess_run_program(NULL, cmd, out, timeout_millies, exit_code, opts);
+}
+
+bool subprocess_run_program(const wchar_t *prog, const wchar_t *cmd,
+                            String *out, unsigned timeout_millies,
+                            unsigned long *exit_code, unsigned opts) {
     STARTUPINFOW si;
     PROCESS_INFORMATION pi;
     memset(&si, 0, sizeof(si));
@@ -55,7 +61,7 @@ bool subprocess_run(const wchar_t *cmd, String *out,
     }
     memcpy(cmd_buf, cmd, (cmd_len + 1) * sizeof(wchar_t));
 
-    if (!CreateProcessW(NULL, cmd_buf, NULL, NULL, TRUE, flags, NULL, NULL, &si,
+    if (!CreateProcessW(prog, cmd_buf, NULL, NULL, TRUE, flags, NULL, NULL, &si,
                         &pi)) {
         CloseHandle(hRead);
         CloseHandle(hWrite);

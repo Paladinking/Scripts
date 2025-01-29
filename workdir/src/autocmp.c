@@ -6,6 +6,7 @@
 #include "dynamic_string.h"
 #include "json.h"
 #include "match_node.h"
+#include "path_utils.h"
 #include "subprocess.h"
 #include "mem.h"
 #include <limits.h>
@@ -119,7 +120,86 @@ bool str_needs_quotes(const wchar_t* str) {
     return false;
 }
 
-void substitue_commands(wchar_t *str, DWORD *len, DWORD capacity) {
+WString pathext, pathbuf, progbuf, workdir;
+
+const wchar_t* find_program(const wchar_t* cmd, WString* dest) {
+    unsigned ix = 0;
+    bool in_quote = false;
+    WString prog;
+    WString_clear(dest);
+    WString_clear(&progbuf);
+    while (1) {
+        if (cmd[ix] == L'\0' || (cmd[ix] == L' ' && !in_quote)) {
+            break;
+        }
+        if (cmd[ix] == L'"') {
+            in_quote = !in_quote;
+        } else {
+            WString_append(&progbuf, cmd[ix]);
+        }
+        ++ix;
+    }
+
+    if (!get_envvar(L"PATHEXT", 0, &pathext) || pathext.length == 0) {
+        WString_clear(&pathext);
+        WString_extend(&pathext, L".EXE;.BAT");
+    }
+    wchar_t *ext = pathext.buffer;
+    DWORD count = 0;
+    do {
+        wchar_t* sep = wcschr(ext, L';');
+        if (sep == NULL) {
+            sep = pathext.buffer + pathext.length;
+        }
+        *sep = L'\0';
+        do {
+            if (!WString_reserve(dest, count)) {
+                return NULL;
+            }
+            count = SearchPathW(workdir.buffer,
+                                progbuf.buffer, ext, dest->capacity,
+                                dest->buffer, NULL);
+        } while (count > dest->capacity);
+        dest->length = count;
+        dest->buffer[dest->length] = L'\0';
+        if (count > 0) {
+            return dest->buffer;
+        }
+        *sep = L';';
+        ext = sep + 1;
+    } while (ext < pathext.buffer + pathext.length);
+
+    if (!get_envvar(L"PATH", 0, &pathbuf)) {
+        return NULL;
+    }
+    ext = pathext.buffer;
+    count = 0;
+    do {
+        wchar_t* sep = wcschr(ext, L';');
+        if (sep == NULL) {
+            sep = pathext.buffer + pathext.length;
+        }
+        *sep = L'\0';
+        do {
+            if (!WString_reserve(dest, count)) {
+                return NULL;
+            }
+            count = SearchPathW(pathbuf.buffer,
+                                progbuf.buffer, ext, dest->capacity,
+                                dest->buffer, NULL);
+        } while (count > dest->capacity);
+        dest->length = count;
+        dest->buffer[dest->length] = L'\0';
+        if (count > 0) {
+            return dest->buffer;
+        }
+        *sep = L';';
+        ext = sep + 1;
+    } while (ext < pathext.buffer + pathext.length);
+    return NULL;
+}
+
+void substitute_commands(wchar_t *str, DWORD *len, DWORD capacity) {
     wchar_t *pos = str;
     if (*len == 0) {
         return;
@@ -166,12 +246,17 @@ void substitue_commands(wchar_t *str, DWORD *len, DWORD capacity) {
         String_clear(&outbuf);
         WString_clear(&wbuf);
         unsigned long errorcode;
-        if (!subprocess_run(pos + 1, &outbuf, 5000, &errorcode, SUBPROCESS_STDIN_DEVNULL)) {
+
+        const wchar_t* prog = find_program(pos + 1, &wbuf);
+
+        if (!subprocess_run_program(prog, pos + 1, &outbuf, 5000, &errorcode, SUBPROCESS_STDIN_DEVNULL)) {
             String_clear(&outbuf);
         }
+        WString_clear(&wbuf);
         if (outbuf.length > 0 &&
             !WString_from_utf8_bytes(&wbuf, outbuf.buffer, outbuf.length)) {
-            _wprintf(L"Failed decoding to utf-16\n");
+            _wprintf_h(GetStdHandle(STD_ERROR_HANDLE),
+                       L"Failed decoding to utf-16\n");
             WString_clear(&wbuf);
         }
         WString_replaceall(&wbuf, L'\n', L' ');
@@ -255,7 +340,6 @@ bool get_autocomplete(MatchNode* node, SearchContext* it, WString* out, WString*
 }
 
 bool gDo_command_sub = false;
-WString workdir;
 
 typedef BOOL(WINAPI* ReadConsoleW_t)(HANDLE, LPVOID, DWORD, LPDWORD, PCONSOLE_READCONSOLE_CONTROL);
 
@@ -306,7 +390,7 @@ read:
                 NodeIterator_stop(&context.it);
             }
             if (gDo_command_sub) {
-                substitue_commands(lpBuffer, lpNumberOfCharsRead,
+                substitute_commands(lpBuffer, lpNumberOfCharsRead,
                                    nNumberOfCharsToRead);
             }
             return TRUE;
@@ -588,6 +672,9 @@ __declspec(dllexport) DWORD entry() {
     }
 
     WString_create(&workdir);
+    WString_create(&pathext);
+    WString_create(&pathbuf);
+    WString_create(&progbuf);
 
     HANDLE mod = GetModuleHandleW(L"KernelBase.dll");
     HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
