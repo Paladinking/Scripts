@@ -2,7 +2,6 @@
 #define SUBPROCESS_H_
 #include "dynamic_string.h"
 
-
 #define SUBPROCESS_STDERR_NONE 1
 #define SUBPROCESS_STDIN_DEVNULL 2
 
@@ -10,5 +9,9 @@
 // buffer.
 bool subprocess_run(const wchar_t *cmd, String *out, unsigned timeout_millies,
                     unsigned long *exit_code, unsigned opts);
+
+bool subprocess_run_program(const wchar_t *prog, const wchar_t *cmd,
+                            String *out, unsigned timeout_millies,
+                            unsigned long *exit_code, unsigned opts);
 
 #endif // SUBPROCESS_H_
