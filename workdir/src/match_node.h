@@ -67,6 +67,7 @@ typedef struct NodeIterator {
     WalkCtx walk_ctx;
     WString prefix;
     wchar_t* dir_separator;
+    wchar_t* path_start;
 } NodeIterator;
 
 typedef struct NodeBuilder {

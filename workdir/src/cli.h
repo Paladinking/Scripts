@@ -41,3 +41,5 @@ DWORD CliList_run(CliList* list);
 
 void CliList_free(CliList* list);
 
+bool Cli_Search(wchar_t* buffer, DWORD* len, DWORD capacity, wchar_t** entries, DWORD entry_count);
+

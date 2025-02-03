@@ -432,7 +432,7 @@ DWORD WriteEnvFile(const wchar_t* file_name, const wchar_t* entry_name, BOOL rem
                              GENERIC_READ | GENERIC_WRITE,
                              FILE_SHARE_READ | FILE_SHARE_WRITE,
                              NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (file == NULL) {
+    if (file == NULL || file == INVALID_HANDLE_VALUE) {
         return GetLastError();
     }
     OVERLAPPED o;
@@ -566,7 +566,7 @@ DWORD ReadEnvFile(const wchar_t* file_name, const wchar_t* entry_name, HANDLE pr
                              GENERIC_READ,
                              FILE_SHARE_READ | FILE_SHARE_WRITE,
                              NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (file == NULL) {
+    if (file == NULL || file == INVALID_HANDLE_VALUE) {
         return GetLastError();
     }
     OVERLAPPED o;

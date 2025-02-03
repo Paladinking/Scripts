@@ -1,6 +1,7 @@
 #include "match_node.h"
 #include "subprocess.h"
 #include "args.h"
+#include "printf.h"
 
 WHashMap gNodes;
 
@@ -86,6 +87,26 @@ wchar_t* find_parent_dir(wchar_t* str, unsigned len) {
     return NULL;
 }
 
+wchar_t* find_path_start(wchar_t* str, unsigned len) {
+    unsigned ix = len;
+    while (ix > 0) {
+        --ix;
+        if (str[ix] == L':') {
+            if (ix > 0 && ((str[ix - 1] >= L'a' && str[ix -1] <= L'z') ||
+                            (str[ix -1] >= L'A' && str[ix - 1] <= L'Z'))) {
+                return str + ix - 1;
+            }
+            return str + ix + 1;
+        }
+        if (str[ix] == L'|' || str[ix] == L'?' || str[ix] == L'*' ||
+            str[ix] == L'<' || str[ix] == L'>' || str[ix] == L'"' ||
+            str[ix] == L'=') {
+            return str + ix + 1;
+        }
+    }
+    return str;
+}
+
 bool has_prefix(const wchar_t* s, const wchar_t* prefix) {
     for (unsigned ix = 0; prefix[ix] != L'\0'; ++ix) {
         if (s[ix] == L'\0') {
@@ -98,6 +119,22 @@ bool has_prefix(const wchar_t* s, const wchar_t* prefix) {
     return true;
 }
 
+bool char_needs_quotes(wchar_t c) {
+    return c == L' ' || c == L'+' || c == L'=' || c == L'(' || c == L')' || 
+            c == L'{' || c == '}' || c == L'%' || c == L'[' || c == L']';
+}
+
+bool str_needs_quotes(const wchar_t* str) {
+    for (unsigned i = 0; str[i] != L'\0'; ++i) {
+        wchar_t c = str[i];
+        if (char_needs_quotes(c)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+
 void NodeIterator_begin(NodeIterator* it, MatchNode* node, const wchar_t* prefix) {
     it->node = node;
     it->ix = 0;
@@ -107,7 +144,9 @@ void NodeIterator_begin(NodeIterator* it, MatchNode* node, const wchar_t* prefix
     WString_create_capacity(&it->prefix, len);
     WString_append_count(&it->prefix, prefix, len); 
 
-    it->dir_separator = find_parent_dir(it->prefix.buffer, len);
+    it->path_start = find_path_start(it->prefix.buffer, len);
+    unsigned path_len = len - (it->path_start - it->prefix.buffer);
+    it->dir_separator = find_parent_dir(it->path_start, path_len);
 }
 
 const wchar_t* NodeIterator_next(NodeIterator* it) {
@@ -136,7 +175,7 @@ const wchar_t* NodeIterator_next(NodeIterator* it) {
                 } else {
                     wchar_t old_c = *(it->dir_separator + 1);
                     *(it->dir_separator + 1) = L'\0';
-                    walk = WalkDir_begin(&it->walk_ctx, it->prefix.buffer);
+                    walk = WalkDir_begin(&it->walk_ctx, it->path_start);
                     *(it->dir_separator + 1) = old_c;
                 }
                 if (!walk) {
@@ -153,18 +192,34 @@ const wchar_t* NodeIterator_next(NodeIterator* it) {
                 continue;
             }
             if (it->dir_separator == NULL) {
-                // Filter with full prefix
-                if (!has_prefix(path->path.buffer, it->prefix.buffer)) {
+
+                // Filter with full dir
+                if (!has_prefix(path->path.buffer, it->path_start)) {
                     continue;
                 } 
+
+                if (str_needs_quotes(path->path.buffer)) {
+                    WString_insert(&path->path, 0, L'"');
+                    WString_append(&path->path, L'"');
+                }
+                unsigned count = it->path_start - it->prefix.buffer;
+                WString_insert_count(&path->path, 0, it->prefix.buffer, count);
                 return path->path.buffer;
             }
+
             // Filter with prefix after dir_separator
             if (!has_prefix(path->path.buffer, it->dir_separator + 1)) {
                 continue;
             }
 
-            unsigned count = it->dir_separator - it->prefix.buffer + 1;
+            unsigned count = it->dir_separator - it->path_start + 1;
+            WString_insert_count(&path->path, 0, it->path_start, count);
+
+            if (str_needs_quotes(path->path.buffer)) {
+                WString_insert(&path->path, 0, L'"');
+                WString_append(&path->path, L'"');
+            }
+            count = it->path_start - it->prefix.buffer;
             WString_insert_count(&path->path, 0, it->prefix.buffer, count);
             return path->path.buffer;
         }
