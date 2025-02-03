@@ -64,9 +64,9 @@ build\whashmap.obj: src\hashmap.c src\hashmap.h src\mem.h build
 	cl.exe /c /Fo:build\whashmap.obj /GS- /GL /O1 /favor:AMD64 /nologo /DHASHMAP_WIDE /DHASHMAP_CASE_INSENSITIVE src\hashmap.c
 build\hashmap.obj: src\hashmap.c src\hashmap.h src\mem.h build
 	cl.exe /c /Fo:build\hashmap.obj /GS- /GL /O1 /favor:AMD64 /nologo /DHASHMAP_LINKED src\hashmap.c
-build\autocmp.obj: src\autocmp.c src\printf.h src\dynamic_string.h src\mem.h src\json.h src\hashmap.h src\match_node.h src\glob.h src\whashmap.h src\path_utils.h src\subprocess.h build
+build\autocmp.obj: src\autocmp.c src\printf.h src\dynamic_string.h src\mem.h src\json.h src\hashmap.h src\match_node.h src\glob.h src\whashmap.h src\path_utils.h src\subprocess.h src\cli.h build
 	cl.exe /c /Fo:build\autocmp.obj /GS- /GL /O1 /favor:AMD64 /nologo src\autocmp.c
-build\match_node.obj: src\match_node.c src\match_node.h src\glob.h src\dynamic_string.h src\mem.h src\whashmap.h src\hashmap.h src\subprocess.h src\args.h build
+build\match_node.obj: src\match_node.c src\match_node.h src\glob.h src\dynamic_string.h src\mem.h src\whashmap.h src\hashmap.h src\subprocess.h src\args.h src\printf.h build
 	cl.exe /c /Fo:build\match_node.obj /GS- /GL /O1 /favor:AMD64 /nologo src\match_node.c
 build\subprocess.obj: src\subprocess.c src\subprocess.h src\dynamic_string.h src\mem.h build
 	cl.exe /c /Fo:build\subprocess.obj /GS- /GL /O1 /favor:AMD64 /nologo src\subprocess.c
@@ -98,27 +98,27 @@ build\ntutils.lib: build
 	lib /MACHINE:X64 /DEF /OUT:build\ntutils.lib /NAME:ntdll.dll /EXPORT:memcpy=memcpy /EXPORT:strlen=strlen /EXPORT:memmove=memmove /EXPORT:_wsplitpath_s=_wsplitpath_s /EXPORT:wcslen=wcslen /EXPORT:_wmakepath_s=_wmakepath_s /EXPORT:strchr=strchr /EXPORT:_stricmp=_stricmp /EXPORT:towlower=towlower /EXPORT:_wcsicmp=_wcsicmp /EXPORT:_snwprintf_s=_snwprintf_s /EXPORT:_snprintf_s=_snprintf_s /EXPORT:_vscwprintf=_vscwprintf /EXPORT:_vsnprintf=_vsnprintf /EXPORT:_vsnwprintf=_vsnwprintf /EXPORT:_vscprintf=_vscprintf /EXPORT:memset=memset /EXPORT:wcscmp=wcscmp /EXPORT:strcmp=strcmp /EXPORT:_fltused=_fltused /EXPORT:wcschr=wcschr /EXPORT:wcsrchr=wcsrchr /EXPORT:strtol=strtol /EXPORT:wcsncmp=wcsncmp /EXPORT:memcmp=memcmp /EXPORT:tolower=tolower /EXPORT:strncmp=strncmp /EXPORT:wcsstr=wcsstr /EXPORT:_snprintf=_snprintf
 build\kernelbase.lib: build
 	lib /MACHINE:X64 /DEF /OUT:build\kernelbase.lib /NAME:kernelbase.dll /EXPORT:PathMatchSpecW=PathMatchSpecW
-bin\autocmp.json: bin
+bin\autocmp.json: autocmp.json bin
 	type autocmp.json > bin\autocmp.json
-bin\err.exe: bin
+bin\err.exe: script\err.exe bin
 	type script\err.exe > bin\err.exe
-bin\2to3.bat: bin
+bin\2to3.bat: script\2to3.bat bin
 	type script\2to3.bat > bin\2to3.bat
-bin\cal.bat: bin
+bin\cal.bat: script\cal.bat bin
 	type script\cal.bat > bin\cal.bat
-bin\ports.bat: bin
+bin\ports.bat: script\ports.bat bin
 	type script\ports.bat > bin\ports.bat
-bin\short.bat: bin
+bin\short.bat: script\short.bat bin
 	type script\short.bat > bin\short.bat
-bin\wget.bat: bin
+bin\wget.bat: script\wget.bat bin
 	type script\wget.bat > bin\wget.bat
-bin\xkcd.bat: bin
+bin\xkcd.bat: script\xkcd.bat bin
 	type script\xkcd.bat > bin\xkcd.bat
-bin\xkcd-keywords.txt: bin
+bin\xkcd-keywords.txt: script\xkcd-keywords.txt bin
 	type script\xkcd-keywords.txt > bin\xkcd-keywords.txt
-bin\xkcd-titles.txt: bin
+bin\xkcd-titles.txt: script\xkcd-titles.txt bin
 	type script\xkcd-titles.txt > bin\xkcd-titles.txt
-bin\vcvarsall.ps1: bin
+bin\vcvarsall.ps1: script\vcvarsall.ps1 bin
 	type script\vcvarsall.ps1 > bin\vcvarsall.ps1
 script\translations: script
 	@echo File script\translations missing
