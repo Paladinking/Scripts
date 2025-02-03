@@ -84,6 +84,12 @@
             "invalidation": "never"
         }
     },
+    "options": {
+        "rsearch": true,
+        "autocmp": true,
+        "history": true,
+        "substitute": true
+    },
     "description": [
         "&<extern> gives an extern command",
         "&FILE matches file that exists",

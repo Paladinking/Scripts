@@ -106,11 +106,18 @@ int instruction_length(unsigned char* data, unsigned len) {
     return -1;
 }
 
+
+
+bool gDo_command_sub = false;
+bool gDo_history = true;
+bool gDo_autocmp = true;
+bool gDo_rsearch = true;
+
 bool gHas_history = false;
 wchar_t history_file_name[1025];
 
 void add_history(wchar_t* buf, DWORD len) {
-    if (!gHas_history || len == 0) {
+    if (!gDo_history || !gHas_history || len == 0) {
         return;
     }
     if (buf[len - 1] != L'\n' && buf[len - 1] != L'\r') {
@@ -402,10 +409,6 @@ bool get_autocomplete(MatchNode* node, SearchContext* it, WString* out, WString*
     return true;
 }
 
-bool gDo_command_sub = false;
-bool gDo_autocmp = true;
-bool gDo_rsearch = true;
-
 typedef BOOL(WINAPI* ReadConsoleW_t)(HANDLE, LPVOID, DWORD, LPDWORD, PCONSOLE_READCONSOLE_CONTROL);
 
 ReadConsoleW_t ReadConsoleW_Old;
@@ -503,6 +506,10 @@ read:
             success = TRUE;
             goto end;
         }
+    }
+    if (!gDo_autocmp) {
+        success = TRUE;
+        goto end;
     }
     if (in.length == 0 || in.buffer[in.length - 1] != L'\t') {
         // A CTR-C event can trigger ReadConsoleW_Old to return without '\t'
@@ -766,6 +773,27 @@ bool load_json() {
     MatchNode* root = NodeBuilder_finalize(&stack[0].node);
     MatchNode_set_root(root);
     HashMap_Free(&extr_map);
+
+    JsonObject* opt_obj = JsonObject_get_obj(&obj, "options");
+    if (opt_obj != NULL) {
+        bool* rs = JsonObject_get_bool(opt_obj, "rsearch");
+        if (rs != NULL) {
+            gDo_rsearch = *rs;
+        }
+        bool* ac = JsonObject_get_bool(opt_obj, "autocmp");
+        if (ac != NULL) {
+            gDo_autocmp = *ac;
+        }
+        bool* hi = JsonObject_get_bool(opt_obj, "history");
+        if (hi != NULL) {
+            gDo_history = *hi;;
+        }
+        bool* su = JsonObject_get_bool(opt_obj, "substitute");
+        if (su != NULL) {
+            gDo_command_sub = *su;
+        }
+    }
+
     JsonObject_free(&obj);
 
     return true;
@@ -883,6 +911,12 @@ __declspec(dllexport) DWORD entry() {
 }
 
 DWORD run() {
+    // Defaults
+    gDo_autocmp = true;
+    gDo_history = true;
+    gDo_rsearch = true;
+    gDo_command_sub = false;
+
     if (refcount == 0) {
         return entry();
     }
@@ -898,14 +932,18 @@ DWORD run() {
 }
 
 __declspec(dllexport) DWORD reload_with_cmd() {
+    DWORD status = run();
     gDo_command_sub = true;
-    return run();
+    return status;
 }
 
 
 __declspec(dllexport) DWORD reload() {
-    gDo_command_sub = false;
-    return run();
+    DWORD status = run();
+    _wprintf(L"autocmp: %d, rsearch: %d, history: %d, substitute: %d\n",
+             gDo_autocmp, gDo_rsearch, gDo_history, gDo_command_sub);
+
+    return status;
 }
 
 
