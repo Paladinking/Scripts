@@ -1,7 +1,4 @@
 #define UNICODE
-#ifdef __GNUC__
-#define main entry_main
-#endif
 #include "args.h"
 #include "mem.h"
 #include "dynamic_string.h"

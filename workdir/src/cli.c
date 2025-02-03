@@ -3,6 +3,7 @@
 #include "mem.h"
 #include "printf.h"
 #include "unicode_width.h"
+#include <stdint.h>
 
 BOOL step_left(int *cur, int *col, CliListNode *n) {
     if (*col <= 0) {
@@ -741,4 +742,219 @@ void CliList_free(CliList *list) {
     }
     WString_free(&list->scratch_buffer);
     Mem_free(list);
+}
+
+
+wchar_t* wcsstr_i(wchar_t* str, wchar_t* search) {
+    for (size_t ix = 0; str[ix] != L'\0'; ++ix) {
+        while (towlower(str[ix]) != towlower(search[0])) {
+            ++ix;
+            if (str[ix] == L'\0') {
+                return NULL;
+            }
+        }
+        size_t j = 1;
+        while (1) {
+            if (search[j] == L'\0') {
+                return &str[ix];
+            }
+            if (str[ix + j] == L'\0' || 
+                towlower(str[ix + j]) != towlower(search[j])) {
+                break;
+            }
+            ++j;
+        }
+    }
+    return NULL;
+}
+
+wchar_t* search_next(wchar_t* searchbuf, wchar_t** entries, DWORD entry_count, int64_t* ix, bool forwards) {
+    if (searchbuf[0] == L'\0') {
+        return NULL;
+    }
+    if (forwards) {
+        int64_t i = *ix < 0 ? 0 : *ix + 1;
+        wchar_t *last = *ix < 0 ? NULL : entries[*ix];
+        for (; i < entry_count; ++i) {
+            if (wcsstr_i(entries[i], searchbuf)) {
+                *ix = i;
+                return entries[i];
+            }
+        }
+        return last;
+    } else {
+        int64_t i = *ix >= entry_count ? entry_count - 1 : *ix - 1;
+        wchar_t *last = *ix >= entry_count ? NULL : entries[*ix];
+        for (; i >= 0; --i) {
+            if (wcsstr_i(entries[i], searchbuf)) {
+                *ix = i;
+                return entries[i];
+            }
+        }
+        return last;
+    }
+}
+
+wchar_t* search_strings(wchar_t* searchbuf, wchar_t** entries, DWORD entry_count, int64_t *ix) {
+    if (searchbuf[0] == L'\0') {
+        if (*ix >= 0 && *ix < entry_count) {
+            return entries[*ix];
+        }
+        return NULL;
+    }
+    if (*ix >= 0 && *ix < entry_count) {
+        if (wcsstr_i(entries[*ix], searchbuf)) {
+            return entries[*ix];
+        }
+    }
+    for (int64_t i = 0; i < entry_count; ++i) {
+        if (wcsstr_i(entries[i], searchbuf)) {
+            *ix = i;
+            return entries[i];
+        }
+    }
+    return NULL;
+}
+
+bool Cli_Search(wchar_t* buffer, DWORD* len, DWORD capacity, wchar_t** entries, DWORD entry_count) {
+    HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+    HANDLE in = GetStdHandle(STD_INPUT_HANDLE);
+    DWORD old_out_mode, old_in_mode;
+    WString search_buffer;
+    if (capacity < 10) {
+        return false;
+    }
+    if (!WString_create(&search_buffer)) {
+        return false;
+    }
+    if (!GetConsoleMode(out, &old_out_mode) || !GetConsoleMode(in, &old_in_mode)) {
+        return false;
+    }
+    if (!SetConsoleMode(out, ENABLE_PROCESSED_OUTPUT |
+                             ENABLE_WRAP_AT_EOL_OUTPUT |
+                             ENABLE_VIRTUAL_TERMINAL_PROCESSING)) {
+        WString_free(&search_buffer);
+        return false;
+    }
+    if (!SetConsoleMode(in, ENABLE_WINDOW_INPUT)) {
+        WString_free(&search_buffer);
+        SetConsoleMode(out, old_out_mode);
+        return false;
+    }
+    int64_t ix = 0;
+    if (*len == capacity) {
+        // It has to be done...
+        *len -= 1;
+    }
+    buffer[*len] = L'\0';
+    *len = 0;
+
+    wchar_t* active_entry = buffer;
+
+    bool status = true;
+
+    _wprintf(L"\x1b[2K\r(search)'':%s", active_entry);
+
+    wchar_t surrogate = L'\0';
+
+    while (1) {
+        INPUT_RECORD record;
+        DWORD read;
+        if (!ReadConsoleInputW(in, &record, 1, &read)) {
+            status = false;
+            break;
+        }
+
+        CONSOLE_SCREEN_BUFFER_INFO cInfo;
+        if (!GetConsoleScreenBufferInfo(out, &cInfo)) {
+            status = false;
+            break;
+        }
+        if (record.EventType != KEY_EVENT) {
+            continue;
+        }
+        KEY_EVENT_RECORD evt = record.Event.KeyEvent;
+        BOOL ctrl_pressed = (evt.dwControlKeyState &
+                             (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) != 0;
+        BOOL alt_pressed = (evt.dwControlKeyState &
+                            LEFT_ALT_PRESSED) != 0;
+        WORD keycode = evt.wVirtualKeyCode;
+        wchar_t c = evt.uChar.UnicodeChar;
+        if (!evt.bKeyDown) {
+            continue;
+        }
+        if (ctrl_pressed) {
+            if (keycode == L'C') {
+                *len = 0;
+                break;
+            } else if (keycode == L'R') {
+                keycode = VK_UP; // Ctrl-R behaves as up key
+            }
+        }
+        if (keycode == VK_DELETE) {
+            continue;
+        }
+        if (keycode == VK_BACK) {
+            if (search_buffer.length == 0) {
+                continue;
+            }
+            wchar_t last = search_buffer.buffer[search_buffer.length - 1];
+            if (IS_LOW_SURROGATE(last) && search_buffer.length > 1) {
+                wchar_t second_last = search_buffer.buffer[search_buffer.length - 2];
+                if (IS_HIGH_SURROGATE(second_last)) {
+                    WString_pop(&search_buffer, 1);
+                }
+            }
+            WString_pop(&search_buffer, 1);
+            active_entry = search_strings(search_buffer.buffer, entries, entry_count, &ix);
+        } else if (keycode == VK_UP) {
+            active_entry = search_next(search_buffer.buffer, entries, entry_count, &ix, true);
+        } else if (keycode == VK_DOWN) {
+            active_entry = search_next(search_buffer.buffer, entries, entry_count, &ix, false);
+        } else if (keycode == VK_ESCAPE || keycode == VK_LEFT ||
+            keycode == VK_RIGHT || keycode == VK_RETURN || c == '\t') {
+            break;
+        } else if (c >= 0x20) {
+            if (IS_HIGH_SURROGATE(c)) {
+                surrogate = c;
+                continue;
+            }
+            if (IS_LOW_SURROGATE(c)) {
+                if (IS_HIGH_SURROGATE(surrogate)) {
+                    WString_append(&search_buffer, surrogate);
+                    surrogate = L'\0';
+                } else {
+                    continue;
+                }
+            }
+            WString_append(&search_buffer, c);
+            active_entry = search_strings(search_buffer.buffer, entries, entry_count, &ix);
+        } else {
+            continue;
+        }
+        if (active_entry == NULL) {
+            active_entry = L"";
+        };
+        _wprintf(L"\x1b[2K\r(search)'%s':%s", search_buffer.buffer, active_entry);
+
+    }
+    _wprintf(L"\x1b[2K\r");
+
+cleanup:
+    SetConsoleMode(out, old_out_mode);
+    SetConsoleMode(in, old_in_mode);
+    WString_free(&search_buffer);
+
+    if (active_entry == NULL) {
+        active_entry = L"";
+    }
+    size_t size = wcslen(active_entry);
+    if (size > capacity) {
+        size = capacity;
+    }
+    *len = size;
+
+    memcpy(buffer, active_entry, size * sizeof(wchar_t));
+
+    return status;
 }

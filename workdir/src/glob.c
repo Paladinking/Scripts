@@ -1,5 +1,46 @@
 #include "glob.h"
 
+bool read_utf16_file(WString_noinit* str, const wchar_t* filename) {
+    HANDLE file = CreateFileW(filename, GENERIC_READ,
+                              FILE_SHARE_READ, NULL,
+                              OPEN_EXISTING, 0, NULL);
+    if (file == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    LARGE_INTEGER size;
+    if (!GetFileSizeEx(file, &size) || size.QuadPart >= 0xffffffff) {
+        CloseHandle(file);
+        return false;
+    }
+    while (size.QuadPart % sizeof(wchar_t) != 0) {
+        --size.QuadPart;
+    }
+
+    if (!WString_create_capacity(str, (size.QuadPart / sizeof(wchar_t)) + 1)) {
+        CloseHandle(file);
+        return false;
+    }
+    unsigned char* buf = (unsigned char*)str->buffer;
+
+    DWORD read = 0;
+    while (read < size.QuadPart) {
+        DWORD r;
+        if (!ReadFile(file, buf + read, size.QuadPart - read, &r, NULL)) {
+            if (GetLastError() != ERROR_HANDLE_EOF) {
+                CloseHandle(file);
+                return false;
+            }
+            break;
+        }
+        read += r;
+    }
+    str->buffer = (wchar_t*) buf;
+    str->length = read / sizeof(wchar_t);
+    str->buffer[str->length] = '\0';
+    CloseHandle(file);
+    return true;
+
+}
 
 bool read_text_file(String_noinit* str, const wchar_t* filename) {
     HANDLE file = CreateFileW(filename, GENERIC_READ,
@@ -60,7 +101,6 @@ bool get_workdir(WString* str) {
 bool is_file(const wchar_t* str) {
     return GetFileAttributesW(str) != INVALID_FILE_ATTRIBUTES;
 }
-
 
 bool find_file_relative(wchar_t* buf, size_t size, const wchar_t *filename, bool exists) {
     HMODULE mod;

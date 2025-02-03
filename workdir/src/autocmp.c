@@ -9,6 +9,7 @@
 #include "path_utils.h"
 #include "subprocess.h"
 #include "mem.h"
+#include "cli.h"
 #include <limits.h>
 
 // TODO:
@@ -105,19 +106,87 @@ int instruction_length(unsigned char* data, unsigned len) {
     return -1;
 }
 
-bool char_needs_quotes(wchar_t c) {
-    return c == L' ' || c == L'+' || c == L'=' || c == L'(' || c == L')' || 
-            c == L'{' || c == '}' || c == L'%' || c == L'[' || c == L']';
-}
+bool gHas_history = false;
+wchar_t history_file_name[1025];
 
-bool str_needs_quotes(const wchar_t* str) {
-    for (unsigned i = 0; i < str[i] != L'\0'; ++i) {
-        wchar_t c = str[i];
-        if (char_needs_quotes(c)) {
-            return true;
+void add_history(wchar_t* buf, DWORD len) {
+    if (!gHas_history || len == 0) {
+        return;
+    }
+    if (buf[len - 1] != L'\n' && buf[len - 1] != L'\r') {
+        return;
+    }
+    HANDLE file = CreateFileW(history_file_name, GENERIC_WRITE,
+                              0, NULL, OPEN_ALWAYS, 
+                              FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file == NULL) {
+        return;
+    }
+    if (SetFilePointer(file, 0, NULL, FILE_END) == INVALID_SET_FILE_POINTER) {
+        if (GetLastError() != NO_ERROR) {
+            CloseHandle(file);
+            return;
         }
     }
-    return false;
+    DWORD written = 0;
+    while (written < len) {
+        DWORD w;
+        if (!WriteFile(file, buf + written, 
+                       (len - written) * sizeof(wchar_t), &w, NULL)) {
+            break;
+        }
+        written += w;
+    }
+    CloseHandle(file);
+}
+
+wchar_t** read_history(DWORD* count, WString_noinit* in) {
+    if (!gHas_history) {
+        *count = 0;
+        return NULL;
+    }
+    if (!read_utf16_file(in, history_file_name)) {
+        *count = 0;
+        return NULL;
+    }
+    DWORD line_count = 0;
+    for (uint32_t ix = 0; ix < in->length; ++ix) {
+        if (in->buffer[ix] == L'\r') {
+            ++line_count;
+            if (ix + 1 < in->length && in->buffer[ix + 1] == L'\n') {
+                ++ix;
+            }
+        } else if (in->buffer[ix] == L'\n') {
+            ++line_count;
+        }
+    }
+    if (line_count == 0) {
+        *count = 0;
+        WString_free(in);
+        return NULL;
+    }
+    wchar_t** res = Mem_alloc(line_count * sizeof(wchar_t*));
+    WString_replaceall(in, L'\n', L'\0');
+    WString_replaceall(in, L'\r', L'\0');
+
+    DWORD arg = 0;
+    for (uint32_t ix = 0; ix < in->length; ++ix) {
+        if (arg > line_count) {
+            break;
+        }
+        size_t len = wcslen(in->buffer + ix);
+        if (len > 0) {
+            res[arg] = in->buffer + ix;
+            ix = ix + len;
+            ++arg;
+        }
+    }
+    *count = arg;
+    if (arg == 0) {
+        WString_free(in);
+        return NULL;
+    }
+    return res;
 }
 
 WString pathext, pathbuf, progbuf, workdir;
@@ -329,17 +398,13 @@ bool get_autocomplete(MatchNode* node, SearchContext* it, WString* out, WString*
         }
     }
 
-    if (str_needs_quotes(buf)) {
-        WString_append(out, L'"');
-        WString_extend(out, buf);
-        WString_append(out, L'"');
-    } else {
-        WString_extend(out, buf);
-    }
+    WString_extend(out, buf);
     return true;
 }
 
 bool gDo_command_sub = false;
+bool gDo_autocmp = true;
+bool gDo_rsearch = true;
 
 typedef BOOL(WINAPI* ReadConsoleW_t)(HANDLE, LPVOID, DWORD, LPDWORD, PCONSOLE_READCONSOLE_CONTROL);
 
@@ -360,14 +425,44 @@ __declspec(dllexport) BOOL WINAPI ReadConsoleW_Hook(HANDLE hConsoleInput, LPVOID
         return FALSE;
     }
 
+    bool do_rsearch = gDo_rsearch; // For future thread safety
+    SMALL_RECT rs_area;
+    COORD rs_size;
+    COORD rs_corner;
+    COORD rs_cursor;
+    CHAR_INFO* rs_buf;
+    if (do_rsearch) {
+        CONSOLE_SCREEN_BUFFER_INFO cinfo;
+        if (GetConsoleScreenBufferInfo(out, &cinfo)) {
+            rs_cursor = cinfo.dwCursorPosition;
+            rs_buf = Mem_alloc(rs_cursor.X * sizeof(CHAR_INFO));
+            rs_size.X = rs_cursor.X;
+            rs_size.Y = 1;
+            rs_corner.X = 0;
+            rs_corner.Y = 0;
+            rs_area.Top = rs_area.Bottom = cinfo.dwCursorPosition.Y;
+            rs_area.Left = 0;
+            rs_area.Right = rs_cursor.X;
+            if (!ReadConsoleOutputW(out, rs_buf, rs_size, rs_corner, &rs_area)) {
+                Mem_free(rs_buf);
+                do_rsearch = false;
+            }
+        } else {
+            do_rsearch = false;
+        }
+    }
+
     WString in;
     in.capacity = nNumberOfCharsToRead;
     in.buffer = lpBuffer;
     in.length = 0;
+    if (do_rsearch) {
+        pInputControl->dwCtrlWakeupMask |= (1 << 18);
+    }
 
     SearchContext context;
     context.active_it = false;
-
+    BOOL success = FALSE;
 
     get_workdir(&rem);
     bool chdir = !WString_equals(&rem, &workdir);
@@ -378,36 +473,45 @@ __declspec(dllexport) BOOL WINAPI ReadConsoleW_Hook(HANDLE hConsoleInput, LPVOID
     DynamicMatch_invalidate_many(chdir);
 read:
     if (!ReadConsoleW_Old(hConsoleInput, lpBuffer, nNumberOfCharsToRead, lpNumberOfCharsRead, pInputControl)) {
-        goto fail;
+        goto end;
     }
     in.length = *lpNumberOfCharsRead;
 
     for (DWORD ix = 0; ix < in.length; ++ix) {
-        if (in.buffer[ix] == '\r') {
-            WString_free(&auto_complete);
-            WString_free(&rem);
-            if (context.active_it) {
-                NodeIterator_stop(&context.it);
+        if (in.buffer[ix] == 18) {
+            if (do_rsearch) {
+                DWORD count;
+                WString buf;
+                wchar_t** entries = read_history(&count, &buf);
+                *lpNumberOfCharsRead -= 1;
+                Cli_Search(lpBuffer, lpNumberOfCharsRead, nNumberOfCharsToRead, entries, count);
+                WriteConsoleOutputW(out, rs_buf, rs_size, rs_corner, &rs_area);
+                SetConsoleCursorPosition(out, rs_cursor);
+                pInputControl->nInitialChars = *lpNumberOfCharsRead;
+                DWORD written;
+                WriteConsoleW(out, lpBuffer, *lpNumberOfCharsRead, &written, NULL);
+                if (entries != NULL) {
+                    Mem_free(entries);
+                    WString_free(&buf);
+                }
+                goto read;
+            } else {
+                goto end;
             }
-            if (gDo_command_sub) {
-                substitute_commands(lpBuffer, lpNumberOfCharsRead,
-                                   nNumberOfCharsToRead);
-            }
-            return TRUE;
+            
+        } else if (in.buffer[ix] == '\r') {
+            success = TRUE;
+            goto end;
         }
     }
     if (in.length == 0 || in.buffer[in.length - 1] != L'\t') {
         // A CTR-C event can trigger ReadConsoleW_Old to return without '\t'
-        WString_free(&auto_complete);
-        WString_free(&rem);
-        if (context.active_it) {
-            NodeIterator_stop(&context.it);
-        }
-        return TRUE;
+        success = TRUE;
+        goto end;
     }
     CONSOLE_SCREEN_BUFFER_INFO info;
     if (!GetConsoleScreenBufferInfo(out, &info)) {
-        goto fail;
+        goto end;
     }
     // Remove '\t' and append '\0'
     WString_pop(&in, 1);
@@ -429,7 +533,7 @@ read:
         size_t ix = in.length;
         in.length = offset;
         if (in.length + auto_complete.length >= in.capacity) {
-            goto fail;
+            goto end;
         }
         WString_append_count(&in, auto_complete.buffer, auto_complete.length);
 
@@ -463,7 +567,7 @@ read:
         SetConsoleCursorInfo(out, &i);
 
         if (!SetConsoleCursorPosition(out, pos)) {
-            goto fail;
+            goto end;
         }
 
         WriteConsoleW(out, in.buffer + ix, in.length - ix, &written, NULL);
@@ -477,14 +581,26 @@ read:
     pInputControl->nInitialChars = in.length;
 
     goto read;
-fail:
+end:
     WString_free(&rem);
     if (context.active_it) {
         NodeIterator_stop(&context.it);
     }
+    if (do_rsearch) {
+        Mem_free(rs_buf);
+    }
 
     WString_free(&auto_complete);
-    return FALSE;
+
+    if (success) {
+        add_history(lpBuffer, *lpNumberOfCharsRead);
+    }
+    if (gDo_command_sub && success) {
+        substitute_commands(lpBuffer, lpNumberOfCharsRead,
+                            nNumberOfCharsToRead);
+    }
+
+    return success;
 }
 
 #define JMPREL_SIZE 5
@@ -670,6 +786,27 @@ __declspec(dllexport) DWORD entry() {
         NodeBuilder_create(&b);
         MatchNode_set_root(NodeBuilder_finalize(&b));
     }
+
+    if (!find_file_relative(history_file_name, 1024, L"cmdlog.txt", false)) {
+        gHas_history = false;
+        _wprintf(L"History file failed\n");
+    } else {
+        gHas_history = true;
+        _wprintf(L"History file: %s\n", history_file_name);
+    }
+
+//    String res;
+//    String_create(&res);
+//    unsigned long errorcode;
+//    if (subprocess_run(L"doskey.exe /HISTORY", &res, 1000, &errorcode, 0)) {
+//        WString s;
+//        WString_create(&s);
+//        if (WString_from_utf8_bytes(&s, res.buffer, res.length)) {
+//            add_history(s.buffer, s.length);
+//        }
+//        WString_free(&s);
+//    }
+//    String_free(&res);
 
     WString_create(&workdir);
     WString_create(&pathext);

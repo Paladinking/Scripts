@@ -33,4 +33,6 @@ void WalkDir_abort(WalkCtx* ctx);
 
 bool read_text_file(String_noinit* str, const wchar_t* filename);
 
+bool read_utf16_file(WString_noinit* str, const wchar_t* filename);
+
 #endif
