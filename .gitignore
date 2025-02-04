@@ -1,6 +1,7 @@
 *.obj
 *.a
 *.exe
+*.dll
 paths.txt
 envheap
 .vscode
@@ -9,5 +10,12 @@ workdir/bin
 /*.bat
 /*.ps1
 /*.txt
+autocmp.json
 workdir/build
+workdir/buildg
+workdir/old
 workdir/script/translations
+workdir/.cache
+workdir/__pycache__
+workdir/compile_commands.json
+workdir/comp_cache.json
