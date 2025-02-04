@@ -2,20 +2,27 @@
 #include "args.h"
 #include "mem.h"
 
-
 DWORD find_flags(LPWSTR* argv, int* argc, FlagInfo* flags, DWORD flag_count) {
     DWORD unkown = 0;
+    DWORD order = 1;
     for (DWORD ix = 0; ix < flag_count; ++ix) {
         flags[ix].count = 0;
         flags[ix].value = NULL;
+        flags[ix].ord = 0;
     }
     for (int ix = 0; ix < *argc; ++ix) {
         if (argv[ix][0] != L'-') {
             continue;
         }
         if (argv[ix][1] == L'-') {
+            if (argv[ix][2] == L'\0') {
+                continue;
+            }
             unsigned char found = 0;
             for (DWORD j = 0; j < flag_count; ++j) {
+                if (flags[j].long_name == NULL) {
+                    continue;
+                }
                 if (flags[j].has_value) {
                     unsigned len = wcslen(flags[j].long_name);
                     if (wcsncmp(argv[ix] + 2, flags[j].long_name, len) != 0) {
@@ -23,7 +30,12 @@ DWORD find_flags(LPWSTR* argv, int* argc, FlagInfo* flags, DWORD flag_count) {
                     }
                     if (argv[ix][len + 2] == L'\0') {
                         ++flags[j].count;
+                        flags[j].ord = order++;
                         found = 1;
+                        if (flags[j].has_value != FLAG_REQUIRED_VALUE) {
+                            flags[j].value = NULL;
+                            break;
+                        }
                         if (ix + 1 < *argc) {
                             for (int j = ix + 1; j < *argc; ++j) {
                                 argv[j - 1] = argv[j];
@@ -35,6 +47,7 @@ DWORD find_flags(LPWSTR* argv, int* argc, FlagInfo* flags, DWORD flag_count) {
                         }
                     } else if (argv[ix][len + 2] == L'=') {
                         ++flags[j].count;
+                        flags[j].ord = order++;
                         found = 1;
                         flags[j].value = argv[ix] + len + 3;
                     } else {
@@ -43,6 +56,7 @@ DWORD find_flags(LPWSTR* argv, int* argc, FlagInfo* flags, DWORD flag_count) {
                     break;
                 } else if (wcscmp(argv[ix] + 2, flags[j].long_name) == 0) {
                     ++flags[j].count;
+                    flags[j].ord = order++;
                     found = 1;
                     break;
                 }
@@ -62,6 +76,7 @@ DWORD find_flags(LPWSTR* argv, int* argc, FlagInfo* flags, DWORD flag_count) {
                 for (; j < flag_count; ++j) {
                     if (flags[j].short_name == argv[ix][i]) {
                         ++flags[j].count;
+                        flags[j].ord = order++;
                         found = 1;
                         break;
                     }
