@@ -2,12 +2,17 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+#define FLAG_NO_VALUE 0
+#define FLAG_OPTONAL_VALUE 1
+#define FLAG_REQUIRED_VALUE 2
+
 typedef struct FlagInfo {
     wchar_t short_name;
     LPCWSTR long_name;
-    unsigned has_value;
+    unsigned has_value; // 0 no, 1 optional, 2 required
     LPCWSTR value;
     DWORD count;
+    DWORD ord;
 } FlagInfo;
 
 /**
