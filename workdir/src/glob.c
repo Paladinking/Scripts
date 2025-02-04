@@ -178,6 +178,7 @@ bool WalkDir_begin(WalkCtx* ctx, const wchar_t* dir) {
     WString_clear(s);
     WString_extend(s, data.cFileName);
     ctx->p.is_dir = data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
+    ctx->p.is_link = data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT;
     ctx->first = true;
     return true;
 }
@@ -214,6 +215,7 @@ int WalkDir_next(WalkCtx* ctx, Path** path) {
         WString_clear(&ctx->p.path);
         WString_extend(&ctx->p.path, data.cFileName);
         ctx->p.is_dir = data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
+        ctx->p.is_link = data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT;
         *path = &ctx->p;
         return 1;
     }

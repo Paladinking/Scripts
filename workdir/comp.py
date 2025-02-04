@@ -5,11 +5,11 @@ CLFLAGS="/GS- /GL /O1 /favor:AMD64 /nologo"
 LINKFLAGS="kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main"
 DLLFLAGS="kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:DLLMain"
 
-#CLFLAGS = "-g -Og"
-#LINKFLAGS = "-g -Og"
-#DLLFLAGS = "-g -Og"
+CLFLAGS = "-g -Og"
+LINKFLAGS = "-g -Og"
+DLLFLAGS = "-g -Og"
 
-BUILD_DIR = "build"
+BUILD_DIR = "buildg"
 BIN_DIR = "bin"
 
 WORKDIR = pathlib.Path(__file__).parent.resolve()
@@ -59,6 +59,8 @@ def main():
                *arg_src, ntdll, kernelbase)
     Executable("inject.exe", "src/inject.c", *arg_src, 
                "src/glob.c", ntdll)
+    Executable("list-dir.exe", "src/list-dir.c", "src/args.c", "src/printf.c",
+               "src/glob.c", "src/dynamic_string.c", "src/unicode_width.c", ntdll)
     
     whashmap = Object("whashmap.obj", "src/hashmap.c", cmp_flags=CLFLAGS + " " +
                       define('HASHMAP_WIDE') + " " + define('HASHMAP_CASE_INSENSITIVE'))

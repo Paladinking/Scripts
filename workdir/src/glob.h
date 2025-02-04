@@ -16,6 +16,7 @@ bool is_file(const wchar_t* str);
 typedef struct _Path {
     WString path;
     bool is_dir;
+    bool is_link;
 } Path;
 
 typedef struct _WalkCtx {

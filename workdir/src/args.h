@@ -2,6 +2,19 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
+typedef struct FlagInfo {
+    wchar_t short_name;
+    LPCWSTR long_name;
+    unsigned has_value;
+    LPCWSTR value;
+    DWORD count;
+} FlagInfo;
+
+/**
+ *
+ */
+DWORD find_flags(LPWSTR* argv, int* argc, FlagInfo* flags, DWORD flag_count);
+
 /**
  * Checks if flag <flag> or <long_flag> apears in <argv>.
  * <argc> specifies number of entries in <argv>
