@@ -6,6 +6,7 @@ all: \
 	bin\path-edit.exe \
 	bin\path-select.exe \
 	bin\inject.exe \
+	bin\list-dir.exe \
 	bin\autocmp.dll \
 	bin\test.exe \
 	bin\autocmp.json \
@@ -34,7 +35,7 @@ build\pathc.obj: src\pathc.c src\args.h src\path_utils.h src\dynamic_string.h sr
 	cl.exe /c /Fo:build\pathc.obj /GS- /GL /O1 /favor:AMD64 /nologo src\pathc.c
 build\path_utils.obj: src\path_utils.c src\path_utils.h src\dynamic_string.h src\mem.h build
 	cl.exe /c /Fo:build\path_utils.obj /GS- /GL /O1 /favor:AMD64 /nologo src\path_utils.c
-build\args.obj: src\args.c src\args.h src\mem.h build
+build\args.obj: src\args.c src\args.h src\mem.h src\printf.h build
 	cl.exe /c /Fo:build\args.obj /GS- /GL /O1 /favor:AMD64 /nologo src\args.c
 build\mem.obj: src\mem.c src\mem.h build
 	cl.exe /c /Fo:build\mem.obj /GS- /GL /O1 /favor:AMD64 /nologo src\mem.c
@@ -60,6 +61,8 @@ build\inject.obj: src\inject.c src\printf.h src\args.h src\glob.h src\dynamic_st
 	cl.exe /c /Fo:build\inject.obj /GS- /GL /O1 /favor:AMD64 /nologo src\inject.c
 build\glob.obj: src\glob.c src\glob.h src\dynamic_string.h src\mem.h build
 	cl.exe /c /Fo:build\glob.obj /GS- /GL /O1 /favor:AMD64 /nologo src\glob.c
+build\list-dir.obj: src\list-dir.c src\args.h src\glob.h src\dynamic_string.h src\mem.h src\printf.h src\unicode_width.h build
+	cl.exe /c /Fo:build\list-dir.obj /GS- /GL /O1 /favor:AMD64 /nologo src\list-dir.c
 build\whashmap.obj: src\hashmap.c src\hashmap.h src\mem.h build
 	cl.exe /c /Fo:build\whashmap.obj /GS- /GL /O1 /favor:AMD64 /nologo /DHASHMAP_WIDE /DHASHMAP_CASE_INSENSITIVE src\hashmap.c
 build\hashmap.obj: src\hashmap.c src\hashmap.h src\mem.h build
@@ -89,6 +92,8 @@ bin\path-select.exe: build\path-select.obj build\path_utils.obj build\args.obj b
 	link /OUT:bin\path-select.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\path-select.obj build\path_utils.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib build\kernelbase.lib
 bin\inject.exe: build\inject.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\glob.obj build\ntutils.lib bin
 	link /OUT:bin\inject.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\inject.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\glob.obj build\ntutils.lib
+bin\list-dir.exe: build\list-dir.obj build\args.obj build\printf.obj build\glob.obj build\dynamic_string.obj build\unicode_width.obj build\ntutils.lib bin
+	link /OUT:bin\list-dir.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\list-dir.obj build\args.obj build\printf.obj build\glob.obj build\dynamic_string.obj build\unicode_width.obj build\ntutils.lib
 bin\autocmp.dll: build\autocmp.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\match_node.obj build\subprocess.obj build\whashmap.obj build\hashmap.obj build\json.obj build\cli.obj build\glob.obj build\path_utils.obj build\unicode_width.obj build\ntutils.lib bin
 	link /OUT:bin\autocmp.dll /DLL kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:DLLMain build\autocmp.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\match_node.obj build\subprocess.obj build\whashmap.obj build\hashmap.obj build\json.obj build\cli.obj build\glob.obj build\path_utils.obj build\unicode_width.obj build\ntutils.lib
 bin\test.exe: build\test.obj build\match_node.obj build\glob.obj build\cli.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\json.obj build\subprocess.obj build\path_utils.obj build\unicode_width.obj build\whashmap.obj build\hashmap.obj build\ntutils.lib bin

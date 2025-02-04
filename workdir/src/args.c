@@ -2,6 +2,106 @@
 #include "args.h"
 #include "mem.h"
 
+
+DWORD find_flags(LPWSTR* argv, int* argc, FlagInfo* flags, DWORD flag_count) {
+    DWORD unkown = 0;
+    for (DWORD ix = 0; ix < flag_count; ++ix) {
+        flags[ix].count = 0;
+        flags[ix].value = NULL;
+    }
+    for (int ix = 0; ix < *argc; ++ix) {
+        if (argv[ix][0] != L'-') {
+            continue;
+        }
+        if (argv[ix][1] == L'-') {
+            unsigned char found = 0;
+            for (DWORD j = 0; j < flag_count; ++j) {
+                if (flags[j].has_value) {
+                    unsigned len = wcslen(flags[j].long_name);
+                    if (wcsncmp(argv[ix] + 2, flags[j].long_name, len) != 0) {
+                        continue;
+                    }
+                    if (argv[ix][len + 2] == L'\0') {
+                        ++flags[j].count;
+                        found = 1;
+                        if (ix + 1 < *argc) {
+                            for (int j = ix + 1; j < *argc; ++j) {
+                                argv[j - 1] = argv[j];
+                            }
+                            --(*argc);
+                            flags[j].value = argv[ix];
+                        } else {
+                            flags[j].value = NULL;
+                        }
+                    } else if (argv[ix][len + 2] == L'=') {
+                        ++flags[j].count;
+                        found = 1;
+                        flags[j].value = argv[ix] + len + 3;
+                    } else {
+                        continue;
+                    }
+                    break;
+                } else if (wcscmp(argv[ix] + 2, flags[j].long_name) == 0) {
+                    ++flags[j].count;
+                    found = 1;
+                    break;
+                }
+            }
+            if (!found) {
+                ++unkown;
+                if (unkown == 1) {
+                    flags[flag_count].long_name = argv[ix] + 2;
+                }
+            }
+        } else if (argv[ix][1] == L'\0') {
+            continue;
+        } else {
+            for (int i = 1; argv[ix][i] != L'\0'; ++i) {
+                unsigned char found = 0;
+                DWORD j = 0;
+                for (; j < flag_count; ++j) {
+                    if (flags[j].short_name == argv[ix][i]) {
+                        ++flags[j].count;
+                        found = 1;
+                        break;
+                    }
+                }
+                if (!found) {
+                    ++unkown;
+                    if (unkown == 1) {
+                        flags[flag_count].long_name = argv[ix];
+                        argv[ix][0] = argv[ix][i];
+                        argv[ix][1] = L'\0';
+                    }
+                } else if (flags[j].has_value) {
+                    if (argv[ix][i + 1] == L'\0') {
+                        if (ix + 1 == *argc)  {
+                            flags[j].value = NULL;
+                        } else {
+                            for (int j = ix + 1; j < *argc; ++j) {
+                                argv[j - 1] = argv[j];
+                            }
+                            --(*argc);
+                            flags[j].value = argv[ix];
+                            break;
+                        }
+                    } else {
+                        flags[j].value = argv[ix] + i + 1;
+                        break;
+                    }
+                }
+            }
+        }
+        for (int j = ix + 1; j < *argc; ++j) {
+            argv[j - 1] = argv[j];
+        }
+        --(*argc);
+        --ix;
+    }
+    flags[flag_count].count = unkown;
+    return unkown;
+}
+
 DWORD find_flag(LPWSTR *argv, int *argc, LPCWSTR flag, LPCWSTR long_flag) {
     DWORD count = 0;
     for (int i = 1; i < *argc; ++i) {
@@ -19,7 +119,8 @@ DWORD find_flag(LPWSTR *argv, int *argc, LPCWSTR flag, LPCWSTR long_flag) {
 
 int find_flag_value(LPWSTR *argv, int *argc, LPCWSTR flag, LPCWSTR long_flag,
                     LPWSTR* dest) {
-    int short_len = wcslen(flag);
+    unsigned short_len = wcslen(flag);
+    unsigned long_len = wcslen(long_flag);
     for (int i = 0; i < *argc; ++i) {
         if (wcsncmp(argv[i], flag, short_len) == 0) {
             if (argv[i][short_len] == L'\0') {
@@ -40,16 +141,28 @@ int find_flag_value(LPWSTR *argv, int *argc, LPCWSTR flag, LPCWSTR long_flag,
                 *argc -= 1;
                 return 1;
             }
-        } else if (wcscmp(argv[i], long_flag) == 0) {
-            if (i + 1 == *argc) {
-                return -1;
+        } else if (wcsncmp(argv[i], long_flag, long_len) == 0) {
+            if (argv[i][long_len] != L'\0' && argv[i][long_len] != L'=') {
+                continue;
             }
-            *dest = argv[i + 1];
-            for (int j = i + 2; j < *argc; ++j) {
-                argv[j - 2] = argv[j];
+            if (argv[i][long_len] == L'=') {
+                *dest = argv[i] + long_len + 1;
+                for (int j = i + 1; j < *argc; ++j) {
+                    argv[j - i] = argv[j];
+                }
+                *argc -= 1;
+                return 1;
+            } else {
+                if (i + 1 == *argc) {
+                    return -1;
+                }
+                *dest = argv[i + 1];
+                for (int j = i + 2; j < *argc; ++j) {
+                    argv[j - 2] = argv[j];
+                }
+                *argc -= 2;
+                return 1;
             }
-            *argc -= 2;
-            return 1;
         }
     }
     return 0;
