@@ -2,6 +2,7 @@ import pathlib
 import subprocess
 import os.path
 import time
+import shutil
 
 from typing import List, Optional
 
@@ -79,7 +80,10 @@ class Msvc:
         return f"cl.exe /c /Fo:{BUILD_DIR}\\{obj.name} {obj.cmp_flags} {obj.source}"
 
     def find_headers(self, obj: Obj) -> List[str]:
-        cmd = f"cl.exe /P /showIncludes /FiNUL {obj.cmp_flags} {obj.source}"
+        cl = shutil.which("cl.exe")
+        if cl is None:
+            raise RuntimeError("Failed to find cl.exe executable")
+        cmd = f"{cl} /P /showIncludes /FiNUL {obj.cmp_flags} {obj.source}"
         res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if res.returncode != 0:
             print(res)
@@ -256,7 +260,7 @@ def compile_commands():
     for obj in OBJECTS.values():
         json = dict()
         json["directory"] = directory
-        json["command"] = obj.compile()
+        json["command"] = BACKEND.compile_obj(obj)
         json["file"] = str(pathlib.Path(obj.source).resolve())
         res.append(json)
     import json

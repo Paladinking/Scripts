@@ -14,22 +14,32 @@
 #define OPTION_USE_COLOR 8
 #define OPTION_DIR_AS_FILE 16
 #define OPTION_ESCAPE_BYTES 32 // TODO
+#define OPTION_FAKE_PERMS 64
 
-#define OPTION_LIST_COLS 64
-#define OPTION_LIST_ROWS 128 // TODO
-#define OPTION_LIST_DETAILS 256 // TODO
-#define OPTION_LIST_COMMA 512
+#define OPTION_LIST_COLS 128
+#define OPTION_LIST_ROWS 256 // TODO
+#define OPTION_LIST_DETAILS 512 // TODO
+#define OPTION_LIST_COMMA 1024
+
+#define OPTION_HUMAN_SIZES 2048
 
 #define OPTION_IF(opt, cond, flag) if (cond) { opt |= flag; _wprintf(L## #flag L"\n"); }
+
+
+#define COLOR_FMT(s, m, e, col, link, dir, exe) ((!col) ? (s m e) : ((link) ? (s L"\x1b[1;36m" m L"\x1b[0m" e) : ((dir) ? (s L"\x1b[1;34m" m L"\x1b[0m" e) : ((exe) ? (s L"\x1b[1;32m" m L"\x1b[0m" e) : (s m e)))))
 
 typedef struct FileObj {
     WString path;
     WString owner;
     WString group;
+    uint64_t size;
+    FILETIME stamp;
     uint32_t access;
+
     bool is_dir;
     bool is_link;
     bool is_exe;
+
 } FileObj;
 
 unsigned str_width(WString *str) {
@@ -49,6 +59,89 @@ unsigned str_width(WString *str) {
         }
     }
     return w;
+}
+
+wchar_t** format_file_times(WString* buffer, FileObj* obj, uint32_t count, uint32_t opt, uint32_t* width) {
+    wchar_t** buf = Mem_alloc(count * sizeof(wchar_t*));
+    SYSTEMTIME st, now_st;
+    GetSystemTime(&st);
+    FILETIME now_ft;
+    int64_t now = 0;
+    if (SystemTimeToFileTime(&st, &now_ft)) {
+        now = now_ft.dwHighDateTime;
+        now = now_ft.dwLowDateTime | (now << 32);
+    }
+
+    uint64_t half_year = (uint64_t)10 * 1000 * 1000 * 60 * 60 * 24 * 182;
+    const wchar_t* months[] = {L"", L"Jan", L"Feb", L"Mar", L"Apr", L"May",
+            L"Jun", L"Jul", L"Aug", L"Sep", L"Oct", L"Mov", L"Dec"};
+
+    for (uint32_t ix = 0; ix < count; ++ix) {
+        buf[ix] = (void*)(uintptr_t)buffer->length;
+        int64_t stamp = obj[ix].stamp.dwHighDateTime;
+        stamp = (obj[ix].stamp.dwLowDateTime) | (stamp << 32);
+        if (!FileTimeToSystemTime(&obj[ix].stamp, &st)) {
+            memset(&st, 0, sizeof(st));
+            st.wMonth = 1;
+            st.wDay = 1;
+        }
+        if (now - stamp > half_year) {
+            WString_format_append(buffer, L"%s %2u  %4u", months[st.wMonth], st.wDay, st.wYear);
+        } else {
+            WString_format_append(buffer, L"%s %2u %2u:%2u", months[st.wMonth], st.wDay, st.wHour, st.wMinute);
+        }
+        WString_append(buffer, L'\0');
+    }
+    for (uint32_t ix = 0; ix < count; ++ix) {
+        buf[ix] = (uintptr_t)(buf[ix]) + buffer->buffer;
+    }
+    *width = 12;
+    return buf;
+}
+
+void format_file_size(WString* buffer, uint64_t size, uint32_t opt) {
+    if (opt & OPTION_HUMAN_SIZES && size >= 1024) {
+        uint64_t rem = size;
+        uint32_t teir = 0;
+        while (size > 1024 && teir < 4) {
+            rem = size % 1024;
+            size = size / 1024;
+            ++teir;
+        }
+        const wchar_t teirs[] = {L'\0', L'K', L'M', L'G', L'T', L'P'};
+        if (size < 10) {
+            WString_format_append(buffer, L"%llu.%llu%c", size, rem * 10 / 1024, teirs[teir]);
+        } else {
+            if (rem > 0) {
+                ++size;
+            }
+            WString_format_append(buffer, L"%llu%c", size, teirs[teir]);
+        }
+    } else {
+        WString_format_append(buffer, L"%llu", size);
+    }
+} 
+
+wchar_t** format_file_sizes(WString* buffer, FileObj* obj, uint32_t count, uint32_t opt, uint32_t* width) {
+    wchar_t** buf = Mem_alloc(count * sizeof(wchar_t*));
+    uint32_t last_len = buffer->length;
+    *width = 0;
+    for (uint32_t ix = 0; ix < count; ++ix) {
+        buf[ix] = (void*)(uintptr_t)buffer->length;
+        uint64_t size = obj[ix].is_dir ? 0 : obj[ix].size;
+        format_file_size(buffer, size, opt);
+        uint32_t w = buffer->length - last_len;
+        if (w > *width) {
+            *width = w;
+        }
+        WString_append(buffer, L'\0');
+        last_len = buffer->length;
+    }
+    for (uint32_t ix = 0; ix < count; ++ix) {
+        buf[ix] = (uintptr_t)(buf[ix]) + buffer->buffer;
+    }
+
+    return buf;
 }
 
 unsigned find_widths(unsigned cols, unsigned *path_widths, unsigned count,
@@ -75,7 +168,7 @@ unsigned find_widths(unsigned cols, unsigned *path_widths, unsigned count,
         widths[i] = max_w + 2;
         w += max_w + 2;
     }
-    widths[count - 1] -= 1;
+    widths[cols - 1] -= 1;
     return w - 1;
 }
 
@@ -121,13 +214,65 @@ bool is_exe(WString *s) {
 
 wchar_t *default_target = L".";
 
+void get_any_perms(const wchar_t* path, bool is_dir, WString_noinit* owner, WString_noinit* group, uint32_t* mask) {
+    WString_create(owner);
+    WString_create(group);
+    if (!get_perms(path, is_dir, mask, owner, group)) {
+        *mask = 0;
+    }
+    if (owner->length == 0) {
+        WString_extend(owner, L"unkown");
+    }
+    if (group->length == 0) {
+        WString_extend(group, L"unkown");
+    }
+}
+
+void get_detailed_info(FileObj* obj, const wchar_t* path, WString* fake_owner, WString* fake_group, uint32_t fake_flags, uint32_t opt) {
+    if (opt & OPTION_FAKE_PERMS) {
+        WString_copy(&obj->owner, fake_owner);
+        WString_copy(&obj->group, fake_group);
+        obj->access = fake_flags;
+        DWORD flags = FILE_FLAG_OPEN_REPARSE_POINT | (obj->is_dir ? FILE_FLAG_BACKUP_SEMANTICS : 0);
+        HANDLE f = CreateFileW(path, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, flags, NULL);
+        if (f == INVALID_HANDLE_VALUE) {
+            obj->size = 0;
+            obj->stamp.dwHighDateTime = 0;
+            obj->stamp.dwLowDateTime = 0;
+        } else {
+            if (!GetFileTime(f, NULL, NULL, &obj->stamp)) {
+                obj->stamp.dwHighDateTime = 0;
+                obj->stamp.dwLowDateTime = 0;
+            }
+            LARGE_INTEGER q;
+            if (GetFileSizeEx(f, &q)) {
+                obj->size = q.QuadPart;
+            } else {
+                obj->size = 0;
+            }
+            CloseHandle(f);
+        }
+    } else {
+        WString_create(&obj->owner);
+        WString_create(&obj->group);
+        get_perms_size_date(path, obj->is_dir, &obj->access, &obj->owner, &obj->group, &obj->size, &obj->stamp);
+        if (obj->owner.length == 0) {
+            WString_extend(&obj->owner, L"unkown");
+        }
+        if (obj->group.length == 0) {
+            WString_extend(&obj->group, L"unkown");
+        }
+    }
+}
+
+
 FileObj *collect_dir(const wchar_t *str, unsigned *count, uint32_t opt, WString *err) {
     FileObj *files = Mem_alloc(10 * sizeof(FileObj));
     unsigned file_capacity = 10;
     unsigned file_count = 0;
 
     WalkCtx ctx;
-    if (!WalkDir_begin(&ctx, str)) {
+    if (!WalkDir_begin(&ctx, str, true)) {
         DWORD cause = GetLastError();
         if (cause == ERROR_FILE_NOT_FOUND || cause == ERROR_BAD_ARGUMENTS ||
             cause == ERROR_PATH_NOT_FOUND) {
@@ -160,35 +305,35 @@ FileObj *collect_dir(const wchar_t *str, unsigned *count, uint32_t opt, WString 
     }
 
     Path *path;
+    
+    WString group, owner;
+    uint32_t mask;
+    if (opt & OPTION_FAKE_PERMS) {
+        get_any_perms(str, true, &owner, &group, &mask);
+    }
+
     while (WalkDir_next(&ctx, &path)) {
-        if (path->path.buffer[0] == L'.' && !(opt & OPTION_SHOW_HIDDEN)) {
+        const wchar_t* filename = path->path.buffer + path->path.length - path->name_len;
+        if (filename[0] == L'.' && !(opt & OPTION_SHOW_HIDDEN)) {
             continue;
         }
         if (file_count == file_capacity) {
             file_capacity *= 2;
             files = Mem_realloc(files, file_capacity * sizeof(FileObj));
         }
-        WString_copy(&files[file_count].path, &path->path);
-        files[file_count].is_link = path->is_link;
-        files[file_count].is_dir = path->is_dir;
-        files[file_count].owner.buffer = NULL;
-        files[file_count].group.buffer = NULL;
+        FileObj* file = files + file_count;
         ++file_count;
-    }
-    if (opt & OPTION_LIST_DETAILS) {
-        for (unsigned ix = 0; ix < file_count; ++ix) {
-            _wprintf(L"Collect %u\n", ix);
-            WString_create(&files[ix].owner);
-            WString_create(&files[ix].group);
-            if (!get_perms(files[ix].path.buffer, files[ix].is_dir,
-                           &files[ix].access, &files[ix].owner,
-                           &files[ix].group)) {
-                WString_extend(&files[ix].owner, L"unkown");
-                WString_extend(&files[ix].group, L"unkown");
-                files[file_count].access = 0;
-                _wprintf(L"Fail\n");
-            }
+        WString_create_capacity(&file->path, path->name_len);
+        WString_append_count(&file->path, filename, path->name_len);
+        file->is_link = path->is_link;
+        file->is_dir = path->is_dir;
+        if (opt & OPTION_LIST_DETAILS) {
+            get_detailed_info(file, path->path.buffer, &owner, &group, mask, opt);
         }
+    }
+    if (opt & OPTION_FAKE_PERMS) {
+        WString_free(&group);
+        WString_free(&owner);
     }
 
     *count = file_count;
@@ -248,9 +393,8 @@ void print_target_c(FileObj* files, unsigned filecount, bool color) {
     _wprintf(L"\n");
 }
 
-void print_target_l(FileObj* files, unsigned filecount, bool color) {
-    _wprintf(L"List: %u\n", filecount);
-
+void print_target_l(FileObj* files, unsigned filecount, uint32_t opt) {
+    bool color = opt & OPTION_USE_COLOR;
     wchar_t perms[11];
     perms[10] = L'\0';
     unsigned owner_w = 0;
@@ -265,6 +409,12 @@ void print_target_l(FileObj* files, unsigned filecount, bool color) {
             group_w = w;
         }
     }
+    WString size_buf, time_buf;
+    WString_create(&size_buf);
+    WString_create(&time_buf);
+    uint32_t size_w = 0, time_w = 0;
+    wchar_t** sizes = format_file_sizes(&size_buf, files, filecount, opt, &size_w);
+    wchar_t** times = format_file_times(&time_buf, files, filecount, opt, &time_w);
 
     for (unsigned ix = 0; ix < filecount; ++ix) {
         if (files[ix].is_dir) {
@@ -283,18 +433,15 @@ void print_target_l(FileObj* files, unsigned filecount, bool color) {
         perms[7] = (files[ix].access & USER_READ) ? L'r' : L'-';
         perms[8] = (files[ix].access & USER_WRITE) ? L'w' : L'-';
         perms[9] = (files[ix].access & USER_EXECUTE) ? L'x' : L'-';
-        if (!color) {
-            _wprintf(L"%s 1 %-*s %-*s %s\n", perms, owner_w, files[ix].owner.buffer, group_w, files[ix].owner.buffer, files[ix].path.buffer);
-        } else if (files[ix].is_link) {
-            _wprintf(L"%s 1 %-*s %-*s \x1b[1;36m%s\x1b[0m\n", perms, owner_w, files[ix].owner.buffer, group_w, files[ix].owner.buffer, files[ix].path.buffer);
-        } else if (files[ix].is_dir) {
-            _wprintf(L"%s 1 %-*s %-*s \x1b[1;34m%s\x1b[0m\n", perms, owner_w, files[ix].owner.buffer, group_w, files[ix].owner.buffer, files[ix].path.buffer);
-        } else if (is_exe(&files[ix].path)) {
-            _wprintf(L"%s 1 %-*s %-*s \x1b[1;32m%s\x1b[0m\n", perms, owner_w, files[ix].owner.buffer, group_w, files[ix].owner.buffer, files[ix].path.buffer);
-        } else {
-            _wprintf(L"%s 1 %-*s %-*s %s\n", perms, owner_w, files[ix].owner.buffer, group_w, files[ix].owner.buffer, files[ix].path.buffer);
-        }
+
+        const wchar_t* fmt = COLOR_FMT(L"%s 1 %-*s %-*s %*s %*s ", L"%s", L"\n", color, files[ix].is_link, files[ix].is_dir, is_exe(&files[ix].path));
+        _wprintf(fmt, perms, owner_w, files[ix].owner.buffer, group_w, files[ix].group.buffer, size_w, sizes[ix], time_w, times[ix], files[ix].path.buffer);
     }
+
+    Mem_free(sizes);
+    Mem_free(times);
+    WString_free(&size_buf);
+    WString_free(&time_buf);
 }
 
 void print_target(FileObj* files, unsigned file_count, unsigned w, uint32_t opt) {
@@ -303,7 +450,7 @@ void print_target(FileObj* files, unsigned file_count, unsigned w, uint32_t opt)
     if (opt & OPTION_LIST_COMMA) {
         print_target_c(files, file_count, opt & OPTION_USE_COLOR);
     } else if (opt & OPTION_LIST_DETAILS) {
-        print_target_l(files, file_count, opt & OPTION_USE_COLOR);
+        print_target_l(files, file_count, opt);
     } else {
         print_target_w(files, file_count, w, opt & OPTION_USE_COLOR);
     }
@@ -372,10 +519,12 @@ uint32_t parse_options(wchar_t** argv, int* argc, unsigned* width,
                         {L'C', NULL, NULL},                 // 8
                         {L'1', NULL, NULL},                 // 9
                         {L'\0', L"format", &format_arg},    // 10
-                        {L'w', L"width", &width_arg}        // 11
+                        {L'w', L"width", &width_arg},       // 11
+                        {L'\0', L"fake-perms"},             // 12
+                        {L'h', L"human-readable"}           // 13
                         };
     ErrorInfo errors;
-    if (!find_flags(argv, argc, flags, 12, &errors)) {
+    if (!find_flags(argv, argc, flags, 14, &errors)) {
         _wprintf_h(err, L"%u -- %s\n", errors.type, errors.value);
         return OPTION_INVALID;
     }
@@ -385,6 +534,8 @@ uint32_t parse_options(wchar_t** argv, int* argc, unsigned* width,
     bool dir_as_file = flags[3].count > 0;
     bool escape_bytes = flags[2].count > 0;
     bool has_color = has_console;
+    bool fake_perms = flags[12].count > 0;
+    bool human_readable = flags[13].count > 0;
     unsigned format = 0;
     unsigned m_ord = 0;
     for (unsigned ix = 5; ix < 11; ++ix) {
@@ -432,6 +583,8 @@ uint32_t parse_options(wchar_t** argv, int* argc, unsigned* width,
     OPTION_IF(opt, show_curdir, OPTION_SHOW_CURDIR);
     OPTION_IF(opt, dir_as_file, OPTION_DIR_AS_FILE);
     OPTION_IF(opt, escape_bytes, OPTION_ESCAPE_BYTES);
+    OPTION_IF(opt, fake_perms, OPTION_FAKE_PERMS);
+    OPTION_IF(opt, human_readable, OPTION_HUMAN_SIZES);
 
     return opt;
 }
@@ -491,21 +644,14 @@ int main() {
                 file_capacity *= 2;
                 file_targets = Mem_realloc(file_targets, file_capacity * sizeof(FileObj));
             }
-            file_targets[file_count].is_dir = attrs & FILE_ATTRIBUTE_DIRECTORY;
-            file_targets[file_count].is_link = attrs & FILE_ATTRIBUTE_REPARSE_POINT;
-            WString_create(&file_targets[file_count].path);
-            WString_extend(&file_targets[file_count].path, targets[ix]);
+            FileObj* file = file_targets + file_count;
+
+            file->is_dir = attrs & FILE_ATTRIBUTE_DIRECTORY;
+            file->is_link = attrs & FILE_ATTRIBUTE_REPARSE_POINT;
+            WString_create(&file->path);
+            WString_extend(&file->path, targets[ix]);
             if (opt & OPTION_LIST_DETAILS) {
-                WString_create(&file_targets[file_count].owner);
-                WString_create(&file_targets[file_count].group);
-                if (!get_perms(file_targets[file_count].path.buffer, file_targets[file_count].is_dir,
-                               &file_targets[file_count].access, &file_targets[file_count].owner,
-                               &file_targets[file_count].group)) {
-                    WString_extend(&file_targets[file_count].owner, L"unkown");
-                    WString_extend(&file_targets[file_count].group, L"unkown");
-                    file_targets[file_count].access = 0;
-                }
-                
+                get_detailed_info(file, file->path.buffer, NULL, NULL, 0, opt & ~(OPTION_FAKE_PERMS));
             }
             ++file_count;
         }
