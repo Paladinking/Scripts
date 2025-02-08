@@ -1,6 +1,15 @@
+#define _NO_CRT_STDIO_INLINE
+#include <windows.h>
+#ifndef DYNAMIC_STRING_NO_FMT
+#include <stdarg.h>
+
+extern int _vscwprintf(const wchar_t *format, va_list argptr);
+extern int _vsnwprintf(wchar_t *buffer, size_t count, const wchar_t *format,
+                       va_list argptr);
+
+#endif
 #include "dynamic_string.h"
 #include "mem.h"
-#include <windows.h>
 
 bool String_append(String *s, const char c) {
     if (!String_reserve(s, s->length + 1)) {
@@ -446,3 +455,43 @@ bool WString_from_utf8_str(WString* dest, const char* s) {
     size_t len = strlen(s);
     return WString_from_utf8_bytes(dest, s, len);
 }
+
+
+#ifndef DYNAMIC_STRING_NO_FMT
+
+bool WString_format(WString* dest, const wchar_t* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    int count = _vscwprintf(fmt, args);
+    if (count == -1) {
+        return false;
+    }
+    if (!WString_reserve(dest, count)) {
+        return false;
+    }
+    _vsnwprintf(dest->buffer, count, fmt, args);
+    dest->length = count;
+    dest->buffer[dest->length] = L'\0';
+
+    va_end(args);
+    return true;
+}
+
+bool WString_format_append(WString* dest, const wchar_t* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    int count = _vscwprintf(fmt, args);
+    if (count == -1) {
+        return false;
+    }
+    if (!WString_reserve(dest, dest->length + count)) {
+        return false;
+    }
+    _vsnwprintf(dest->buffer + dest->length, count, fmt, args);
+    dest->length = count + dest->length;
+    dest->buffer[dest->length] = L'\0';
+
+    va_end(args);
+    return true;
+}
+#endif

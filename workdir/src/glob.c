@@ -142,28 +142,48 @@ bool find_file_relative(wchar_t* buf, size_t size, const wchar_t *filename, bool
            (attr & FILE_ATTRIBUTE_DIRECTORY) == 0;
 }
 
-bool WalkDir_begin(WalkCtx* ctx, const wchar_t* dir) {
-    WString* s = &ctx->p.path;
-    WString_create(s);
-
-    if (dir[0] == L'/' && ((dir[1] >= 'a' && dir[1] <= 'z') || (dir[1] >= 'A' && dir[1] <= 'Z')) && (dir[2] == L'\0' || dir[2] == L'/' || dir[2] == L'\\')) {
-        WString_append(s, dir[1]);
+bool to_windows_path(const wchar_t* path, WString* s) {
+    if (path[0] == L'/' && ((path[1] >= 'a' && path[1] <= 'z') || (path[1] >= 'A' && path[1] <= 'Z')) && (path[2] == L'\0' || path[2] == L'/' || path[2] == L'\\')) {
+        WString_append(s, path[1]);
         WString_append(s, L':');
-        dir += 2;
+        path += 2;
     }
-
-    WString_extend(s, dir);
-
+    WString_extend(s, path);
     for (unsigned ix = 0; ix < s->length; ++ix) {
         if (s->buffer[ix] == L'/') {
             s->buffer[ix] = L'\\';
         }
         if (s->buffer[ix] == L'?' || s->buffer[ix] == L'*') {
-            ctx->handle = INVALID_HANDLE_VALUE;
-            WString_free(s);
             return false;
         }
     }
+    return true;
+}
+
+DWORD get_file_attrs(const wchar_t* path) {
+    WString s;
+    WString_create(&s);
+
+    if (!to_windows_path(path, &s)) {
+        WString_free(&s);
+        SetLastError(ERROR_PATH_NOT_FOUND);
+        return INVALID_FILE_ATTRIBUTES;
+    }
+    DWORD attrs = GetFileAttributesW(s.buffer);
+    WString_free(&s);
+    return attrs;
+}
+
+bool WalkDir_begin(WalkCtx* ctx, const wchar_t* dir) {
+    WString* s = &ctx->p.path;
+    WString_create(s);
+
+    if (!to_windows_path(dir, s)) {
+        ctx->handle = INVALID_HANDLE_VALUE;
+        WString_free(s);
+        return false;
+    }
+
     if (s->buffer[s->length - 1] != L'\\') {
         WString_append(s, L'\\');
     }
@@ -173,7 +193,7 @@ bool WalkDir_begin(WalkCtx* ctx, const wchar_t* dir) {
     ctx->handle = FindFirstFileW(s->buffer, &data);
     if (ctx->handle == INVALID_HANDLE_VALUE) {
         WString_free(s);
-        return GetLastError() != ERROR_FILE_NOT_FOUND;
+        return false;
     }
     WString_clear(s);
     WString_extend(s, data.cFileName);

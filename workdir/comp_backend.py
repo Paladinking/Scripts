@@ -173,7 +173,7 @@ def CopyToBin(*src: str) -> List[Cmd]:
         res.append(Command(name, f"type {f} > {BIN_DIR}\\{name}", str(f), directory=BIN_DIR))
     return res
 
-BACKEND = Mingw()
+BACKEND = Msvc()
 
 def define(key: str, val: Optional[str]=None) -> str:
     return BACKEND.define(key, val)
