@@ -6,9 +6,9 @@
 typedef unsigned string_size_t;
 
 typedef struct String {
-	char* buffer;
-	string_size_t capacity;
-	string_size_t length;
+    char* buffer;
+    string_size_t capacity;
+    string_size_t length;
 } String;
 
 typedef String String_noinit;
@@ -65,9 +65,9 @@ bool String_from_utf16_bytes(String* dest, const wchar_t* s, size_t count);
 bool String_from_utf16_str(String* dest, const wchar_t* s);
 
 typedef struct WString {
-	wchar_t* buffer;
-	string_size_t capacity;
-	string_size_t length;
+    wchar_t* buffer;
+    string_size_t capacity;
+    string_size_t length;
 } WString;
 
 typedef WString WString_noinit;
@@ -126,3 +126,9 @@ bool WString_from_con_str(WString* dest, const char* s, UINT code_point);
 bool WString_from_utf8_bytes(WString* dest, const char* s, size_t count);
 
 bool WString_from_utf8_str(WString* dest, const char* s);
+
+#ifndef DYNAMIC_STRING_NO_FMT
+bool WString_format(WString* dest, const wchar_t* fmt, ...);
+
+bool WString_format_append(WString* dest, const wchar_t* fmt, ...);
+#endif

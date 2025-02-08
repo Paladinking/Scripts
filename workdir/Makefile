@@ -35,7 +35,7 @@ build\pathc.obj: src\pathc.c src\args.h src\path_utils.h src\dynamic_string.h sr
 	cl.exe /c /Fo:build\pathc.obj /GS- /GL /O1 /favor:AMD64 /nologo src\pathc.c
 build\path_utils.obj: src\path_utils.c src\path_utils.h src\dynamic_string.h src\mem.h build
 	cl.exe /c /Fo:build\path_utils.obj /GS- /GL /O1 /favor:AMD64 /nologo src\path_utils.c
-build\args.obj: src\args.c src\args.h src\mem.h src\printf.h build
+build\args.obj: src\args.c src\args.h src\mem.h build
 	cl.exe /c /Fo:build\args.obj /GS- /GL /O1 /favor:AMD64 /nologo src\args.c
 build\mem.obj: src\mem.c src\mem.h build
 	cl.exe /c /Fo:build\mem.obj /GS- /GL /O1 /favor:AMD64 /nologo src\mem.c
@@ -61,8 +61,10 @@ build\inject.obj: src\inject.c src\printf.h src\args.h src\glob.h src\dynamic_st
 	cl.exe /c /Fo:build\inject.obj /GS- /GL /O1 /favor:AMD64 /nologo src\inject.c
 build\glob.obj: src\glob.c src\glob.h src\dynamic_string.h src\mem.h build
 	cl.exe /c /Fo:build\glob.obj /GS- /GL /O1 /favor:AMD64 /nologo src\glob.c
-build\list-dir.obj: src\list-dir.c src\args.h src\glob.h src\dynamic_string.h src\mem.h src\printf.h src\unicode_width.h build
+build\list-dir.obj: src\list-dir.c src\args.h src\glob.h src\dynamic_string.h src\mem.h src\printf.h src\perm.h src\unicode_width.h build
 	cl.exe /c /Fo:build\list-dir.obj /GS- /GL /O1 /favor:AMD64 /nologo src\list-dir.c
+build\perm.obj: src\perm.c src\perm.h src\dynamic_string.h src\mem.h build
+	cl.exe /c /Fo:build\perm.obj /GS- /GL /O1 /favor:AMD64 /nologo src\perm.c
 build\whashmap.obj: src\hashmap.c src\hashmap.h src\mem.h build
 	cl.exe /c /Fo:build\whashmap.obj /GS- /GL /O1 /favor:AMD64 /nologo /DHASHMAP_WIDE /DHASHMAP_CASE_INSENSITIVE src\hashmap.c
 build\hashmap.obj: src\hashmap.c src\hashmap.h src\mem.h build
@@ -92,15 +94,15 @@ bin\path-select.exe: build\path-select.obj build\path_utils.obj build\args.obj b
 	link /OUT:bin\path-select.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\path-select.obj build\path_utils.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib build\kernelbase.lib
 bin\inject.exe: build\inject.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\glob.obj build\ntutils.lib bin
 	link /OUT:bin\inject.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\inject.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\glob.obj build\ntutils.lib
-bin\list-dir.exe: build\list-dir.obj build\args.obj build\printf.obj build\glob.obj build\dynamic_string.obj build\unicode_width.obj build\ntutils.lib bin
-	link /OUT:bin\list-dir.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\list-dir.obj build\args.obj build\printf.obj build\glob.obj build\dynamic_string.obj build\unicode_width.obj build\ntutils.lib
+bin\list-dir.exe: build\list-dir.obj build\args.obj build\printf.obj build\perm.obj build\glob.obj build\dynamic_string.obj build\unicode_width.obj build\ntutils.lib bin
+	link /OUT:bin\list-dir.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main AdvAPI32.Lib build\list-dir.obj build\args.obj build\printf.obj build\perm.obj build\glob.obj build\dynamic_string.obj build\unicode_width.obj build\ntutils.lib
 bin\autocmp.dll: build\autocmp.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\match_node.obj build\subprocess.obj build\whashmap.obj build\hashmap.obj build\json.obj build\cli.obj build\glob.obj build\path_utils.obj build\unicode_width.obj build\ntutils.lib bin
 	link /OUT:bin\autocmp.dll /DLL kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:DLLMain build\autocmp.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\match_node.obj build\subprocess.obj build\whashmap.obj build\hashmap.obj build\json.obj build\cli.obj build\glob.obj build\path_utils.obj build\unicode_width.obj build\ntutils.lib
 bin\test.exe: build\test.obj build\match_node.obj build\glob.obj build\cli.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\json.obj build\subprocess.obj build\path_utils.obj build\unicode_width.obj build\whashmap.obj build\hashmap.obj build\ntutils.lib bin
 	link /OUT:bin\test.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\test.obj build\match_node.obj build\glob.obj build\cli.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\json.obj build\subprocess.obj build\path_utils.obj build\unicode_width.obj build\whashmap.obj build\hashmap.obj build\ntutils.lib
 
 build\ntutils.lib: build
-	lib /MACHINE:X64 /DEF /OUT:build\ntutils.lib /NAME:ntdll.dll /EXPORT:memcpy=memcpy /EXPORT:strlen=strlen /EXPORT:memmove=memmove /EXPORT:_wsplitpath_s=_wsplitpath_s /EXPORT:wcslen=wcslen /EXPORT:_wmakepath_s=_wmakepath_s /EXPORT:strchr=strchr /EXPORT:_stricmp=_stricmp /EXPORT:towlower=towlower /EXPORT:_wcsicmp=_wcsicmp /EXPORT:_snwprintf_s=_snwprintf_s /EXPORT:_snprintf_s=_snprintf_s /EXPORT:_vscwprintf=_vscwprintf /EXPORT:_vsnprintf=_vsnprintf /EXPORT:_vsnwprintf=_vsnwprintf /EXPORT:_vscprintf=_vscprintf /EXPORT:memset=memset /EXPORT:wcscmp=wcscmp /EXPORT:strcmp=strcmp /EXPORT:_fltused=_fltused /EXPORT:wcschr=wcschr /EXPORT:wcsrchr=wcsrchr /EXPORT:strtol=strtol /EXPORT:wcsncmp=wcsncmp /EXPORT:memcmp=memcmp /EXPORT:tolower=tolower /EXPORT:strncmp=strncmp /EXPORT:wcsstr=wcsstr /EXPORT:_snprintf=_snprintf
+	lib /MACHINE:X64 /DEF /OUT:build\ntutils.lib /NAME:ntdll.dll /EXPORT:memcpy=memcpy /EXPORT:strlen=strlen /EXPORT:memmove=memmove /EXPORT:_wsplitpath_s=_wsplitpath_s /EXPORT:wcslen=wcslen /EXPORT:_wmakepath_s=_wmakepath_s /EXPORT:strchr=strchr /EXPORT:_stricmp=_stricmp /EXPORT:towlower=towlower /EXPORT:_wcsicmp=_wcsicmp /EXPORT:_snwprintf_s=_snwprintf_s /EXPORT:_snprintf_s=_snprintf_s /EXPORT:_vscwprintf=_vscwprintf /EXPORT:_vsnprintf=_vsnprintf /EXPORT:_vsnwprintf=_vsnwprintf /EXPORT:_vscprintf=_vscprintf /EXPORT:memset=memset /EXPORT:wcscmp=wcscmp /EXPORT:strcmp=strcmp /EXPORT:_fltused=_fltused /EXPORT:wcschr=wcschr /EXPORT:wcsrchr=wcsrchr /EXPORT:strtol=strtol /EXPORT:wcsncmp=wcsncmp /EXPORT:memcmp=memcmp /EXPORT:tolower=tolower /EXPORT:strncmp=strncmp /EXPORT:wcsstr=wcsstr /EXPORT:_snprintf=_snprintf /EXPORT:_vsnwprintf=_vsnwprintf_nt /EXPORT:_vscwprintf=_vscwprintf_nt
 build\kernelbase.lib: build
 	lib /MACHINE:X64 /DEF /OUT:build\kernelbase.lib /NAME:kernelbase.dll /EXPORT:PathMatchSpecW=PathMatchSpecW
 bin\autocmp.json: autocmp.json bin

@@ -1,24 +1,63 @@
 #pragma once
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <stdint.h>
 
 #define FLAG_NO_VALUE 0
 #define FLAG_OPTONAL_VALUE 1
 #define FLAG_REQUIRED_VALUE 2
+#define FLAG_INT 4
+#define FLAG_UINT 8
+//#define FLAG_DOUBLE 16
+#define FLAG_STRING 32
+#define FLAG_ENUM 64
+
+#define FLAG_AMBIGUOS 3
+#define FLAG_UNKOWN 4
+#define FLAG_MISSING_VALUE 5
+#define FLAG_INVALID_VALUE 6
+#define FLAG_AMBIGUOS_VALUE 7
+#define FLAG_UNEXPECTED_VALUE 8
+
+typedef struct EnumValue {
+    const wchar_t** values;
+    unsigned count;
+} EnumValue;
+
+typedef struct FlagValue {
+    unsigned type;
+    EnumValue * enum_values;
+    unsigned enum_count;
+    char has_value;
+    union {
+        LPWSTR str; // Output
+        uint64_t uint;
+        int64_t sint;
+        double real;
+    };
+} FlagValue;
 
 typedef struct FlagInfo {
-    wchar_t short_name;
+    wchar_t short_name; // Input
     LPCWSTR long_name;
-    unsigned has_value; // 0 no, 1 optional, 2 required
-    LPCWSTR value;
-    DWORD count;
+    FlagValue* value; // Input / output
+
+    DWORD shared; // Internal
+
+    DWORD count; // Output
     DWORD ord;
 } FlagInfo;
+
+typedef struct ErrorInfo {
+    unsigned type;
+    unsigned ix;
+    LPWSTR value;
+} ErrorInfo;
 
 /**
  *
  */
-DWORD find_flags(LPWSTR* argv, int* argc, FlagInfo* flags, DWORD flag_count);
+BOOL find_flags(LPWSTR* argv, int* argc, FlagInfo* flags, DWORD flag_count, ErrorInfo* err);
 
 /**
  * Checks if flag <flag> or <long_flag> apears in <argv>.

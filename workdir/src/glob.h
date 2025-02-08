@@ -26,6 +26,8 @@ typedef struct _WalkCtx {
     bool first;
 } WalkCtx;
 
+DWORD get_file_attrs(const wchar_t* path);
+
 bool WalkDir_begin(WalkCtx* ctx, const wchar_t* dir);
 
 int WalkDir_next(WalkCtx* ctx, Path** path);

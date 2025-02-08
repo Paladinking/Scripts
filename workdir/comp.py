@@ -60,7 +60,8 @@ def main():
     Executable("inject.exe", "src/inject.c", *arg_src, 
                "src/glob.c", ntdll)
     Executable("list-dir.exe", "src/list-dir.c", "src/args.c", "src/printf.c",
-               "src/glob.c", "src/dynamic_string.c", "src/unicode_width.c", ntdll)
+               "src/perm.c", "src/glob.c", "src/dynamic_string.c",
+               "src/unicode_width.c", ntdll, link_flags=LINKFLAGS + " " + "AdvAPI32.Lib")
     
     whashmap = Object("whashmap.obj", "src/hashmap.c", cmp_flags=CLFLAGS + " " +
                       define('HASHMAP_WIDE') + " " + define('HASHMAP_CASE_INSENSITIVE'))

@@ -849,6 +849,7 @@ end:
     return false;
 }
 
+
 bool JsonNumber_parse(const char** str, int64_t* i, double* d, bool* is_int, JsonParseCtx* ctx) {
     const char* s = *str;
     uint64_t n;
@@ -858,7 +859,7 @@ bool JsonNumber_parse(const char** str, int64_t* i, double* d, bool* is_int, Jso
         ++s;
         negative = true;
     }
-    if (*s < '0' && *s > '9') {
+    if (*s < '0' || *s > '9') {
         return invalid_literal(*str, ctx, "number");
     }
     n = (*s - '0');
