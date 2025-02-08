@@ -174,8 +174,9 @@ DWORD get_file_attrs(const wchar_t* path) {
     return attrs;
 }
 
-bool WalkDir_begin(WalkCtx* ctx, const wchar_t* dir) {
+bool WalkDir_begin(WalkCtx* ctx, const wchar_t* dir, bool absolute_path) {
     WString* s = &ctx->p.path;
+    ctx->absolute_path = absolute_path;
     WString_create(s);
 
     if (!to_windows_path(dir, s)) {
@@ -195,8 +196,13 @@ bool WalkDir_begin(WalkCtx* ctx, const wchar_t* dir) {
         WString_free(s);
         return false;
     }
-    WString_clear(s);
-    WString_extend(s, data.cFileName);
+    if (!ctx->absolute_path) {
+        WString_clear(s);
+    } else {
+        WString_pop(s, 1); // Remove '*'
+    }
+    ctx->p.name_len = wcslen(data.cFileName); 
+    WString_append_count(s, data.cFileName, ctx->p.name_len);
     ctx->p.is_dir = data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
     ctx->p.is_link = data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT;
     ctx->first = true;
@@ -231,9 +237,14 @@ int WalkDir_next(WalkCtx* ctx, Path** path) {
              data.cFileName[1] == L'.' && data.cFileName[2] == L'\0'))) {
             continue;
         }
+        if (ctx->absolute_path) {
+            WString_pop(&ctx->p.path, ctx->p.name_len);
+        } else {
+            WString_clear(&ctx->p.path);
+        }
 
-        WString_clear(&ctx->p.path);
-        WString_extend(&ctx->p.path, data.cFileName);
+        ctx->p.name_len = wcslen(data.cFileName);
+        WString_append_count(&ctx->p.path, data.cFileName, ctx->p.name_len);
         ctx->p.is_dir = data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
         ctx->p.is_link = data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT;
         *path = &ctx->p;

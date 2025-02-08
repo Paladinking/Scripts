@@ -171,11 +171,11 @@ const wchar_t* NodeIterator_next(NodeIterator* it) {
             if (!it->walk_ongoing) {
                 bool walk;
                 if (it->dir_separator == NULL) {
-                    walk = WalkDir_begin(&it->walk_ctx, L".");
+                    walk = WalkDir_begin(&it->walk_ctx, L".", false);
                 } else {
                     wchar_t old_c = *(it->dir_separator + 1);
                     *(it->dir_separator + 1) = L'\0';
-                    walk = WalkDir_begin(&it->walk_ctx, it->path_start);
+                    walk = WalkDir_begin(&it->walk_ctx, it->path_start, false);
                     *(it->dir_separator + 1) = old_c;
                 }
                 if (!walk) {

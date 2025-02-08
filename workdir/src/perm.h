@@ -20,6 +20,11 @@
 #define USER_ALL (USER_READ | USER_WRITE | USER_EXECUTE)
 #define USER_MASK(r, w, e) (((r) ? USER_READ : 0) | ((w) ? USER_WRITE : 0) | ((e) ? USER_EXECUTE : 0))
 
-bool get_perms(const wchar_t* path, bool is_dir, uint32_t* flags, WString* owner, WString* group);
+bool get_perms_size_date(const wchar_t *path, bool is_dir, uint32_t *flags,
+                         WString *owner_name, WString *group_name,
+                         uint64_t *size, FILETIME *time);
+
+bool get_perms(const wchar_t *path, bool is_dir, uint32_t *flags,
+               WString *owner, WString *group);
 
 #endif

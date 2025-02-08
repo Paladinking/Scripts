@@ -5,11 +5,11 @@ CLFLAGS="/GS- /GL /O1 /favor:AMD64 /nologo"
 LINKFLAGS="kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main"
 DLLFLAGS="kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:DLLMain"
 
-CLFLAGS = "-g -Og"
-LINKFLAGS = "-g -Og"
-DLLFLAGS = "-g -Og"
+#CLFLAGS = "-g -Og"
+#LINKFLAGS = "-g -Og"
+#DLLFLAGS = "-g -Og"
 
-BUILD_DIR = "buildg"
+BUILD_DIR = "build"
 BIN_DIR = "bin"
 
 WORKDIR = pathlib.Path(__file__).parent.resolve()
@@ -86,8 +86,8 @@ def main():
     translate("cmdrc.bat", "password.bat", "vcvarsall.bat")
 
 
-    generate()
-    print(f"\ninstall: all\n\tcopy {BIN_DIR}\\* ..")
+    compile_commands()
+    #print(f"\ninstall: all\n\tcopy {BIN_DIR}\\* ..")
 
 
 if __name__ == "__main__":

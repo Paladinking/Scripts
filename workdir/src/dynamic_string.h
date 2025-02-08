@@ -2,8 +2,9 @@
 #include <stdbool.h>
 #include <wchar.h>
 #include "mem.h"
+#include <stdint.h>
 
-typedef unsigned string_size_t;
+typedef uint32_t string_size_t;
 
 typedef struct String {
     char* buffer;
