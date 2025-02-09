@@ -4,7 +4,7 @@ import os.path
 import time
 import shutil
 
-from typing import List, Optional
+from typing import List, Optional, Union
 
 BUILD_DIR: str
 BIN_DIR: str
@@ -177,7 +177,7 @@ def CopyToBin(*src: str) -> List[Cmd]:
         res.append(Command(name, f"type {f} > {BIN_DIR}\\{name}", str(f), directory=BIN_DIR))
     return res
 
-BACKEND = Msvc()
+BACKEND: Union[Msvc, Mingw]
 
 def define(key: str, val: Optional[str]=None) -> str:
     return BACKEND.define(key, val)
@@ -266,14 +266,34 @@ def compile_commands():
     import json
     print(json.dumps(res, indent=4))
 
-def set_backend(buildir: str, bindir: str, workdir: pathlib.Path, clflags: str, linkflags: str) -> None:
-    global BUILD_DIR, BIN_DIR, WORKDIR, CLFLAGS, LINKFLAGS
-    BUILD_DIR = buildir
-    BIN_DIR = bindir
-    WORKDIR = workdir
-    CLFLAGS = clflags
-    LINKFLAGS = linkflags
+all_backends = {"msvc": Msvc(), "mingw": Mingw()}
+active_backends = {}
+
+def add_backend(name: str, buildir: str, bindir: str, workdir: pathlib.Path, clflags: str, linkflags: str):
+    if name.lower() not in all_backends:
+        raise RuntimeError("Invalid backend")
+    backend = all_backends[name.lower()]
+    backend.buildir = buildir
+    backend.bindir = bindir
+    backend.workdir = workdir
+    backend.clflags = clflags
+    backend.linkflags = linkflags
+    active_backends[name.lower()] = backend
+
+
+
+def set_backend(name: str) -> None:
+    global BUILD_DIR, BIN_DIR, WORKDIR, CLFLAGS, LINKFLAGS, BACKEND
+    if name.lower() not in active_backends:
+        raise RuntimeError("Invalid backend")
+    backend = active_backends[name.lower()]
+    BUILD_DIR = backend.buildir
+    BIN_DIR = backend.bindir
+    WORKDIR = backend.workdir
+    CLFLAGS = backend.clflags
+    LINKFLAGS = backend.linkflags
     DIRECTORIES[BUILD_DIR] = None
     DIRECTORIES[BIN_DIR] = None
+    BACKEND = backend
 
     return

@@ -61,9 +61,9 @@ build\inject.obj: src\inject.c src\printf.h src\args.h src\glob.h src\dynamic_st
 	cl.exe /c /Fo:build\inject.obj /GS- /GL /O1 /favor:AMD64 /nologo src\inject.c
 build\glob.obj: src\glob.c src\glob.h src\dynamic_string.h src\mem.h build
 	cl.exe /c /Fo:build\glob.obj /GS- /GL /O1 /favor:AMD64 /nologo src\glob.c
-build\list-dir.obj: src\list-dir.c src\args.h src\glob.h src\dynamic_string.h src\mem.h src\printf.h src\perm.h src\unicode_width.h build
+build\list-dir.obj: src\list-dir.c src\args.h src\glob.h src\dynamic_string.h src\mem.h src\perm.h src\printf.h src\unicode_width.h build
 	cl.exe /c /Fo:build\list-dir.obj /GS- /GL /O1 /favor:AMD64 /nologo src\list-dir.c
-build\perm.obj: src\perm.c src\perm.h src\dynamic_string.h src\mem.h build
+build\perm.obj: src\perm.c src\perm.h src\dynamic_string.h src\mem.h src\printf.h build
 	cl.exe /c /Fo:build\perm.obj /GS- /GL /O1 /favor:AMD64 /nologo src\perm.c
 build\whashmap.obj: src\hashmap.c src\hashmap.h src\mem.h build
 	cl.exe /c /Fo:build\whashmap.obj /GS- /GL /O1 /favor:AMD64 /nologo /DHASHMAP_WIDE /DHASHMAP_CASE_INSENSITIVE src\hashmap.c
@@ -95,7 +95,7 @@ bin\path-select.exe: build\path-select.obj build\path_utils.obj build\args.obj b
 bin\inject.exe: build\inject.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\glob.obj build\ntutils.lib bin
 	link /OUT:bin\inject.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\inject.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\glob.obj build\ntutils.lib
 bin\list-dir.exe: build\list-dir.obj build\args.obj build\printf.obj build\perm.obj build\glob.obj build\dynamic_string.obj build\unicode_width.obj build\ntutils.lib bin
-	link /OUT:bin\list-dir.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main AdvAPI32.Lib build\list-dir.obj build\args.obj build\printf.obj build\perm.obj build\glob.obj build\dynamic_string.obj build\unicode_width.obj build\ntutils.lib
+	link /OUT:bin\list-dir.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main Advapi32.lib build\list-dir.obj build\args.obj build\printf.obj build\perm.obj build\glob.obj build\dynamic_string.obj build\unicode_width.obj build\ntutils.lib
 bin\autocmp.dll: build\autocmp.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\match_node.obj build\subprocess.obj build\whashmap.obj build\hashmap.obj build\json.obj build\cli.obj build\glob.obj build\path_utils.obj build\unicode_width.obj build\ntutils.lib bin
 	link /OUT:bin\autocmp.dll /DLL kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:DLLMain build\autocmp.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\match_node.obj build\subprocess.obj build\whashmap.obj build\hashmap.obj build\json.obj build\cli.obj build\glob.obj build\path_utils.obj build\unicode_width.obj build\ntutils.lib
 bin\test.exe: build\test.obj build\match_node.obj build\glob.obj build\cli.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\json.obj build\subprocess.obj build\path_utils.obj build\unicode_width.obj build\whashmap.obj build\hashmap.obj build\ntutils.lib bin
@@ -140,6 +140,3 @@ bin\vcvarsall.bat: script\vcvarsall.bat.template bin\parse-template.exe script\t
 clean:
 	del /S /Q build\*
 	del /S /Q bin\*
-
-install: all
-	copy bin\* ..
