@@ -5,9 +5,9 @@ CLFLAGS="/GS- /GL /O1 /favor:AMD64 /nologo"
 LINKFLAGS="kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main"
 DLLFLAGS="kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:DLLMain"
 
-#CLFLAGS = "-g -Og"
-#LINKFLAGS = "-g -Og"
-#DLLFLAGS = "-g -Og"
+#CLFLAGS = "-g -pg"
+#LINKFLAGS = "-g -pg"
+#DLLFLAGS = "-g -pg"
 
 BUILD_DIR = "build"
 BIN_DIR = "bin"
@@ -30,7 +30,9 @@ def translate(*src: str) -> List[Cmd]:
     return res
 
 
-set_backend(BUILD_DIR, BIN_DIR, WORKDIR, CLFLAGS, LINKFLAGS)
+add_backend("Msvc", BUILD_DIR, BIN_DIR, WORKDIR, CLFLAGS, LINKFLAGS)
+
+set_backend("Msvc")
 
 def main():
     ntsymbols = ["memcpy", "strlen", "memmove", "_wsplitpath_s", "wcslen",
@@ -61,7 +63,7 @@ def main():
                "src/glob.c", ntdll)
     Executable("list-dir.exe", "src/list-dir.c", "src/args.c", "src/printf.c",
                "src/perm.c", "src/glob.c", "src/dynamic_string.c",
-               "src/unicode_width.c", ntdll, link_flags=LINKFLAGS + " " + "AdvAPI32.Lib")
+               "src/unicode_width.c", ntdll, link_flags=LINKFLAGS + " " + "Advapi32.lib")
     
     whashmap = Object("whashmap.obj", "src/hashmap.c", cmp_flags=CLFLAGS + " " +
                       define('HASHMAP_WIDE') + " " + define('HASHMAP_CASE_INSENSITIVE'))
@@ -86,7 +88,7 @@ def main():
     translate("cmdrc.bat", "password.bat", "vcvarsall.bat")
 
 
-    compile_commands()
+    generate()
     #print(f"\ninstall: all\n\tcopy {BIN_DIR}\\* ..")
 
 

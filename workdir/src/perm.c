@@ -97,12 +97,34 @@ void get_flags(PACL dacl, PSID owner, PSID group, uint32_t *flags) {
     Mem_free(user_sid);
 }
 
+bool get_perms_h(HANDLE file, uint32_t* flags, WString* owner_name, WString* group_name) {
+    SECURITY_INFORMATION in = OWNER_SECURITY_INFORMATION |
+                              GROUP_SECURITY_INFORMATION |
+                              DACL_SECURITY_INFORMATION;
+    PSID owner = NULL, group = NULL;
+    PACL dacl = NULL;
+    PSECURITY_DESCRIPTOR desc;
+    if (GetSecurityInfo(file, SE_FILE_OBJECT, in, &owner, &group, &dacl, NULL,
+                        &desc) != ERROR_SUCCESS) {
+        *flags = 0;
+        CloseHandle(file);
+        return true;
+    }
+
+    get_owner_group(owner, group, desc, owner_name, group_name);
+    get_flags(dacl, owner, group, flags);
+
+    LocalFree(desc);
+    return true;
+}
+
 bool get_perms_size_date(const wchar_t *path, bool is_dir, uint32_t *flags,
                          WString *owner_name, WString *group_name,
-                         uint64_t *size, FILETIME *time) {
+                         uint64_t *size, FILETIME *time, uint64_t* disk_size) {
     WString_clear(owner_name);
     WString_clear(group_name);
     *flags = 0;
+
     DWORD attr = FILE_FLAG_OPEN_REPARSE_POINT |
                  (is_dir ? FILE_FLAG_BACKUP_SEMANTICS : 0);
     HANDLE file = CreateFileW(path, READ_CONTROL, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
@@ -115,12 +137,23 @@ bool get_perms_size_date(const wchar_t *path, bool is_dir, uint32_t *flags,
         time->dwLowDateTime = 0;
         time->dwHighDateTime = 0;
     }
+
+
     LARGE_INTEGER q_size;
     if (GetFileSizeEx(file, &q_size)) {
         *size = q_size.QuadPart;
     } else {
         *size = 0;
     }
+
+    FILE_STANDARD_INFO i;
+    if (GetFileInformationByHandleEx(file, FileStandardInfo, &i, sizeof(i))) {
+        *disk_size = i.AllocationSize.QuadPart;
+    } else {
+        *disk_size = *size;
+    }
+
+
     SECURITY_INFORMATION in = OWNER_SECURITY_INFORMATION |
                               GROUP_SECURITY_INFORMATION |
                               DACL_SECURITY_INFORMATION;
@@ -129,7 +162,6 @@ bool get_perms_size_date(const wchar_t *path, bool is_dir, uint32_t *flags,
     PSECURITY_DESCRIPTOR desc;
     if (GetSecurityInfo(file, SE_FILE_OBJECT, in, &owner, &group, &dacl, NULL,
                         &desc) != ERROR_SUCCESS) {
-        _wprintf(L"Could get security info: %lu\n", GetLastError());
         *flags = 0;
         CloseHandle(file);
         return true;
