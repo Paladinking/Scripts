@@ -4,6 +4,9 @@
 
 BOOL parse_uint(const wchar_t* s, uint64_t* i) {
     uint64_t n = 0;
+    if (*s == L'\0') {
+        return FALSE;
+    }
     if (*s == L'0' && (*(s + 1) == L'x' || (*s + 1) == L'X')) { // Hex
         s += 2;
         while (*s != L'\0') {
@@ -102,7 +105,7 @@ DWORD wcsmatch(const wchar_t* a, const wchar_t* b) {
     return ix;
 }
 
-DWORD prefix_len(const wchar_t* str, const wchar_t* full, BOOL has_val) {
+uint32_t prefix_len(const wchar_t* str, const wchar_t* full, BOOL has_val) {
     DWORD len;
     if (has_val) {
         const wchar_t* eq = wcschr(str, '=');
@@ -154,7 +157,7 @@ BOOL parse_argument(LPWSTR val, FlagValue* valid, unsigned ix, ErrorInfo* err) {
     BOOL collision = FALSE;
     for (unsigned j = 0; j < count; ++j) {
         for (unsigned i = 0; i < vals[j].count; ++i) {
-            DWORD len = prefix_len(val, vals[j].values[i], FALSE);
+            uint32_t len = prefix_len(val, vals[j].values[i], FALSE);
             if (len == 0) {
                 continue;
             }
@@ -186,8 +189,9 @@ BOOL parse_argument(LPWSTR val, FlagValue* valid, unsigned ix, ErrorInfo* err) {
     return TRUE;
 }
 
-BOOL find_flags(LPWSTR* argv, int* argc, FlagInfo* flags, DWORD flag_count, ErrorInfo* err) {
+BOOL find_flags(wchar_t** argv, int* argc, FlagInfo* flags, uint32_t flag_count, ErrorInfo* err) {
     DWORD order = 1;
+    err->long_flag = FALSE;
     for (DWORD ix = 0; ix < flag_count; ++ix) {
         flags[ix].count = 0;
         flags[ix].ord = 0;
@@ -227,17 +231,18 @@ BOOL find_flags(LPWSTR* argv, int* argc, FlagInfo* flags, DWORD flag_count, Erro
                 if (flags[j].long_name == NULL) {
                     continue;
                 }
-                DWORD len = prefix_len(argv[ix] + 2, flags[j].long_name, TRUE);
+                uint32_t len = prefix_len(argv[ix] + 2, flags[j].long_name, TRUE);
                 if (len == 0) {
                     continue;
                 }
                 if (len <= flags[j].shared) {
                     err->type = FLAG_AMBIGUOS;
-                    err->value = argv[ix] + 2;
+                    err->value = argv[ix];
                     if (argv[ix][len + 2] == L'=') {
                         argv[ix][len + 2] = L'\0';
                     }
                     err->ix = j;
+                    err->long_flag = TRUE;
                     return FALSE;
                 }
                 if (flags[j].value != NULL) {
@@ -259,8 +264,9 @@ BOOL find_flags(LPWSTR* argv, int* argc, FlagInfo* flags, DWORD flag_count, Erro
                             }
                         } else {
                             err->type = FLAG_MISSING_VALUE;
-                            err->value = argv[ix] + 2;
+                            err->value = argv[ix];
                             err->ix = j;
+                            err->long_flag = TRUE;
                             return FALSE;
                         }
                     } else if (argv[ix][len + 2] == L'=') {
@@ -268,6 +274,7 @@ BOOL find_flags(LPWSTR* argv, int* argc, FlagInfo* flags, DWORD flag_count, Erro
                         flags[j].ord = order++;
                         found = 1;
                         if (!parse_argument(argv[ix] + len + 3, flags[j].value, j, err)) {
+                            err->long_flag = TRUE;
                             return FALSE;
                         }
                     } else {
@@ -278,7 +285,8 @@ BOOL find_flags(LPWSTR* argv, int* argc, FlagInfo* flags, DWORD flag_count, Erro
                     if (argv[ix][len + 2] == L'=') {
                         err->type = FLAG_UNEXPECTED_VALUE;
                         err->ix = j;
-                        err->value = argv[ix] + 2;
+                        err->value = argv[ix];
+                        err->long_flag = TRUE;
                         argv[ix][len + 2] = L'\0';
                         return FALSE;
                     }
@@ -290,8 +298,9 @@ BOOL find_flags(LPWSTR* argv, int* argc, FlagInfo* flags, DWORD flag_count, Erro
             }
             if (!found) {
                 err->type = FLAG_UNKOWN;
-                err->value = argv[ix] + 2;
+                err->value = argv[ix];
                 err->ix = flag_count;
+                err->long_flag = TRUE;
                 return FALSE;
             }
         } else if (argv[ix][1] == L'\0') {
@@ -353,6 +362,139 @@ BOOL find_flags(LPWSTR* argv, int* argc, FlagInfo* flags, DWORD flag_count, Erro
         --ix;
     }
     return TRUE;
+}
+
+wchar_t* format_error(ErrorInfo* err, FlagInfo* flags, uint32_t flag_count) {
+    uint32_t val_len = wcslen(err->value);
+    wchar_t* str;
+    if (err->type == FLAG_AMBIGUOS) {
+        uint32_t len = 8 + val_len + 31;
+        for (uint32_t ix = 0; ix < flag_count; ++ix) {
+            if (flags[ix].long_name == NULL) {
+                continue;
+            }
+            if (wcsmatch(err->value + 2, flags[ix].long_name) == val_len - 2) {
+                len += wcslen(flags[ix].long_name) + 5;
+            }
+        }
+        str = Mem_alloc(len * sizeof(wchar_t));
+        if (str == NULL) {
+            return NULL;
+        }
+        memcpy(str, L"option '", 8 * sizeof(wchar_t));
+        memcpy(str + 8, err->value, val_len * sizeof(wchar_t));
+        memcpy(str + 8 + val_len, L"' is ambiguous; possibilities: ",
+               31 * sizeof(wchar_t));
+        len = 31 + 8 + val_len;
+        for (uint32_t i = 0; i < flag_count; ++i) {
+            if (flags[i].long_name == NULL) {
+                continue;
+            }
+            if (wcsmatch(err->value + 2, flags[i].long_name) == val_len - 2) {
+                uint32_t l = wcslen(flags[i].long_name);
+                memcpy(str + len, L"'--", 3 * sizeof(wchar_t));
+                memcpy(str + len + 3, flags[i].long_name, l * sizeof(wchar_t));
+                str[len + 3 + l] = L'\'';
+                str[len + 4 + l] = L' ';
+                len += l + 5;
+            }
+        }
+        str[len - 1] = '\0';
+        return str;
+    } else if (err->type == FLAG_UNKOWN) {
+        uint32_t len = 15 + val_len + 2;
+        str = Mem_alloc(len * sizeof(wchar_t));
+        if (str == NULL) {
+            return NULL;
+        }
+        memcpy(str, L"unkown option '", 15 * sizeof(wchar_t));
+        memcpy(str + 15, err->value, val_len * sizeof(wchar_t));
+        memcpy(str + 15 + val_len, L"'", 2 * sizeof(wchar_t));
+        return str;
+    } 
+    uint32_t flag_len;
+    if (err->long_flag) {
+        flag_len = wcslen(flags[err->ix].long_name) + 2;
+    } else {
+        flag_len = 1;
+    }
+
+    if (err->type == FLAG_MISSING_VALUE) {
+        uint32_t len = 8 + flag_len + 23;
+        str = Mem_alloc(len * sizeof(wchar_t));
+        if (str == NULL) {
+            return NULL;
+        }
+        memcpy(str, L"option '", 8 * sizeof(wchar_t));
+        if (err->long_flag) {
+            str[8] = L'-';
+            str[9] = L'-';
+            memcpy(str + 10, flags[err->ix].long_name, 
+                   (flag_len - 2) * sizeof(wchar_t));
+        } else {
+            str[8] = flags[err->ix].short_name;
+        }
+        memcpy(str + 8 + flag_len, L"' requires an argument",
+               23 * sizeof(wchar_t));
+        return str; 
+    } else if (err->type == FLAG_INVALID_VALUE) {
+        uint32_t len = 18 + 7 + 2 + flag_len;
+        str = Mem_alloc(len * sizeof(wchar_t));
+        if (str == NULL) {
+            return NULL;
+        }
+        memcpy(str, L"invalid argument '", 18 * sizeof(wchar_t));
+        memcpy(str + 18, err->value, val_len * sizeof(wchar_t));
+        memcpy(str + 18 + val_len, L"' for '", 7 * sizeof(wchar_t));
+        if (err->long_flag) {
+            str[25 + val_len] = L'-';
+            str[26 + val_len] = L'-';
+            memcpy(str + 27 + val_len, flags[err->ix].long_name, 
+                   (flag_len - 2) * sizeof(wchar_t));
+        } else {
+            str[25 + val_len] = flags[err->ix].short_name;
+        }
+        memcpy(str + 25 + val_len + flag_len, L"'", 2 * sizeof(wchar_t));
+        return str;
+    } else if (err->type == FLAG_AMBIGUOS_VALUE) {
+        uint32_t len = 20 + 7 + 2 + flag_len;
+        str = Mem_alloc(len * sizeof(wchar_t));
+        if (str == NULL) {
+            return NULL;
+        }
+        memcpy(str, L"ambiguous argument '", 20 * sizeof(wchar_t));
+        memcpy(str + 20, err->value, val_len * sizeof(wchar_t));
+        memcpy(str + 20 + val_len, L"' for '", 7 * sizeof(wchar_t));
+        if (err->long_flag) {
+            str[27 + val_len] = L'-';
+            str[28 + val_len] = L'-';
+            memcpy(str + 29 + val_len, flags[err->ix].long_name, 
+                   (flag_len - 2) * sizeof(wchar_t));
+        } else {
+            str[27 + val_len] = flags[err->ix].short_name;
+        }
+        memcpy(str + 27 + val_len + flag_len, L"'", 2 * sizeof(wchar_t));
+        return str;
+    } else if (err->type == FLAG_UNEXPECTED_VALUE) {
+        uint32_t len = 25 + flag_len + 2;
+        str = Mem_alloc(len * sizeof(wchar_t));
+        if (str == NULL) {
+            return NULL;
+        }
+        memcpy(str, L"unexpected argument for '", 25 * sizeof(wchar_t));
+        if (err->long_flag) {
+            str[25] = L'-';
+            str[26] = L'-';
+            memcpy(str + 27, flags[err->ix].long_name, 
+                   (flag_len - 2) * sizeof(wchar_t));
+        } else {
+            str[25] = flags[err->ix].short_name;
+        }
+        memcpy(str + 25 + flag_len, L"'", 2 * sizeof(wchar_t));
+        return str;
+    }
+    
+    return NULL;
 }
 
 DWORD find_flag(LPWSTR *argv, int *argc, LPCWSTR flag, LPCWSTR long_flag) {

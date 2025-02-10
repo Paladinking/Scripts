@@ -20,7 +20,7 @@ extern int _vsnwprintf(wchar_t *buffer, size_t count, const wchar_t *format,
 }
 #endif
 
-void outputa(HANDLE out, char* data, size_t size) {
+void outputa_h(HANDLE out, const char* data, size_t size) {
     DWORD type = GetFileType(out);
     if (type == FILE_TYPE_CHAR) {
         // TODO: Convert to UTF-16 and use WriteConsoleW??
@@ -47,7 +47,7 @@ int _printf_h(HANDLE dest, const char *fmt, ...) {
     if (count < 1024) { // Note: not inclusive for NULL terminator
         char buf[1024];
         _vsnprintf(buf, count, fmt, args);
-        outputa(dest, buf, count);
+        outputa_h(dest, buf, count);
     } else {
         HANDLE heap = GetProcessHeap();
         char *buf = (char *)Mem_alloc(count);
@@ -55,14 +55,14 @@ int _printf_h(HANDLE dest, const char *fmt, ...) {
             return -1;
         }
         _vsnprintf(buf, count, fmt, args);
-        outputa(dest, buf, count);
+        outputa_h(dest, buf, count);
         Mem_free(buf);
     }
     va_end(args);
     return count;
 }
 
-void outputw(HANDLE out, wchar_t* data, size_t size) {
+void outputw_h(HANDLE out, const wchar_t* data, size_t size) {
     DWORD type = GetFileType(out);
     if (type == FILE_TYPE_CHAR) {
         WriteConsoleW(out, data, size, NULL, NULL);
@@ -103,14 +103,14 @@ int _wprintf_h(HANDLE dest, const wchar_t *fmt, ...) {
     if (count < 512) { // Note: not inclusive for NULL terminator
         wchar_t buf[512];
         _vsnwprintf(buf, count, fmt, args);
-        outputw(dest, buf, count);
+        outputw_h(dest, buf, count);
     } else {
         wchar_t *buf = (wchar_t *)Mem_alloc(count * sizeof(wchar_t));
         if (buf == NULL) {
             return -1;
         }
         _vsnwprintf(buf, count, fmt, args);
-        outputw(dest, buf, count);
+        outputw_h(dest, buf, count);
         Mem_free(buf);
     }
     va_end(args);

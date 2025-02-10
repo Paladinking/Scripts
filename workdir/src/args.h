@@ -39,25 +39,32 @@ typedef struct FlagValue {
 
 typedef struct FlagInfo {
     wchar_t short_name; // Input
-    LPCWSTR long_name;
+    const wchar_t* long_name;
     FlagValue* value; // Input / output
 
-    DWORD shared; // Internal
+    uint32_t shared; // Internal
 
-    DWORD count; // Output
-    DWORD ord;
+    uint32_t count; // Output
+    uint32_t ord;
 } FlagInfo;
 
 typedef struct ErrorInfo {
-    unsigned type;
-    unsigned ix;
+    uint32_t type;
+    uint32_t ix;
+    BOOL long_flag;
     LPWSTR value;
 } ErrorInfo;
 
 /**
- *
+ * Find all flags described by <flag_count> entries in <flags>.
+ * Return 
  */
-BOOL find_flags(LPWSTR* argv, int* argc, FlagInfo* flags, DWORD flag_count, ErrorInfo* err);
+BOOL find_flags(wchar_t** argv, int* argc, FlagInfo* flags, uint32_t flag_count, ErrorInfo* err);
+
+/* 
+ * Turn error into readable string. Free afterwards.
+ */
+wchar_t* format_error(ErrorInfo* err, FlagInfo* flags, uint32_t flag_count);
 
 /**
  * Checks if flag <flag> or <long_flag> apears in <argv>.

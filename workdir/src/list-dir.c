@@ -23,6 +23,8 @@
 #define OPTION_HUMAN_SIZES 2048
 #define OPTION_ALLOCATION_SIZE 4096
 
+#define OPTION_HELP 8192
+
 #define OPTION_IF(opt, cond, flag)                                             \
     if (cond) {                                                                \
         opt |= flag;                                                           \
@@ -714,6 +716,26 @@ bool list_target(const wchar_t *str, unsigned width, uint32_t opt,
     return true;
 }
 
+const wchar_t* HELP_MESSAGE = L"Usage: %s [OPTION]... [FILE]...\n"
+                              L"List information about the FILEs (the current directory by default)\n\n"
+                              L"-a, --all               do not ignore entries starting with .\n"
+                              L"-A, --almost-all        same as -a, but do not list . and ..\n"
+                              L"-C                      list entires by collums\n"
+                              L"    --color[=WHEN]      colorize the output; WHEN can be 'always' (default\n"
+                              L"                         if omitted, 'auto' or 'never'\n"
+                              L"-d, --directory         treat directories as files, do not list their content\n"
+                              L"    --format=WORD       use format commas -m, long -l, single-collum -1,\n"
+                              L"                         verbose -l or vertical -C\n"
+                              L"-h, --human-readable    format sizes in a human-readable format\n"
+                              L"    --help              display this help message and exit\n"
+                              L"-l                      use a detaild long listing format\n"
+                              L"-m                      list entries comma separated\n"
+                              L"    --real-perms        with -l, query each file for permissions, group and\n"
+                              L"                         owner, instead of using folder values for all files.\n"
+                              L"-s, --size              Also show file allocation sizes\n"
+                              L"-w, --width=COLS        specify the maximum width in collums. 0 means no limit\n"
+                              L"-1                      list all entries in one collumn\n";
+
 uint32_t parse_options(wchar_t **argv, int *argc, unsigned *width,
                        bool has_console) {
     HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -743,7 +765,7 @@ uint32_t parse_options(wchar_t **argv, int *argc, unsigned *width,
     FlagInfo flags[] = {
         {L'a', L"all", NULL},            // 0
         {L'A', L"almost-all", NULL},     // 1
-        {L'b', L"escape", NULL},         // 2
+        {L'\0', NULL, NULL},             // 2 (escape)
         {L'd', L"directory", NULL},      // 3
         {L'\0', L"color", &color},       // 4
         {L'l', NULL, NULL},              // 5
@@ -755,12 +777,19 @@ uint32_t parse_options(wchar_t **argv, int *argc, unsigned *width,
         {L'w', L"width", &width_arg},    // 11
         {L'\0', L"real-perms"},          // 12
         {L'h', L"human-readable"},       // 13
-        {L's', L"size"}                  // 14
+        {L's', L"size"},                 // 14
+        {L'\0', L"help"}                 // 15
     };
     ErrorInfo errors;
-    if (!find_flags(argv, argc, flags, 15, &errors)) {
-        _wprintf_h(err, L"%u -- %s\n", errors.type, errors.value);
+    if (!find_flags(argv, argc, flags, 16, &errors)) {
+        wchar_t* err_msg = format_error(&errors, flags, 16);
+        _wprintf_h(err, L"%s\n", err_msg); 
+        _wprintf_h(err, L"Run '%s --help' for more information\n", argv[0]);
         return OPTION_INVALID;
+    }
+    if (flags[15].count > 0) {
+        _wprintf(HELP_MESSAGE, argv[0]);
+        return OPTION_HELP;
     }
     uint32_t opt = OPTION_VALID;
     bool show_hidden = flags[0].count > 0 || flags[1].count > 0;
@@ -781,6 +810,9 @@ uint32_t parse_options(wchar_t **argv, int *argc, unsigned *width,
     }
     if (flags[11].count > 0) {
         *width = width_arg.uint;
+        if (*width == 0) {
+            *width = 0xffffffff;
+        }
     }
     if (m_ord > 0) {
         if (format == 10) {
@@ -847,8 +879,10 @@ int main() {
 
     unsigned w;
     uint32_t opt = parse_options(argv, &argc, &w, has_console);
-    if (opt == OPTION_INVALID) {
-        status = 1;
+    if (!(opt & OPTION_VALID)) {
+        if (opt == OPTION_HELP) {
+            status = 0;
+        }
         goto end;
     }
 
@@ -932,5 +966,5 @@ end:
     }
     Mem_free(argv);
 
-    return status;
+    ExitProcess(status);
 }
