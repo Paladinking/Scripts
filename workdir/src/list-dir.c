@@ -497,7 +497,7 @@ FileObj *collect_dir(const wchar_t *str, unsigned *count, uint32_t opt,
         }
     }
 
-    if (opt & OPTION_FAKE_PERMS) {
+    if (opt & OPTION_FAKE_PERMS && opt & OPTION_LIST_DETAILS) {
         WString_free(&group);
         WString_free(&owner);
     }

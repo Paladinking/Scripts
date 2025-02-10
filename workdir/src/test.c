@@ -37,22 +37,6 @@ bool add_node(NodeBuilder *builder, const char *key, HashMap *extr_map,
     return true;
 }
 
-bool append_file(const char *str, const wchar_t *filename) {
-    HANDLE file = CreateFileW(filename, FILE_APPEND_DATA, 0, NULL, OPEN_ALWAYS,
-                              FILE_ATTRIBUTE_NORMAL, NULL);
-    unsigned len = strlen(str);
-    DWORD w;
-    unsigned written = 0;
-    while (written < len) {
-        if (!WriteFile(file, str + written, len - written, &w, NULL)) {
-            CloseHandle(file);
-            return false;
-        }
-        written += w;
-    }
-    CloseHandle(file);
-    return true;
-}
 
 // replace all instances of $
 void substitute_commands(wchar_t *str, DWORD *len, DWORD capacity) {
