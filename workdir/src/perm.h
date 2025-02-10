@@ -3,6 +3,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "dynamic_string.h"
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 
 #define OWNER_READ 1
 #define OWNER_WRITE 2

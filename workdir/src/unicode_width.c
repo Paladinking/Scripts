@@ -2,10 +2,9 @@
 #include "unicode_width.h"
 
 BOOL is_wide(UINT32 c) {
-    if (c <= 4351) {
+    if (c < 4352) {
         return FALSE;
     }
-
     if (c <= 65091) {
         if (c <= 12336) {
             if (c <= 11929) {
@@ -1148,4 +1147,3 @@ BOOL is_wide(UINT32 c) {
         }
     }
 }
-
