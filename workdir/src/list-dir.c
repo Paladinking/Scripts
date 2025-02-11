@@ -429,8 +429,10 @@ FileObj *collect_dir(const wchar_t *str, unsigned *count, uint32_t opt,
         WString_append_count(&files[1].path, L"..", 2);
         files[0].is_link = false;
         files[0].is_dir = true;
+        files[0].size = 0;
         files[1].is_link = false;
         files[1].is_dir = true;
+        files[1].size = 0;
         file_count = 2;
     }
 

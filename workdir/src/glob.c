@@ -205,7 +205,12 @@ bool WalkDir_begin(WalkCtx* ctx, const wchar_t* dir, bool absolute_path) {
     WString_append_count(s, data.cFileName, ctx->p.name_len);
     ctx->p.is_dir = data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
     ctx->p.is_link = data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT;
-    ctx->first = true;
+    if (data.cFileName[0] == L'.' && (data.cFileName[1] == L'\0' || (
+         data.cFileName[1] == L'.' && data.cFileName[2] == L'\0'))) {
+        ctx->first = false;
+    } else {
+        ctx->first = true;
+    }
     return true;
 }
 
@@ -216,13 +221,8 @@ int WalkDir_next(WalkCtx* ctx, Path** path) {
     WString* p = &ctx->p.path;
     if (ctx->first) {
         ctx->first = false;
-        if (!(p->length == 1 && p->buffer[0] == L'.'|| 
-            (p->length == 2 && p->buffer[1] == L'.' &&
-             p->buffer[2] == L'.')
-            )) {
-            *path = &ctx->p;
-            return 1;
-        }
+        *path = &ctx->p;
+        return 1;
     }
     while (1) {
         WIN32_FIND_DATAW data;
