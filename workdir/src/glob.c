@@ -302,6 +302,8 @@ bool Glob_next(GlobCtx* ctx, Path** path) {
                 if (!WString_extend(&p->path, data.cFileName)) {
                     goto fail;
                 }
+                p->is_dir = data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
+                p->is_link = data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT;
                 *path = p;
                 return true;
             }
@@ -379,6 +381,8 @@ bool Glob_next(GlobCtx* ctx, Path** path) {
                         if (!WString_extend(&p->path, data.cFileName)) {
                             goto fail;
                         }
+                        p->is_dir = data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
+                        p->is_link = data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT;
                         *path = p;
                         return true;
                     }
@@ -388,6 +392,8 @@ bool Glob_next(GlobCtx* ctx, Path** path) {
                     }
                     --ctx->stack_size;
                     Mem_free(n.pattern);
+                    p->is_dir = data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
+                    p->is_link = data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT;
                     *path = p;
                     return true;
                 } else {
