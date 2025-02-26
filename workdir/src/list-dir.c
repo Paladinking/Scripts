@@ -326,6 +326,7 @@ void get_detailed_info(FileObj *obj, const wchar_t *path, WString *fake_owner,
             }
             if (obj->group.length == 0) {
                 WString_extend(&obj->group, L"unkown");
+
             }
         }
         if (!GetFileTime(f, NULL, NULL, &obj->stamp)) {
@@ -475,6 +476,8 @@ FileObj *collect_dir(const wchar_t *str, unsigned *count, uint32_t opt,
         params.no_threads = file_count / 4;
         if (params.no_threads > MAX_NO_THREADS) {
             params.no_threads = MAX_NO_THREADS;
+        } else if (params.no_threads == 0) {
+            params.no_threads = 1;
         }
 
         ThreadInfo info[MAX_NO_THREADS];
@@ -859,6 +862,74 @@ uint32_t parse_options(wchar_t **argv, int *argc, unsigned *width,
     return opt;
 }
 
+typedef struct Arg {
+    wchar_t* arg;
+    DWORD attrs;
+    bool allocated;
+} Arg;
+
+Arg* expand_argv(wchar_t** argv, int argc, uint32_t* count) {
+    Arg* paths = Mem_alloc(argc * sizeof(Arg));
+    if (paths == NULL) {
+        return NULL;
+    } 
+    uint32_t cap = argc;
+    *count = 0;
+    GlobCtx ctx;
+    Path* path;
+    for (uint32_t i = 0; i < argc; ++i) {
+        Glob_begin(argv[i], &ctx);
+        if (!Glob_next(&ctx, &path)) {
+            if (*count == cap) {
+                Arg* a = Mem_realloc(paths, cap * 2);
+                cap = cap * 2;
+                if (a == NULL) {
+                    goto fail;
+                }
+                paths = a;
+            }
+            paths[*count].allocated = false;
+            paths[*count].attrs = get_file_attrs(argv[i]);
+            paths[*count].arg = argv[i];
+            ++(*count);
+            continue;
+        }
+        do {
+            if (*count == cap) {
+                Arg* a = Mem_realloc(paths, cap * 2 * sizeof(Arg));
+                cap = cap * 2;
+                if (a == NULL) {
+                    Glob_abort(&ctx);
+                    goto fail;
+                }
+                paths = a;
+            }
+            wchar_t* s = Mem_alloc((path->path.length + 1) * sizeof(wchar_t));
+            if (s == NULL) {
+                goto fail;
+            }
+            memcpy(s, path->path.buffer,
+                   (path->path.length + 1) * sizeof(wchar_t));
+            paths[*count].arg = s;
+            paths[*count].allocated = true;
+            paths[*count].attrs = 
+                (path->is_dir ? FILE_ATTRIBUTE_DIRECTORY : 0) |
+                (path->is_link ? FILE_ATTRIBUTE_REPARSE_POINT : 0);
+            ++(*count);
+        } while (Glob_next(&ctx, &path));
+    }
+    return paths;
+fail:
+    for (uint32_t ix = 0; ix < *count; ++ix) {
+        if (paths[ix].allocated) {
+            Mem_free(paths[ix].arg);
+        }
+    }
+    Mem_free(paths);
+    *count = 0;
+    return NULL;
+}
+
 int main() {
     HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
     HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -874,10 +945,10 @@ int main() {
         }
     }
 
-    wchar_t *args = GetCommandLineW();
+    wchar_t *cmdline = GetCommandLineW();
     int argc;
     int status = 1;
-    wchar_t **argv = parse_command_line(args, &argc);
+    wchar_t **argv = parse_command_line(cmdline, &argc);
 
     unsigned w;
     uint32_t opt = parse_options(argv, &argc, &w, has_console);
@@ -901,11 +972,15 @@ int main() {
     FileObj *file_targets = Mem_alloc(1 * sizeof(FileObj));
     unsigned file_capacity = 1;
     unsigned file_count = 0;
-    for (unsigned ix = 0; ix < target_count;) {
-        DWORD attrs = get_file_attrs(targets[ix]);
+
+    uint32_t arg_count;
+    Arg* args = expand_argv(targets, target_count, &arg_count);
+
+    for (uint32_t ix = 0; ix < arg_count;) {
+        DWORD attrs = args[ix].attrs;
         if (attrs == INVALID_FILE_ATTRIBUTES) {
             _wprintf_h(err, L"Cannot access '%s': No such file or directory\n",
-                       targets[ix]);
+                       args[ix].arg);
         } else if (attrs & FILE_ATTRIBUTE_DIRECTORY &&
                    !(opt & OPTION_DIR_AS_FILE)) {
             ++ix;
@@ -921,36 +996,43 @@ int main() {
             file->is_dir = attrs & FILE_ATTRIBUTE_DIRECTORY;
             file->is_link = attrs & FILE_ATTRIBUTE_REPARSE_POINT;
             WString_create(&file->path);
-            WString_extend(&file->path, targets[ix]);
+            WString_extend(&file->path, args[ix].arg);
             get_detailed_info(file, file->path.buffer, NULL, NULL, 0,
                               opt & ~(OPTION_FAKE_PERMS));
             ++file_count;
         }
-        --target_count;
-        for (unsigned j = ix; j < target_count; ++j) {
-            targets[j] = targets[j + 1];
+        --arg_count;
+        for (uint32_t j = ix; j < arg_count; ++j) {
+            args[j] = args[j + 1];
         }
     }
 
-    if (target_count == 1 && file_count == 0) {
-        list_target(targets[0], w, opt, false, &errors);
+    if (arg_count == 1 && file_count == 0) {
+        list_target(args[0].arg, w, opt, false, &errors);
     } else {
         print_target(file_targets, file_count, w, opt);
-        if (target_count > 0) {
+        if (arg_count > 0) {
             _wprintf(L"\n");
         }
 
-        for (unsigned ix = 0; ix < target_count; ++ix) {
-            if (!list_target(targets[ix], w, opt, true, &errors)) {
+        for (unsigned ix = 0; ix < arg_count; ++ix) {
+            if (!list_target(args[ix].arg, w, opt, true, &errors)) {
                 continue;
             }
-            if (ix < target_count - 1) {
+            if (ix < arg_count - 1) {
                 _wprintf(L"\n");
             }
         }
     }
     _wprintf_h(err, L"%s", errors.buffer);
     WString_free(&errors);
+
+    for (uint32_t ix = 0; ix < arg_count; ++ix) {
+        if (args[ix].allocated) {
+            Mem_free(args[ix].arg);
+        }
+    }
+    Mem_free(args);
 
     for (unsigned ix = 0; ix < file_count; ++ix) {
         WString_free(&file_targets[ix].path);
