@@ -1,8 +1,10 @@
 #ifndef GLOB_H_
 #define GLOB_H_
 #include "dynamic_string.h"
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
-#include "windows.h"
+#endif
+#include <windows.h>
 #include <stdint.h>
 
 /**
@@ -28,6 +30,26 @@ typedef struct _WalkCtx {
     bool first;
     bool absolute_path;
 } WalkCtx;
+
+typedef struct _GlobCtx {
+    HANDLE handle;
+    Path p;
+    struct _GlobCtxNode {
+        uint32_t pattern_offset;
+        wchar_t* pattern;
+    }* stack;
+    uint32_t stack_size;
+    uint32_t stack_capacity;
+    uint32_t last_segment;
+} GlobCtx;
+
+bool matches(const wchar_t* pattern, const wchar_t* str);
+
+bool Glob_begin(const wchar_t* pattern, GlobCtx* ctx);
+
+bool Glob_next(GlobCtx* ctx, Path** path);
+
+void Glob_abort(GlobCtx* ctx);
 
 DWORD get_file_attrs(const wchar_t* path);
 
