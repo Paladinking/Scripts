@@ -10,19 +10,14 @@
 
 
 int main() {
-    GlobCtx ctx;
-    Path* path;
     const wchar_t* args = GetCommandLineW();
     int argc;
-    wchar_t** argv = parse_command_line(args, &argc);
-
-    for (uint32_t ix = 1; ix < argc; ++ix) {
-        _wprintf(L"Glob %s:\n", argv[ix]);
-        Glob_begin(argv[ix], &ctx);
-        while (Glob_next(&ctx, &path)) {
-            _wprintf(L"%s\n", path->path.buffer);
-        }
+    wchar_t** argv = glob_command_line(args, &argc);
+    for (uint32_t ix = 0; ix < argc; ++ix) {
+        _wprintf(L"%s\n", argv[ix]);
     }
+
+    Mem_free(argv);
 
     return 0;
 }

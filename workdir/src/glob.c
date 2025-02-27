@@ -1,4 +1,5 @@
 #include "glob.h"
+#include "args.h"
 
 bool read_utf16_file(WString_noinit* str, const wchar_t* filename) {
     HANDLE file = CreateFileW(filename, GENERIC_READ,
@@ -519,4 +520,101 @@ void WalkDir_abort(WalkCtx* ctx) {
         FindClose(ctx->handle);
         ctx->handle = INVALID_HANDLE_VALUE;
     }
+}
+
+
+wchar_t** glob_command_line_with(const wchar_t* args, int* argc, unsigned options) {
+    *argc = 0;
+    size_t ix = 0;
+    size_t cap = 4;
+    wchar_t** argv = Mem_alloc(4 * sizeof(wchar_t*));
+    if (argv == NULL) {
+        return NULL;
+    }
+
+    size_t len = 0;
+    size_t size = 0;
+    BOOL quoted;
+    GlobCtx ctx;
+    Path* path;
+    while (1) {
+        size_t offset = ix;
+        if (!get_arg_len(args, &ix, &len, &quoted, options)) {
+            break;
+        }
+        wchar_t* arg = Mem_alloc((len + 1) * sizeof(wchar_t));
+        if (arg == NULL) {
+            goto fail;
+        }
+        get_arg(args, &offset, arg, options);
+
+        bool glob_match = false;
+        if (!quoted) {
+            Glob_begin(arg, &ctx);
+            glob_match = Glob_next(&ctx, &path);
+        }
+        if (!glob_match) {
+            if (cap == *argc) {
+                wchar_t** a = Mem_realloc(argv, 2 * cap * sizeof(wchar_t*));
+                if (a == NULL) {
+                    Mem_free(arg);
+                    goto fail;
+                }
+                cap *= 2;
+                argv = a;
+            }
+            argv[*argc] = arg;
+            ++(*argc);
+            size += (len + 1) * sizeof(wchar_t);
+            continue;
+        }
+        Mem_free(arg);
+        do {
+            if (cap == *argc) {
+                wchar_t** a = Mem_realloc(argv, 2 * cap * sizeof(wchar_t*));
+                if (a == NULL) {
+                    Glob_abort(&ctx);
+                    goto fail;
+                }
+                cap *= 2;
+                argv = a;
+            }
+            wchar_t* arg = Mem_alloc((path->path.length + 1) * sizeof(wchar_t));
+            if (arg == NULL) {
+                Glob_abort(&ctx);
+                goto fail;
+            }
+            memcpy(arg, path->path.buffer, (path->path.length + 1) * sizeof(wchar_t));
+            argv[*argc] = arg;
+            ++(*argc);
+            size += (path->path.length + 1) * sizeof(wchar_t);
+        } while (Glob_next(&ctx, &path));
+    }
+
+    size += (*argc) * sizeof(wchar_t*);
+    unsigned char* dest = Mem_realloc(argv, size);
+    if (dest == NULL) {
+        goto fail;
+    }
+    wchar_t* buffer = (wchar_t*)(dest + (*argc * sizeof(wchar_t*)));
+    argv = (wchar_t**)dest;
+    for (uint32_t ix = 0; ix < *argc; ++ix) {
+        size_t len = wcslen(argv[ix]);
+        memcpy(buffer, argv[ix], (len + 1) * sizeof(wchar_t));
+        Mem_free(argv[ix]);
+        argv[ix] = buffer;
+        buffer += len + 1;
+    }
+
+    return argv;
+fail:
+    for (size_t ix = 0; ix < *argc; ++ix) {
+        Mem_free(argv[ix]);
+    }
+    Mem_free(argv);
+    return NULL;
+}
+
+wchar_t** glob_command_line(const wchar_t* args, int* argc) {
+    return glob_command_line_with(args, argc, ARG_OPTION_STD);
 }
