@@ -101,8 +101,9 @@ wchar_t **format_file_times(WString *buffer, FileObj *obj, uint32_t count,
             WString_format_append(buffer, L"%s %2u  %4u", months[st.wMonth],
                                   st.wDay, st.wYear);
         } else {
-            WString_format_append(buffer, L"%s %2u %02u:%02u", months[st.wMonth],
-                                  st.wDay, st.wHour, st.wMinute);
+            WString_format_append(buffer, L"%s %2u %02u:%02u",
+                                  months[st.wMonth], st.wDay, st.wHour,
+                                  st.wMinute);
         }
         WString_append(buffer, L'\0');
     }
@@ -326,7 +327,6 @@ void get_detailed_info(FileObj *obj, const wchar_t *path, WString *fake_owner,
             }
             if (obj->group.length == 0) {
                 WString_extend(&obj->group, L"unkown");
-
             }
         }
         if (!GetFileTime(f, NULL, NULL, &obj->stamp)) {
@@ -572,6 +572,10 @@ void print_target_w(FileObj *files, unsigned file_count, unsigned width,
 
 void print_target_c(FileObj *files, unsigned filecount, uint32_t max_w,
                     uint32_t opt) {
+    if (filecount == 0) {
+        _wprintf(L"\n");
+        return;
+    }
     bool color = opt & OPTION_USE_COLOR;
     WString disk_size;
     uint32_t disk_w;
@@ -582,7 +586,7 @@ void print_target_c(FileObj *files, unsigned filecount, uint32_t max_w,
             format_disk_sizes(&disk_size, files, filecount, opt, &disk_w);
     }
 
-    for (unsigned i = 0; i < filecount - 1; ++i) {
+    for (unsigned i = 0; i < filecount; ++i) {
         FileObj *path = files + i;
         if (opt & OPTION_ALLOCATION_SIZE) {
             _wprintf(L"%s ", disk_sizes[i]);
@@ -721,30 +725,37 @@ bool list_target(const wchar_t *str, unsigned width, uint32_t opt,
     return true;
 }
 
-const wchar_t* HELP_MESSAGE = L"Usage: %s [OPTION]... [FILE]...\n"
-                              L"List information about the FILEs (the current directory by default)\n\n"
-                              L"-a, --all               do not ignore entries starting with .\n"
-                              L"-A, --almost-all        same as -a, but do not list . and ..\n"
-                              L"-C                      list entires by collums\n"
-                              L"    --color[=WHEN]      colorize the output; WHEN can be 'always' (default\n"
-                              L"                         if omitted), 'auto' or 'never'\n"
-                              L"-d, --directory         treat directories as files, do not list their content\n"
-                              L"    --format=WORD       use format commas -m, long -l, single-collum -1,\n"
-                              L"                         verbose -l or vertical -C\n"
-                              L"-h, --human-readable    format sizes in a human-readable format\n"
-                              L"    --help              display this help message and exit\n"
-                              L"-l                      use a detaild long listing format\n"
-                              L"-m                      list entries comma separated\n"
-                              L"    --real-perms        with -l, query each file for permissions, group and\n"
-                              L"                         owner, instead of using folder values for all files.\n"
-                              L"-s, --size              Also show file allocation sizes\n"
-                              L"-w, --width=COLS        specify the maximum width in collums. 0 means no limit\n"
-                              L"-1                      list all entries in one collumn\n";
+const wchar_t *HELP_MESSAGE =
+    L"Usage: %s [OPTION]... [FILE]...\n"
+    L"List information about the FILEs (the current directory by default)\n\n"
+    L"-a, --all               do not ignore entries starting with .\n"
+    L"-A, --almost-all        same as -a, but do not list . and ..\n"
+    L"-C                      list entires by collums\n"
+    L"    --color[=WHEN]      colorize the output; WHEN can be 'always' "
+    L"(default\n"
+    L"                         if omitted), 'auto' or 'never'\n"
+    L"-d, --directory         treat directories as files, do not list their "
+    L"content\n"
+    L"    --format=WORD       use format commas -m, long -l, single-collum "
+    L"-1,\n"
+    L"                         verbose -l or vertical -C\n"
+    L"-h, --human-readable    format sizes in a human-readable format\n"
+    L"    --help              display this help message and exit\n"
+    L"-l                      use a detaild long listing format\n"
+    L"-m                      list entries comma separated\n"
+    L"    --real-perms        with -l, query each file for permissions, group "
+    L"and\n"
+    L"                         owner, instead of using folder values for all "
+    L"files.\n"
+    L"-s, --size              Also show file allocation sizes\n"
+    L"-w, --width=COLS        specify the maximum width in collums. 0 means no "
+    L"limit\n"
+    L"-1                      list all entries in one collumn\n";
 
 uint32_t parse_options(wchar_t **argv, int *argc, unsigned *width,
                        bool has_console) {
     HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
-    HANDLE err = GetStdHandle(STD_OUTPUT_HANDLE);
+    HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
     *width = 80;
     CONSOLE_SCREEN_BUFFER_INFO cinfo;
     if (has_console && GetConsoleScreenBufferInfo(out, &cinfo)) {
@@ -787,8 +798,8 @@ uint32_t parse_options(wchar_t **argv, int *argc, unsigned *width,
     };
     ErrorInfo errors;
     if (!find_flags(argv, argc, flags, 16, &errors)) {
-        wchar_t* err_msg = format_error(&errors, flags, 16);
-        _wprintf_h(err, L"%s\n", err_msg); 
+        wchar_t *err_msg = format_error(&errors, flags, 16);
+        _wprintf_h(err, L"%s\n", err_msg);
         _wprintf_h(err, L"Run '%s --help' for more information\n", argv[0]);
         return OPTION_INVALID;
     }
@@ -862,74 +873,6 @@ uint32_t parse_options(wchar_t **argv, int *argc, unsigned *width,
     return opt;
 }
 
-typedef struct Arg {
-    wchar_t* arg;
-    DWORD attrs;
-    bool allocated;
-} Arg;
-
-Arg* expand_argv(wchar_t** argv, int argc, uint32_t* count) {
-    Arg* paths = Mem_alloc(argc * sizeof(Arg));
-    if (paths == NULL) {
-        return NULL;
-    } 
-    uint32_t cap = argc;
-    *count = 0;
-    GlobCtx ctx;
-    Path* path;
-    for (uint32_t i = 0; i < argc; ++i) {
-        Glob_begin(argv[i], &ctx);
-        if (!Glob_next(&ctx, &path)) {
-            if (*count == cap) {
-                Arg* a = Mem_realloc(paths, cap * 2);
-                cap = cap * 2;
-                if (a == NULL) {
-                    goto fail;
-                }
-                paths = a;
-            }
-            paths[*count].allocated = false;
-            paths[*count].attrs = get_file_attrs(argv[i]);
-            paths[*count].arg = argv[i];
-            ++(*count);
-            continue;
-        }
-        do {
-            if (*count == cap) {
-                Arg* a = Mem_realloc(paths, cap * 2 * sizeof(Arg));
-                cap = cap * 2;
-                if (a == NULL) {
-                    Glob_abort(&ctx);
-                    goto fail;
-                }
-                paths = a;
-            }
-            wchar_t* s = Mem_alloc((path->path.length + 1) * sizeof(wchar_t));
-            if (s == NULL) {
-                goto fail;
-            }
-            memcpy(s, path->path.buffer,
-                   (path->path.length + 1) * sizeof(wchar_t));
-            paths[*count].arg = s;
-            paths[*count].allocated = true;
-            paths[*count].attrs = 
-                (path->is_dir ? FILE_ATTRIBUTE_DIRECTORY : 0) |
-                (path->is_link ? FILE_ATTRIBUTE_REPARSE_POINT : 0);
-            ++(*count);
-        } while (Glob_next(&ctx, &path));
-    }
-    return paths;
-fail:
-    for (uint32_t ix = 0; ix < *count; ++ix) {
-        if (paths[ix].allocated) {
-            Mem_free(paths[ix].arg);
-        }
-    }
-    Mem_free(paths);
-    *count = 0;
-    return NULL;
-}
-
 int main() {
     HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
     HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -948,7 +891,7 @@ int main() {
     wchar_t *cmdline = GetCommandLineW();
     int argc;
     int status = 1;
-    wchar_t **argv = parse_command_line(cmdline, &argc);
+    wchar_t **argv = glob_command_line(cmdline, &argc);
 
     unsigned w;
     uint32_t opt = parse_options(argv, &argc, &w, has_console);
@@ -973,14 +916,11 @@ int main() {
     unsigned file_capacity = 1;
     unsigned file_count = 0;
 
-    uint32_t arg_count;
-    Arg* args = expand_argv(targets, target_count, &arg_count);
-
-    for (uint32_t ix = 0; ix < arg_count;) {
-        DWORD attrs = args[ix].attrs;
+    for (uint32_t ix = 0; ix < target_count;) {
+        DWORD attrs = get_file_attrs(targets[ix]);
         if (attrs == INVALID_FILE_ATTRIBUTES) {
             _wprintf_h(err, L"Cannot access '%s': No such file or directory\n",
-                       args[ix].arg);
+                       targets[ix]);
         } else if (attrs & FILE_ATTRIBUTE_DIRECTORY &&
                    !(opt & OPTION_DIR_AS_FILE)) {
             ++ix;
@@ -996,43 +936,36 @@ int main() {
             file->is_dir = attrs & FILE_ATTRIBUTE_DIRECTORY;
             file->is_link = attrs & FILE_ATTRIBUTE_REPARSE_POINT;
             WString_create(&file->path);
-            WString_extend(&file->path, args[ix].arg);
+            WString_extend(&file->path, targets[ix]);
             get_detailed_info(file, file->path.buffer, NULL, NULL, 0,
                               opt & ~(OPTION_FAKE_PERMS));
             ++file_count;
         }
-        --arg_count;
-        for (uint32_t j = ix; j < arg_count; ++j) {
-            args[j] = args[j + 1];
+        --target_count;
+        for (uint32_t j = ix; j < target_count; ++j) {
+            targets[j] = targets[j + 1];
         }
     }
 
-    if (arg_count == 1 && file_count == 0) {
-        list_target(args[0].arg, w, opt, false, &errors);
+    if (target_count == 1 && file_count == 0) {
+        list_target(targets[0], w, opt, false, &errors);
     } else {
         print_target(file_targets, file_count, w, opt);
-        if (arg_count > 0) {
+        if (target_count > 0) {
             _wprintf(L"\n");
         }
 
-        for (unsigned ix = 0; ix < arg_count; ++ix) {
-            if (!list_target(args[ix].arg, w, opt, true, &errors)) {
+        for (unsigned ix = 0; ix < target_count; ++ix) {
+            if (!list_target(targets[ix], w, opt, true, &errors)) {
                 continue;
             }
-            if (ix < arg_count - 1) {
+            if (ix < target_count - 1) {
                 _wprintf(L"\n");
             }
         }
     }
     _wprintf_h(err, L"%s", errors.buffer);
     WString_free(&errors);
-
-    for (uint32_t ix = 0; ix < arg_count; ++ix) {
-        if (args[ix].allocated) {
-            Mem_free(args[ix].arg);
-        }
-    }
-    Mem_free(args);
 
     for (unsigned ix = 0; ix < file_count; ++ix) {
         WString_free(&file_targets[ix].path);
