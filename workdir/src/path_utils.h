@@ -1,9 +1,6 @@
 #pragma once
 #include <windows.h>
 #include "dynamic_string.h"
-#ifndef UNICODE
-#error Unicode required
-#endif
 
 typedef WString PathBuffer;
 
@@ -29,6 +26,12 @@ typedef struct _EnvBuffer {
 BOOL get_envvar(LPCWSTR name, DWORD hint, WString* res);
 
 /*
+ * Gets environment variable <name>.
+ * Returns TRUE on success.
+ */
+BOOL create_envvar(const wchar_t* name, WString_noinit* res);
+
+/*
  Gets an environment variable <name> from <env>.
  If the variable is not present, it first added to env.
  If the function fails, NULL is returned.
@@ -51,6 +54,21 @@ PathStatus validate(LPWSTR path);
 typedef enum _OpStatus {
 	OP_SUCCESS, OP_NO_CHANGE, OP_INVALID_PATH, OP_MISSSING_ARG, OP_OUT_OF_MEMORY
 } OpStatus;
+
+
+typedef struct PathIterator {
+    PathBuffer* path;
+    wchar_t* buf;
+    uint32_t capacity;
+    uint32_t ix;
+} PathIterator;
+
+bool PathIterator_begin(PathIterator* it, PathBuffer* path);
+
+wchar_t* PathIterator_next(PathIterator* it, uint32_t* size);
+
+void PathIterator_abort(PathIterator* it);
+
 
 OpStatus expand_path(LPWSTR path, LPWSTR* dest, DWORD *dest_cap);
 

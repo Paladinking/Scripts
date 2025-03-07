@@ -67,8 +67,6 @@
 #define HashMap_Value WHashMap_Value
 #define HashMap_Remove WHashMap_Remove
 #define HashMap_RemoveGet WHashMap_RemoveGet
-#define HashMap_Freeze WHashMap_Freeze
-#define HashMap_FreeFrozen WHashMap_FreeFrozen
 
 #ifdef HASHMAP_LINKED
 #define HashMapIterator WHashMapIterator
@@ -143,11 +141,6 @@ void* HashMap_Value(HashMap* map, const ckey_t* key);
 int HashMap_Remove(HashMap* map, const ckey_t* key);
 
 int HashMap_RemoveGet(HashMap* map, const ckey_t* key, void** old_val);
-
-int HashMap_Freeze(const HashMap* map, HashMapFrozen* out);
-
-void HashMap_FreeFrozen(HashMapFrozen* map);
-
 
 #ifdef HASHMAP_LINKED
 

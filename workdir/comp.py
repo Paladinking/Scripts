@@ -41,7 +41,7 @@ def main():
                  "_vsnprintf", "_vsnwprintf", "_vscprintf", "memset", 
                  "wcscmp", "strcmp", "_fltused", "wcschr", "wcsrchr", 
                  "strtol", "wcsncmp", "memcmp", "tolower", "strncmp",
-                 "wcsstr", "_snprintf"]
+                 "strnlen", "wcsstr", "_snprintf"]
     kernelbasesymbols = ["PathMatchSpecW"]
 
     arg_src = ["src/args.c", "src/mem.c", "src/dynamic_string.c", "src/printf.c"]
@@ -62,7 +62,7 @@ def main():
     Executable("inject.exe", "src/inject.c", *arg_src, 
                "src/glob.c", ntdll)
     Executable("list-dir.exe", "src/list-dir.c", "src/args.c", "src/printf.c",
-               "src/perm.c", "src/glob.c", "src/dynamic_string.c",
+               "src/perm.c", "src/glob.c", "src/dynamic_string.c", "src/mem.c",
                "src/unicode_width.c", ntdll, link_flags=LINKFLAGS + " " + "Advapi32.lib")
     
     whashmap = Object("whashmap.obj", "src/hashmap.c", cmp_flags=CLFLAGS + " " +
@@ -78,6 +78,10 @@ def main():
                "src/cli.c", *arg_src, "src/json.c", "src/subprocess.c", 
                "src/path_utils.c", "src/unicode_width.c",
                whashmap, hashmap, ntdll)
+    Executable("symbol-dump.exe", "src/symbol-dump.c", *arg_src, ntdll)
+    Executable("symbol-scrape.exe", "src/symbol-scrape.c", "src/path_utils.c",
+               "src/glob.c", *arg_src, ntdll)
+
     CopyToBin("autocmp.json", "script/err.exe", "script/2to3.bat",
               "script/cal.bat", "script/ports.bat", "script/short.bat",
               "script/wget.bat", "script/xkcd.bat", "script/xkcd-keywords.txt",
