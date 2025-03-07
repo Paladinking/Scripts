@@ -258,64 +258,6 @@ int HashMap_RemoveGet(HashMap* map, const ckey_t* key, void** old_val) {
     return 1;
 }
 
-int HashMap_Freeze(const HashMap* map, HashMapFrozen *out) {
-#ifdef HASHMAP_LINKED
-    return 0; // TODO: support this
-#else
-    uint64_t size = sizeof(HashBucket) * map->bucket_count + sizeof(HashElement) * map->element_count;
-    for (uint32_t i = 0; i < map->bucket_count; ++i) {
-        for (uint32_t j = 0; j < map->buckets[i].size; ++j) {
-            HashElement* elem = &map->buckets[i].data[j];
-            size += (keylen(elem->key) + 1) * sizeof(ckey_t);
-            /*if (elem->value != NULL) {
-                size += strlen(elem->value) + 1;
-            }*/
-        }
-    }
-
-    unsigned char* ptr;
-    CHECKED_ALLOC(ptr, size);
-    unsigned char* bucket_ptr = ptr;
-    unsigned char* elem_ptr = ptr + map->bucket_count * sizeof(HashBucket);
-    unsigned char* str_ptr = elem_ptr + map->element_count * sizeof(HashElement);
-    for (uint32_t i = 0; i < map->bucket_count; ++i) {
-        HashBucket* old_bucket = &map->buckets[i];
-        HashBucket bucket = {(HashElement*)elem_ptr, old_bucket->size, old_bucket->size};
-        memcpy(bucket_ptr, &bucket, sizeof(HashBucket));
-        bucket_ptr += sizeof(HashBucket);
-        for (uint32_t j = 0; j < old_bucket->size; ++j) {
-            uint32_t key_len = keylen(old_bucket->data[j].key) + 1;
-            memcpy(str_ptr, old_bucket->data[j].key, key_len * sizeof(ckey_t));
-            uint32_t val_len = 0;
-            HashElement e = {(ckey_t*)str_ptr, old_bucket->data[j].value};
-            /*if (old_bucket->data[j].value != NULL) {
-                val_len = strlen(old_bucket->data[j].value) + 1;
-                memcpy(str_ptr + key_len, old_bucket->data[j].value, val_len);
-                e.value = str_ptr + key_len;
-            }*/
-            memcpy(elem_ptr, &e, sizeof(e));
-            elem_ptr += sizeof(e);
-            str_ptr += key_len * sizeof(ckey_t) + val_len;
-        }
-    }
-
-    out->map.buckets = (HashBucket*)ptr;
-    out->map.bucket_count = map->bucket_count;
-    out->map.element_count = map->element_count;
-    out->data_size = size;
-
-    return 1;
-#endif
-}
-
-void HashMap_FreeFrozen(HashMapFrozen *map) {
-    HASHMAP_FREE_FN(map->map.buckets);
-    map->map.element_count = 0;
-    map->map.bucket_count = 0;
-    map->data_size = 0;
-}
-
-
 #ifdef HASHMAP_LINKED
 void HashMapIter_Begin(HashMapIterator* it, HashMap* map) {
     it->map = map;

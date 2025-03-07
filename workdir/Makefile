@@ -9,6 +9,8 @@ all: \
 	bin\list-dir.exe \
 	bin\autocmp.dll \
 	bin\test.exe \
+	bin\symbol-dump.exe \
+	bin\symbol-scrape.exe \
 	bin\autocmp.json \
 	bin\err.exe \
 	bin\2to3.bat \
@@ -59,7 +61,7 @@ build\path-select.obj: src\path-select.c src\args.h src\printf.h src\mem.h src\p
 	cl.exe /c /Fo:build\path-select.obj /GS- /GL /O1 /favor:AMD64 /nologo src\path-select.c
 build\inject.obj: src\inject.c src\printf.h src\args.h src\glob.h src\dynamic_string.h src\mem.h build
 	cl.exe /c /Fo:build\inject.obj /GS- /GL /O1 /favor:AMD64 /nologo src\inject.c
-build\glob.obj: src\glob.c src\glob.h src\dynamic_string.h src\mem.h build
+build\glob.obj: src\glob.c src\glob.h src\dynamic_string.h src\mem.h src\args.h build
 	cl.exe /c /Fo:build\glob.obj /GS- /GL /O1 /favor:AMD64 /nologo src\glob.c
 build\list-dir.obj: src\list-dir.c src\args.h src\glob.h src\dynamic_string.h src\mem.h src\perm.h src\printf.h src\unicode_width.h build
 	cl.exe /c /Fo:build\list-dir.obj /GS- /GL /O1 /favor:AMD64 /nologo src\list-dir.c
@@ -77,8 +79,12 @@ build\subprocess.obj: src\subprocess.c src\subprocess.h src\dynamic_string.h src
 	cl.exe /c /Fo:build\subprocess.obj /GS- /GL /O1 /favor:AMD64 /nologo src\subprocess.c
 build\json.obj: src\json.c src\json.h src\hashmap.h src\mem.h src\dynamic_string.h build
 	cl.exe /c /Fo:build\json.obj /GS- /GL /O1 /favor:AMD64 /nologo src\json.c
-build\test.obj: src\test.c src\args.h src\glob.h src\dynamic_string.h src\mem.h src\json.h src\hashmap.h src\match_node.h src\whashmap.h src\printf.h src\subprocess.h src\path_utils.h src\cli.h build
+build\test.obj: src\test.c src\args.h src\glob.h src\dynamic_string.h src\mem.h src\printf.h build
 	cl.exe /c /Fo:build\test.obj /GS- /GL /O1 /favor:AMD64 /nologo src\test.c
+build\symbol-dump.obj: src\symbol-dump.c src\mem.h src\coff.h src\printf.h src\args.h build
+	cl.exe /c /Fo:build\symbol-dump.obj /GS- /GL /O1 /favor:AMD64 /nologo src\symbol-dump.c
+build\symbol-scrape.obj: src\symbol-scrape.c src\printf.h src\args.h src\mem.h src\path_utils.h src\dynamic_string.h src\glob.h build
+	cl.exe /c /Fo:build\symbol-scrape.obj /GS- /GL /O1 /favor:AMD64 /nologo src\symbol-scrape.c
 
 bin\pathc.exe: build\pathc.obj build\path_utils.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib bin
 	link /OUT:bin\pathc.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\pathc.obj build\path_utils.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib
@@ -94,15 +100,19 @@ bin\path-select.exe: build\path-select.obj build\path_utils.obj build\args.obj b
 	link /OUT:bin\path-select.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\path-select.obj build\path_utils.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib build\kernelbase.lib
 bin\inject.exe: build\inject.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\glob.obj build\ntutils.lib bin
 	link /OUT:bin\inject.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\inject.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\glob.obj build\ntutils.lib
-bin\list-dir.exe: build\list-dir.obj build\args.obj build\printf.obj build\perm.obj build\glob.obj build\dynamic_string.obj build\unicode_width.obj build\ntutils.lib bin
-	link /OUT:bin\list-dir.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main Advapi32.lib build\list-dir.obj build\args.obj build\printf.obj build\perm.obj build\glob.obj build\dynamic_string.obj build\unicode_width.obj build\ntutils.lib
+bin\list-dir.exe: build\list-dir.obj build\args.obj build\printf.obj build\perm.obj build\glob.obj build\dynamic_string.obj build\mem.obj build\unicode_width.obj build\ntutils.lib bin
+	link /OUT:bin\list-dir.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main Advapi32.lib build\list-dir.obj build\args.obj build\printf.obj build\perm.obj build\glob.obj build\dynamic_string.obj build\mem.obj build\unicode_width.obj build\ntutils.lib
 bin\autocmp.dll: build\autocmp.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\match_node.obj build\subprocess.obj build\whashmap.obj build\hashmap.obj build\json.obj build\cli.obj build\glob.obj build\path_utils.obj build\unicode_width.obj build\ntutils.lib bin
 	link /OUT:bin\autocmp.dll /DLL kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:DLLMain build\autocmp.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\match_node.obj build\subprocess.obj build\whashmap.obj build\hashmap.obj build\json.obj build\cli.obj build\glob.obj build\path_utils.obj build\unicode_width.obj build\ntutils.lib
 bin\test.exe: build\test.obj build\match_node.obj build\glob.obj build\cli.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\json.obj build\subprocess.obj build\path_utils.obj build\unicode_width.obj build\whashmap.obj build\hashmap.obj build\ntutils.lib bin
 	link /OUT:bin\test.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\test.obj build\match_node.obj build\glob.obj build\cli.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\json.obj build\subprocess.obj build\path_utils.obj build\unicode_width.obj build\whashmap.obj build\hashmap.obj build\ntutils.lib
+bin\symbol-dump.exe: build\symbol-dump.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib bin
+	link /OUT:bin\symbol-dump.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\symbol-dump.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib
+bin\symbol-scrape.exe: build\symbol-scrape.obj build\path_utils.obj build\glob.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib bin
+	link /OUT:bin\symbol-scrape.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\symbol-scrape.obj build\path_utils.obj build\glob.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib
 
 build\ntutils.lib: build
-	lib /MACHINE:X64 /DEF /OUT:build\ntutils.lib /NAME:ntdll.dll /EXPORT:memcpy=memcpy /EXPORT:strlen=strlen /EXPORT:memmove=memmove /EXPORT:_wsplitpath_s=_wsplitpath_s /EXPORT:wcslen=wcslen /EXPORT:_wmakepath_s=_wmakepath_s /EXPORT:strchr=strchr /EXPORT:_stricmp=_stricmp /EXPORT:towlower=towlower /EXPORT:_wcsicmp=_wcsicmp /EXPORT:_snwprintf_s=_snwprintf_s /EXPORT:_snprintf_s=_snprintf_s /EXPORT:_vscwprintf=_vscwprintf /EXPORT:_vsnprintf=_vsnprintf /EXPORT:_vsnwprintf=_vsnwprintf /EXPORT:_vscprintf=_vscprintf /EXPORT:memset=memset /EXPORT:wcscmp=wcscmp /EXPORT:strcmp=strcmp /EXPORT:_fltused=_fltused /EXPORT:wcschr=wcschr /EXPORT:wcsrchr=wcsrchr /EXPORT:strtol=strtol /EXPORT:wcsncmp=wcsncmp /EXPORT:memcmp=memcmp /EXPORT:tolower=tolower /EXPORT:strncmp=strncmp /EXPORT:wcsstr=wcsstr /EXPORT:_snprintf=_snprintf
+	lib /MACHINE:X64 /DEF /OUT:build\ntutils.lib /NAME:ntdll.dll /EXPORT:memcpy=memcpy /EXPORT:strlen=strlen /EXPORT:memmove=memmove /EXPORT:_wsplitpath_s=_wsplitpath_s /EXPORT:wcslen=wcslen /EXPORT:_wmakepath_s=_wmakepath_s /EXPORT:strchr=strchr /EXPORT:_stricmp=_stricmp /EXPORT:towlower=towlower /EXPORT:_wcsicmp=_wcsicmp /EXPORT:_snwprintf_s=_snwprintf_s /EXPORT:_snprintf_s=_snprintf_s /EXPORT:_vscwprintf=_vscwprintf /EXPORT:_vsnprintf=_vsnprintf /EXPORT:_vsnwprintf=_vsnwprintf /EXPORT:_vscprintf=_vscprintf /EXPORT:memset=memset /EXPORT:wcscmp=wcscmp /EXPORT:strcmp=strcmp /EXPORT:_fltused=_fltused /EXPORT:wcschr=wcschr /EXPORT:wcsrchr=wcsrchr /EXPORT:strtol=strtol /EXPORT:wcsncmp=wcsncmp /EXPORT:memcmp=memcmp /EXPORT:tolower=tolower /EXPORT:strncmp=strncmp /EXPORT:strnlen=strnlen /EXPORT:wcsstr=wcsstr /EXPORT:_snprintf=_snprintf
 build\kernelbase.lib: build
 	lib /MACHINE:X64 /DEF /OUT:build\kernelbase.lib /NAME:kernelbase.dll /EXPORT:PathMatchSpecW=PathMatchSpecW
 bin\autocmp.json: autocmp.json bin

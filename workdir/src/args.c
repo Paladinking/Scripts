@@ -2,12 +2,23 @@
 #include "args.h"
 #include "mem.h"
 
-BOOL parse_uint(const wchar_t* s, uint64_t* i) {
+BOOL parse_uintw(const wchar_t* s, uint64_t* i, uint8_t base) {
+    *i = 0;
     uint64_t n = 0;
     if (*s == L'\0') {
         return FALSE;
     }
-    if (*s == L'0' && (*(s + 1) == L'x' || (*s + 1) == L'X')) { // Hex
+    if (base != 10 && base != 8 && base != 16) {
+        if (*s == L'0' && ((*s + 1) == L'x' || (*s + 1) == L'X')) {
+            base = 16;
+        } else if (*s == L'0') {
+            base = 8;
+        } else {
+            base = 10;
+        }
+    }
+
+    if (base == 16) { // Hex
         s += 2;
         while (*s != L'\0') {
             wchar_t c = *s;
@@ -26,7 +37,7 @@ BOOL parse_uint(const wchar_t* s, uint64_t* i) {
             }
             ++s;
         }
-    } else if (*s == L'0') { // Octal
+    } else if (base == 8) { // Octal
         s += 1;
         while (*s != L'\0') {
             wchar_t c = *s;
@@ -64,14 +75,14 @@ BOOL parse_uint(const wchar_t* s, uint64_t* i) {
     return TRUE;
 }
 
-BOOL parse_sint(const wchar_t* s, int64_t* i) {
+BOOL parse_sintw(const wchar_t* s, int64_t* i, uint8_t base) {
     BOOL negative = FALSE;
     if (*s == L'-') {
         negative = TRUE;
         ++s;
     }
     uint64_t u;
-    if (!parse_uint(s, &u)) {
+    if (!parse_uintw(s, &u, base)) {
         return FALSE;
     }
     if (negative) {
@@ -130,7 +141,7 @@ BOOL parse_argument(LPWSTR val, FlagValue* valid, unsigned ix, ErrorInfo* err) {
         return TRUE;
     }
     if (valid->type & FLAG_INT) {
-        if (!parse_sint(val, &valid->sint)) {
+        if (!parse_sintw(val, &valid->sint, BASE_FROM_PREFIX)) {
             err->type = FLAG_INVALID_VALUE;
             err->ix = ix;
             err->value = val;
@@ -140,7 +151,7 @@ BOOL parse_argument(LPWSTR val, FlagValue* valid, unsigned ix, ErrorInfo* err) {
         return TRUE;
     }
     if (valid->type & FLAG_UINT) {
-        if (!parse_uint(val, &valid->uint)) {
+        if (!parse_uintw(val, &valid->uint, BASE_FROM_PREFIX)) {
             err->type = FLAG_INVALID_VALUE;
             err->ix = ix;
             err->value = val;

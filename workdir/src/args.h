@@ -55,9 +55,20 @@ typedef struct ErrorInfo {
     LPWSTR value;
 } ErrorInfo;
 
+
+#define BASE_FROM_PREFIX 0xff
+/**
+ * Parse string containing a signedd or unsigned integer.
+ * Returns False if the string is not just a valid number.
+ * Base can be 16, 10, 8, or BASE_FROM_PREFIX.
+ * Any other value is seen as BASE_FROM_PREFIX.
+ */
+BOOL parse_uintw(const wchar_t* s, uint64_t* i, uint8_t base);
+BOOL parse_sintw(const wchar_t* s, int64_t* i, uint8_t base);
+
 /**
  * Find all flags described by <flag_count> entries in <flags>.
- * Return 
+ * Return False on error.
  */
 BOOL find_flags(wchar_t** argv, int* argc, FlagInfo* flags, uint32_t flag_count, ErrorInfo* err);
 
@@ -90,7 +101,7 @@ BOOL get_arg_len(const wchar_t* cmd, size_t* ix, size_t* len, BOOL* quoted, unsi
 wchar_t* get_arg(const wchar_t* cmd, size_t *ix, wchar_t* dest, unsigned flags);
 /**
  * Convert a commandline into C-style argv and argc.
- * Returns argv, <argc> gets number of arguments.
+ * Returns argv, argc gets number of arguments.
  */
 LPWSTR* parse_command_line(LPCWSTR args, int* argc);
 
