@@ -1,7 +1,7 @@
-#ifndef WHASHMAP_H_00
-#define WHASHMAP_H_00
+#ifndef LINKED_HASHMAP_00
+#define LINKED_HASHMAP_00
 
-#define HASHMAP_WIDE
+#define HASHMAP_LINKED
 
 #ifdef HASHMAP_H_00
 #undef HASHMAP_H_00
@@ -34,7 +34,9 @@
 #undef HashMap_Value
 #undef HashMap_Remove
 #undef HashMap_RemoveGet
+#undef HashMap_Freeze
+#undef HashMap_FreeFrozen
 
-#undef HASHMAP_WIDE
+#undef HASHMAP_LINKED
 
 #endif

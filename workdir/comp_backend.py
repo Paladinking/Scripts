@@ -2,6 +2,7 @@ import pathlib
 import subprocess
 import os.path
 import time
+import sys
 import shutil
 
 from typing import List, Optional, Union
@@ -86,7 +87,7 @@ class Msvc:
         cmd = f"{cl} /P /showIncludes /FiNUL {obj.cmp_flags} {obj.source}"
         res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if res.returncode != 0:
-            print(res)
+            print(res, file=sys.stderr)
             raise RuntimeError("Failed generating headers")
         headers = dict()
         for line in res.stderr.decode().replace("\r\n", "\n").split("\n"):
@@ -213,8 +214,14 @@ def find_headers(obj: Obj) -> list[str]:
         pass
     return headers
         
-def generate():
+def makefile():
     print("all:", end="")
+    for obj in OBJECTS.values():
+        p = pathlib.Path(obj.source).resolve()
+        if not p.is_file():
+            print(f"File '{p}' does not exist", file=sys.stderr)
+            return
+
     for key, exe in EXECUTABLES.items():
         print(" \\")
         print(f"\t{BIN_DIR}\\{exe.name}", end="")
@@ -297,3 +304,16 @@ def set_backend(name: str) -> None:
     BACKEND = backend
 
     return
+
+def generate():
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Generate makefile and compile commands.")
+    parser.add_argument("--compiledb", "-c", action="store_true",
+                        help="Generate compile commands database instead of Makefile")
+
+    args = parser.parse_args()
+    if args.compiledb:
+        compile_commands()
+    else:
+        makefile()

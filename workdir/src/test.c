@@ -46,6 +46,8 @@ int main() {
     QueryPerformanceCounter(&li);
     uint64_t now = li.QuadPart;
 
+    wchar_t* p = 0x0;
+
     uint64_t cap = 100;
     uint64_t size = 0;
     wchar_t* ptr = Mem_alloc(100 * sizeof(wchar_t));

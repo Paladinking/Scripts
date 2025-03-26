@@ -37,11 +37,13 @@ void* Mem_alloc_dbg(size_t size, int lineno, const char* file) {
     if (ptr != NULL) {
         alloc_count += 1;
     }
+#if MEM_DEBUG > 1
 
     char buf[1024];
     _snprintf(buf, 1024, "Alloc %p (%llu): %s:%d\n", ptr, alloc_count, file, lineno);
 
     append_file(buf, L"mem_debug.txt");
+#endif
     return ptr;
 }
 
@@ -50,24 +52,30 @@ void Mem_free_dbg(void* ptr, int lineno, const char* file) {
         alloc_count -= 1;
     }
 
+#if MEM_DEBUG > 1
     char buf[1024];
     _snprintf(buf, 1024, "Free %p (%llu): %s:%d\n", ptr, alloc_count, file, lineno);
 
     append_file(buf, L"mem_debug.txt");
-
+#endif
     HeapFree(GetProcessHeap(), 0, ptr);
 }
 
 void* Mem_realloc_dbg(void* ptr, size_t size, int lineno, const char* file) {
     void *new_ptr = HeapReAlloc(GetProcessHeap(), 0, ptr, size);
+#if MEM_DEBUG > 1
     char buf[1024];
     _snprintf(buf, 1024, "Realloc %p, %p (%llu): %s:%d\n", ptr, new_ptr, alloc_count, file, lineno);
 
     append_file(buf, L"mem_debug.txt");
-
+#endif
     return new_ptr;
 }
 
+
+uint64_t Mem_count() {
+    return alloc_count;
+}
 
 void Mem_debug_dbg(int lineno, const char* file, const char* fmt, ...) {
     char fmt_buf[1024];

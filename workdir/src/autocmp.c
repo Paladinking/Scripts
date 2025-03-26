@@ -615,7 +615,7 @@ end:
 #define MAX_PRELUDE_SIZE 20
 
 
-bool add_node(NodeBuilder* builder, const char* key, HashMap* extr_map, MatchNode* node, WString* workbuf) {
+bool add_node(NodeBuilder* builder, const char* key, LinkedHashMap* extr_map, MatchNode* node, WString* workbuf) {
     if (strcmp(key, "&FILE") == 0) {
         NodeBuilder_add_files(builder, true, node);
     } else if (strcmp(key, "&FILELIKE") == 0) {
@@ -623,7 +623,7 @@ bool add_node(NodeBuilder* builder, const char* key, HashMap* extr_map, MatchNod
     } else if (strcmp(key, "&DEFAULT") == 0) {
         NodeBuilder_add_any(builder, node);
     } else if (key[0] == '&') {
-        DynamicMatch* dyn = HashMap_Value(extr_map, key);
+        DynamicMatch* dyn = LinkedHashMap_Value(extr_map, key);
         if (dyn != NULL) {
             NodeBuilder_add_dynamic(builder, dyn, node);
         } else {
@@ -673,14 +673,14 @@ bool load_json() {
         return 1;
     }
 
-    HashMap extr_map;
-    HashMap_Create(&extr_map);
-    HashMapIterator it;
-    HashElement *elem;
+    LinkedHashMap extr_map;
+    LinkedHashMap_Create(&extr_map);
+    LinkedHashMapIterator it;
+    LinkedHashElement *elem;
 
     if (extr != NULL) {
-        HashMapIter_Begin(&it, &extr->data);
-        while ((elem = HashMapIter_Next(&it)) != NULL) {
+        LinkedHashMapIter_Begin(&it, &extr->data);
+        while ((elem = LinkedHashMapIter_Next(&it)) != NULL) {
             JsonType *type = elem->value;
             if (type->type != JSON_OBJECT) {
                 continue;
@@ -720,23 +720,23 @@ bool load_json() {
             // wcmd.buffer is moved
             DynamicMatch *match =
                 DynamicMatch_create(wcmd.buffer, invalidation, sep_char);
-            HashMap_Insert(&extr_map, elem->key, match);
+            LinkedHashMap_Insert(&extr_map, elem->key, match);
         }
     }
 
     struct {
         const char* key;
-        HashMapIterator it;
+        LinkedHashMapIterator it;
         NodeBuilder node;
     } stack[32];
     unsigned stack_ix = 0;
 
-    HashMapIter_Begin(&stack[0].it, &root_obj->data);
+    LinkedHashMapIter_Begin(&stack[0].it, &root_obj->data);
     NodeBuilder_create(&stack[0].node);
     WString workbuf;
     WString_create(&workbuf);
     while (1) {
-        while ((elem = HashMapIter_Next(&stack[stack_ix].it)) != NULL) {
+        while ((elem = LinkedHashMapIter_Next(&stack[stack_ix].it)) != NULL) {
             JsonType *type = elem->value;
             if (elem->key[0] == '\0') {
                 continue;
@@ -757,7 +757,7 @@ bool load_json() {
 
             ++stack_ix;
             stack[stack_ix].key = elem->key;
-            HashMapIter_Begin(&stack[stack_ix].it, &type->object.data);
+            LinkedHashMapIter_Begin(&stack[stack_ix].it, &type->object.data);
             NodeBuilder_create(&stack[stack_ix].node);
         }
         if (stack_ix == 0) {
@@ -772,7 +772,7 @@ bool load_json() {
 
     MatchNode* root = NodeBuilder_finalize(&stack[0].node);
     MatchNode_set_root(root);
-    HashMap_Free(&extr_map);
+    LinkedHashMap_Free(&extr_map);
 
     JsonObject* opt_obj = JsonObject_get_obj(&obj, "options");
     if (opt_obj != NULL) {
