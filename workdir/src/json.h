@@ -1,10 +1,7 @@
 #ifndef JSON_C_H
 #define JSON_C_H
 
-#ifndef HASHMAP_LINKED
-#define HASHMAP_LINKED
-#endif
-#include "hashmap.h"
+#include "linkedhashmap.h"
 #include "dynamic_string.h"
 
 struct JsonObject;
@@ -16,7 +13,7 @@ typedef struct JsonList JsonList;
 typedef struct JsonType JsonType;
 
 struct JsonObject {
-    HashMap data;
+    LinkedHashMap data;
 };
 
 struct JsonList {

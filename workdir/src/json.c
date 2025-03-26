@@ -3,11 +3,11 @@
 #include "json.h"
 
 bool JsonObject_create(JsonObject* obj) {
-    return HashMap_Create(&obj->data);
+    return LinkedHashMap_Create(&obj->data);
 }
 
 void JsonObject_free(JsonObject* obj) {
-    HashMap* map = &obj->data;
+    LinkedHashMap* map = &obj->data;
     for (uint32_t i = 0; i < map->bucket_count; ++i) {
         for (uint32_t j = 0; j < map->buckets[i].size; ++j) {
             JsonType* type = map->buckets[i].data[j].value;
@@ -15,11 +15,11 @@ void JsonObject_free(JsonObject* obj) {
             Mem_free(type);
         } 
     }
-    HashMap_Free(&obj->data);
+    LinkedHashMap_Free(&obj->data);
 }
 
 bool JsonObject_insert(JsonObject* obj, const char* str, JsonType type) {
-    HashElement* elem = HashMap_Get(&obj->data, str);
+    LinkedHashElement* elem = LinkedHashMap_Get(&obj->data, str);
     if (elem == NULL) {
         return false;
     }
@@ -84,11 +84,11 @@ bool JsonObject_insert_null(JsonObject* obj, const char* key) {
 }
 
 bool JsonObject_has_key(JsonObject* obj, const char* key) {
-    return HashMap_Find(&obj->data, key) != NULL;
+    return LinkedHashMap_Find(&obj->data, key) != NULL;
 }
 
 JsonType* JsonObject_get(JsonObject* obj, const char* key) {
-    return HashMap_Value(&obj->data, key);
+    return LinkedHashMap_Value(&obj->data, key);
 }
 
 JsonObject* JsonObject_get_obj(JsonObject* obj, const char* key) {
@@ -149,7 +149,7 @@ bool JsonObject_get_null(JsonObject* obj, const char* key) {
 
 bool JsonObject_remove(JsonObject* obj, const char* key) {
     void* val;
-    if (!HashMap_RemoveGet(&obj->data, key, &val)) {
+    if (!LinkedHashMap_RemoveGet(&obj->data, key, &val)) {
         return false;
     }
     JsonType_free(val);

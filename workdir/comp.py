@@ -5,11 +5,15 @@ CLFLAGS="/GS- /GL /O1 /favor:AMD64 /nologo"
 LINKFLAGS="kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main"
 DLLFLAGS="kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:DLLMain"
 
+#CLFLAGS="/GS- /Z7 /favor:AMD64 /nologo"
+#LINKFLAGS="kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /entry:main /DEBUG"
+#DLLFLAGS="kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /entry:DLLMain /DEBUG"
+
 #CLFLAGS = "-g -pg"
 #LINKFLAGS = "-g -pg"
 #DLLFLAGS = "-g -pg"
 
-BUILD_DIR = "build"
+BUILD_DIR = "build-dbg"
 BIN_DIR = "bin"
 
 WORKDIR = pathlib.Path(__file__).parent.resolve()
@@ -67,20 +71,21 @@ def main():
     
     whashmap = Object("whashmap.obj", "src/hashmap.c", cmp_flags=CLFLAGS + " " +
                       define('HASHMAP_WIDE') + " " + define('HASHMAP_CASE_INSENSITIVE'))
-    hashmap = Object("hashmap.obj", "src/hashmap.c", cmp_flags=CLFLAGS + " " +
+    lhashmap = Object("lhashmap.obj", "src/hashmap.c", cmp_flags=CLFLAGS + " " +
                      define("HASHMAP_LINKED"))
+    hashmap = Object("hashmap.obj", "src/hashmap.c")
 
     Executable("autocmp.dll", "src/autocmp.c", *arg_src, "src/match_node.c",
-               "src/subprocess.c", whashmap, hashmap, "src/json.c", 
+               "src/subprocess.c", whashmap, lhashmap, "src/json.c", 
                "src/cli.c", "src/glob.c", "src/path_utils.c", ntdll,
                "src/unicode_width.c", link_flags=DLLFLAGS, dll=True)
     Executable("test.exe", "src/test.c", "src/match_node.c", "src/glob.c", 
                "src/cli.c", *arg_src, "src/json.c", "src/subprocess.c", 
                "src/path_utils.c", "src/unicode_width.c",
-               whashmap, hashmap, ntdll)
-    Executable("symbol-dump.exe", "src/symbol-dump.c", *arg_src, ntdll)
+               whashmap, lhashmap, ntdll)
+    Executable("symbol-dump.exe", "src/symbol-dump.c", "src/coff.c", *arg_src, ntdll)
     Executable("symbol-scrape.exe", "src/symbol-scrape.c", "src/path_utils.c",
-               "src/glob.c", *arg_src, ntdll)
+               "src/glob.c", "src/coff.c", whashmap, hashmap, *arg_src, ntdll)
 
     CopyToBin("autocmp.json", "script/err.exe", "script/2to3.bat",
               "script/cal.bat", "script/ports.bat", "script/short.bat",

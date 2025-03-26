@@ -12,12 +12,14 @@ void* Mem_alloc_dbg(size_t size, int lineno, const char* file);
 void Mem_free_dbg(void* ptr, int lineno, const char* file);
 void* Mem_realloc_dbg(void* ptr, size_t size, int lineno, const char* file);
 void Mem_debug_dbg(int lineno, const char* file, const char* fmt, ...);
+unsigned long long Mem_count();
 #else
 #include <windows.h>
 #define Mem_alloc(size) HeapAlloc(GetProcessHeap(), 0, (size))
 #define Mem_free(ptr) HeapFree(GetProcessHeap(), 0, (ptr))
 #define Mem_realloc(ptr, size) HeapReAlloc(GetProcessHeap(), 0, (ptr), (size))
 #define Mem_debug(msg, ...)
+#define Mem_count() (0)
 #endif
 
 
