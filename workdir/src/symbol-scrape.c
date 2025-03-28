@@ -24,7 +24,7 @@ struct FrozenMap {
             CloseHandle(file);                                       \
             return false;                                            \
         }                                                            \
-    } while (1)
+    } while (0)
 
 #define WRITE_U32(file, u)                                           \
     do {                                                             \
@@ -35,7 +35,20 @@ struct FrozenMap {
             CloseHandle(file);                                       \
             return false;                                            \
         }                                                            \
-    } while (1)
+    } while (0)
+
+#define READ_U64(ptr)                                                  \
+    ((((uint64_t)((ptr)[0])))       | (((uint64_t)((ptr)[1])) << 8 ) | \
+     (((uint64_t)((ptr)[2])) << 16) | (((uint64_t)((ptr)[3])) << 24) | \
+     (((uint64_t)((ptr)[4])) << 32) | (((uint64_t)((ptr)[5])) << 40) | \
+     (((uint64_t)((ptr)[6])) << 48) | (((uint64_t)((ptr)[7])) << 56))
+
+#define READ_U32(ptr)                                                  \
+    ((((uint32_t)((ptr)[0])))       | (((uint32_t)((ptr)[1])) << 8 ) | \
+     (((uint32_t)((ptr)[2])) << 16) | (((uint32_t)((ptr)[3])) << 24))
+
+#define READ_U16(ptr)                                                  \
+    ((uint16_t)((((uint16_t)((ptr)[0]))) | (((uint16_t)((ptr)[1])) << 8 )))
 
 static inline bool read_u64(HANDLE file, uint64_t* res) {
     DWORD r;
@@ -50,7 +63,7 @@ static inline bool read_u64(HANDLE file, uint64_t* res) {
     return true;
 } 
 
-uint8_t* read_index_file(uint64_t* total_size) {
+HashMap* read_index_file(uint64_t* total_size) {
     HANDLE file =
         CreateFileW(L"index_file.bin", GENERIC_READ, 0, NULL,
                     OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -59,18 +72,91 @@ uint8_t* read_index_file(uint64_t* total_size) {
     }
     if (!read_u64(file, total_size)) {
         CloseHandle(file);
-        return false;
+        return NULL;
     }
-    if (*total_size > 1024 * 1024 * 1024) {
+    if (*total_size > 0x40000000) {
         CloseHandle(file);
-        return false;
+        return NULL;
     }
     uint8_t* buf = Mem_alloc(*total_size);
+    uint64_t read = 0;
+    while (read < *total_size) {
+        DWORD r;
+        if (!ReadFile(file, buf + read, *total_size - read, &r, NULL) || r == 0) {
+            Mem_free(buf);
+            CloseHandle(file);
+            return NULL;
+        }
+        read += r;
+    }
+    CloseHandle(file);
+    uint64_t size = *total_size;
+    if (size < sizeof(HashMap)) {
+        Mem_free(buf);
+        return NULL;
+    }
 
+    // Make sure final string is Null-terminated.
+    wchar_t last_char;
+    memcpy(&last_char, buf + size - sizeof(wchar_t), sizeof(wchar_t));
+    if (last_char != L'\0') {
+        Mem_free(buf);
+        return NULL;
+    }
+
+    uint64_t bucket_offset = READ_U64(buf);
+    uint32_t bucket_count = READ_U32(buf + sizeof(uint64_t));
+    uint32_t elem_count = READ_U32(buf + sizeof(uint64_t) + sizeof(uint32_t));
+
+    if (bucket_offset != sizeof(HashMap) || bucket_offset + bucket_count * sizeof(HashBucket) + sizeof(uint64_t) > size) {
+        Mem_free(buf);
+        return NULL;
+    }
+    uint64_t elem_offset = bucket_offset + bucket_count * sizeof(HashBucket);
+    uint64_t elem_end = elem_offset + elem_count * sizeof(HashElement);
+    if (elem_offset > 0x40000000 || elem_end > size) {
+        Mem_free(buf);
+        return NULL;
+    }
+    for (uint32_t b = 0; b < bucket_count; ++b) {
+        uint64_t bucket_data = READ_U64(buf + bucket_offset + b * sizeof(HashBucket));
+        uint32_t bucket_size = READ_U32(buf + bucket_offset + b * sizeof(HashBucket) + sizeof(uint64_t));
+        if (bucket_data > 0x40000000 || bucket_data < elem_offset ||
+            bucket_data + bucket_size * sizeof(HashElement) > elem_end) {
+            Mem_free(buf);
+            return NULL;
+
+        }
+        HashBucket* bucket = (HashBucket*)(buf + bucket_offset + b * sizeof(HashBucket));
+        bucket->data = (HashElement*)(buf + bucket_data);
+        bucket->capacity = 0;
+    }
+
+    uint64_t str_offset = sizeof(HashMap) +
+                           bucket_count * sizeof(HashBucket) +
+                           elem_count * sizeof(HashElement);
+    for (uint32_t e = 0; e < elem_count; ++e) {
+        uint64_t off = elem_offset + e * sizeof(HashElement);
+        uint64_t key_offset = READ_U64(buf + off);
+        uint64_t val_offset = READ_U64(buf + off + sizeof(uint64_t));
+        if (key_offset < str_offset || key_offset >= size ||
+            val_offset < str_offset || val_offset >= size - 1) {
+            Mem_free(buf);
+            return NULL;
+        }
+        HashElement elem = {(char*)(buf + key_offset), (wchar_t*)(buf + val_offset)};
+        memcpy(buf + off, &elem, sizeof(HashElement));
+    }
+
+    HashMap* map = (HashMap*)buf;
+    map->buckets = (HashBucket*)(buf + bucket_offset);
+
+    return map;
 }
 
 
 bool write_index_file(uint8_t *buf, uint64_t total_size) {
+    _wprintf(L"Write index file: %llu\n", total_size);
     HashMap *map = (HashMap *)buf;
     HANDLE file =
         CreateFileW(L"index_file.bin", GENERIC_READ | GENERIC_WRITE, 0, NULL,
@@ -82,7 +168,7 @@ bool write_index_file(uint8_t *buf, uint64_t total_size) {
                            map->bucket_count * sizeof(HashBucket) +
                            map->element_count * sizeof(HashElement);
 
-    uint64_t str_size = total_size - str_size;
+    uint64_t str_size = total_size - struct_size;
     WRITE_U64(file, total_size);
 
     uint64_t bucket_offset = ((uint8_t*)map->buckets) - buf;
@@ -107,6 +193,7 @@ bool write_index_file(uint8_t *buf, uint64_t total_size) {
     }
     uint8_t *str_start = buf + struct_size;
 
+    _wprintf(L"Writing strings\n");
     uint64_t written = 0;
     while (written < str_size) {
         uint64_t to_write = str_size - written;
@@ -125,21 +212,21 @@ bool write_index_file(uint8_t *buf, uint64_t total_size) {
     return true;
 }
 
-bool scrape_dll() {
+HashMap* scrape_symbols(uint64_t *total_size_dest, wchar_t* env_var, wchar_t* file_pattern) {
     WString var;
     WString glob;
     if (!WString_create_capacity(&glob, 50)) {
-        return false;
+        return NULL;
     }
-    if (!create_envvar(L"PATH", &var)) {
+    if (!create_envvar(env_var, &var)) {
         WString_free(&glob);
-        return false;
+        return NULL;
     }
     PathIterator it;
     if (!PathIterator_begin(&it, &var)) {
         WString_free(&var);
         WString_free(&glob);
-        return false;
+        return NULL;
     }
     wchar_t *path;
     uint32_t size;
@@ -149,17 +236,27 @@ bool scrape_dll() {
         WString_free(&var);
         WString_free(&glob);
         PathIterator_abort(&it);
-        return false;
+        return NULL;
     }
     if (!WHashMap_Create(&values)) {
         WString_free(&var);
         WString_free(&glob);
         PathIterator_abort(&it);
         HashMap_Free(&map);
-        return false;
+        return NULL;
     }
 
     while ((path = PathIterator_next(&it, &size)) != NULL) {
+        // Skip already visited directories
+        // e.g in case of duplicate entries in PATH.
+        WHashElement* path_el = WHashMap_Get(&values, path);
+        if (path_el == NULL) {
+            goto fail;
+        }
+        if (path_el->value != NULL) {
+            continue;
+        }
+        path_el->value = &values;
         WString_clear(&glob);
         if (!WString_reserve(&glob, size + 6)) {
             goto fail;
@@ -168,7 +265,7 @@ bool scrape_dll() {
         if (path[size - 1] != L'\\') {
             WString_append(&glob, L'\\');
         }
-        WString_append_count(&glob, L"*.dll", 5);
+        WString_extend(&glob, file_pattern);
         GlobCtx ctx;
         Glob_begin(glob.buffer, &ctx);
         Path *p;
@@ -176,6 +273,7 @@ bool scrape_dll() {
             uint32_t count;
             enum SymbolFileType type;
             WHashElement *el = NULL;
+            _wprintf(L"%s\n", p->path.buffer);
             char **syms = symbol_dump(p->path.buffer, &count, &type);
             if (syms == NULL) {
                 continue;
@@ -231,11 +329,16 @@ bool scrape_dll() {
     WString_free(&glob);
     WString_free(&var);
 
+    wchar_t* val = HashMap_Value(&map, "CreateFileW");
+    if (val != NULL) {
+        _wprintf(L"CreateFileW: %s\n", val);
+    }
+
     WHashMap new_vals;
     if (!WHashMap_Create(&new_vals)) {
         WHashMap_Free(&values);
         HashMap_Free(&map);
-        return false;
+        return NULL;
     }
 
     uint64_t filename_size = 0;
@@ -255,7 +358,7 @@ bool scrape_dll() {
                 WHashMap_Free(&new_vals);
                 WHashMap_Free(&values);
                 HashMap_Free(&map);
-                return false;
+                return NULL;
             }
             if (el->value == NULL) {
                 filename_size += (wcslen(s) + 1) * sizeof(wchar_t);
@@ -272,7 +375,7 @@ bool scrape_dll() {
     if (ptr == NULL) {
         HashMap_Free(&map);
         WHashMap_Free(&values);
-        return false;
+        return NULL;
     }
     HashBucket *buckets = (HashBucket *)(ptr + sizeof(HashMap));
     HashElement *elems = (HashElement *)(ptr + sizeof(HashMap) +
@@ -316,22 +419,29 @@ bool scrape_dll() {
     HashMap_Free(&map);
     WHashMap_Free(&values);
 
-    Mem_free(ptr);
+    write_index_file(ptr, total_size);
+    *total_size_dest = total_size;
     _wprintf(L"Good\n");
-    return true;
+    return frozen;
 fail:
     WString_free(&var);
     WString_free(&glob);
     PathIterator_abort(&it);
     HashMap_Free(&map);
     WHashMap_Free(&values);
-    return false;
+    return NULL;
 }
 
 int main() {
     LPWSTR args = GetCommandLineW();
     int argc;
     wchar_t **argv = parse_command_line(args, &argc);
+    if (argc < 2) {
+        return 0;
+    }
+    String s;
+    String_create(&s);
+    String_from_utf16_str(&s, argv[1]);
 
     bool dll = false, lib = false, obj = false;
     for (uint32_t ix = 1; ix < argc; ++ix) {
@@ -342,12 +452,38 @@ int main() {
         } else if (_wcsicmp(argv[ix], L"obj") == 0) {
             obj = true;
         } else {
-            _wprintf_e(L"Invalid argument %s\n", argv[ix]);
+            //_wprintf_e(L"Invalid argument %s\n", argv[ix]);
         }
     }
 
     if (dll) {
-        scrape_dll();
+        uint64_t total_size;
+        HashMap* map = scrape_symbols(&total_size, L"LIB", L"*.lib");
+        if (map == NULL) {
+            _wprintf(L"Failed scraping dlls\n");
+            return 1;
+        }
+        wchar_t* dll = HashMap_Value(map, s.buffer);
+        _wprintf(L"Entries: %u\n", map->element_count);
+        if (dll != NULL) {
+            _wprintf(L"%s: %s\n", argv[1], dll);
+        } else {
+            _wprintf(L"No match for %s\n", argv[1]);
+        }
+    } else {
+        uint64_t total_size;
+        HashMap* map = read_index_file(&total_size);
+        if (map == NULL) {
+            _wprintf(L"Failed reading map\n");
+            return 1;
+        }
+        wchar_t* dll = HashMap_Value(map, s.buffer);
+        _wprintf(L"Entries: %u\n", map->element_count);
+        if (dll != NULL) {
+            _wprintf(L"%s: %s\n", argv[1], dll);
+        } else {
+            _wprintf(L"No match for %s\n", argv[1]);
+        }
     }
 
     Mem_free(argv);

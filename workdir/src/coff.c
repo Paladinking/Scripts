@@ -532,8 +532,9 @@ char** symbol_dump(const wchar_t* filename, uint32_t* count, enum SymbolFileType
     *type = SYMBOL_DUMP_INVALID;
     if (is_library(file)) {
         *type = SYMBOL_DUMP_ARCHIVE;
+        char** res = read_library_members(file, count);
         CloseHandle(file);
-        return read_library_members(file, count);
+        return res;
     }
 
     CoffHeader coff_header;
