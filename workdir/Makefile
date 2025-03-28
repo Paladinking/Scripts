@@ -1,4 +1,5 @@
 all: \
+	bin\embed.exe \
 	bin\pathc.exe \
 	bin\parse-template.exe \
 	bin\path-add.exe \
@@ -11,6 +12,7 @@ all: \
 	bin\test.exe \
 	bin\symbol-dump.exe \
 	bin\symbol-scrape.exe \
+	bin\symbols.exe \
 	bin\autocmp.json \
 	bin\err.exe \
 	bin\2to3.bat \
@@ -30,9 +32,15 @@ build:
 	-@ if NOT EXIST "build" mkdir "build"
 bin:
 	-@ if NOT EXIST "bin" mkdir "bin"
+bin\index: bin
+	-@ if NOT EXIST "bin\index" mkdir "bin\index"
+tools:
+	-@ if NOT EXIST "tools" mkdir "tools"
 script:
 	-@ if NOT EXIST "script" mkdir "script"
 
+build\embed.obj: tools\embed.c build
+	cl.exe /c /Fo:build\embed.obj  tools\embed.c
 build\pathc.obj: src\pathc.c src\args.h src\path_utils.h src\dynamic_string.h src\mem.h src\printf.h build
 	cl.exe /c /Fo:build\pathc.obj /GS- /GL /O1 /favor:AMD64 /nologo src\pathc.c
 build\path_utils.obj: src\path_utils.c src\path_utils.h src\dynamic_string.h src\mem.h build
@@ -89,7 +97,11 @@ build\coff.obj: src\coff.c src\mem.h src\coff.h src\args.h build
 	cl.exe /c /Fo:build\coff.obj /GS- /GL /O1 /favor:AMD64 /nologo src\coff.c
 build\symbol-scrape.obj: src\symbol-scrape.c src\args.h src\coff.h src\glob.h src\dynamic_string.h src\mem.h src\hashmap.h src\path_utils.h src\printf.h src\whashmap.h build
 	cl.exe /c /Fo:build\symbol-scrape.obj /GS- /GL /O1 /favor:AMD64 /nologo src\symbol-scrape.c
+build\symbols.obj: src\symbol-scrape.c src\args.h src\coff.h src\glob.h src\dynamic_string.h src\mem.h src\hashmap.h src\path_utils.h src\printf.h src\whashmap.h tools\index.h build tools\index.h
+	cl.exe /c /Fo:build\symbols.obj /GS- /GL /O1 /favor:AMD64 /nologo /DEMBEDDED_SYMBOLS src\symbol-scrape.c
 
+bin\embed.exe: build\embed.obj bin
+	link /OUT:bin\embed.exe  build\embed.obj
 bin\pathc.exe: build\pathc.obj build\path_utils.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib bin
 	link /OUT:bin\pathc.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\pathc.obj build\path_utils.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib
 bin\parse-template.exe: build\parse-template.obj build\args.obj build\dynamic_string.obj build\mem.obj build\ntutils.lib bin
@@ -114,11 +126,21 @@ bin\symbol-dump.exe: build\symbol-dump.obj build\coff.obj build\args.obj build\m
 	link /OUT:bin\symbol-dump.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\symbol-dump.obj build\coff.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib
 bin\symbol-scrape.exe: build\symbol-scrape.obj build\path_utils.obj build\glob.obj build\coff.obj build\whashmap.obj build\hashmap.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib bin
 	link /OUT:bin\symbol-scrape.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\symbol-scrape.obj build\path_utils.obj build\glob.obj build\coff.obj build\whashmap.obj build\hashmap.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib
+bin\symbols.exe: build\symbols.obj build\hashmap.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib bin
+	link /OUT:bin\symbols.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main tools\index.obj build\symbols.obj build\hashmap.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib
 
 build\ntutils.lib: build
 	lib /NOLOGO /MACHINE:X64 /DEF /OUT:build\ntutils.lib /NAME:ntdll.dll /EXPORT:memcpy=memcpy /EXPORT:strlen=strlen /EXPORT:memmove=memmove /EXPORT:_wsplitpath_s=_wsplitpath_s /EXPORT:wcslen=wcslen /EXPORT:_wmakepath_s=_wmakepath_s /EXPORT:strchr=strchr /EXPORT:_stricmp=_stricmp /EXPORT:towlower=towlower /EXPORT:_wcsicmp=_wcsicmp /EXPORT:_snwprintf_s=_snwprintf_s /EXPORT:_snprintf_s=_snprintf_s /EXPORT:_vscwprintf=_vscwprintf /EXPORT:_vsnprintf=_vsnprintf /EXPORT:_vsnwprintf=_vsnwprintf /EXPORT:_vscprintf=_vscprintf /EXPORT:memset=memset /EXPORT:wcscmp=wcscmp /EXPORT:strcmp=strcmp /EXPORT:_fltused=_fltused /EXPORT:wcschr=wcschr /EXPORT:wcsrchr=wcsrchr /EXPORT:strtol=strtol /EXPORT:wcsncmp=wcsncmp /EXPORT:memcmp=memcmp /EXPORT:tolower=tolower /EXPORT:strncmp=strncmp /EXPORT:strnlen=strnlen /EXPORT:wcsstr=wcsstr /EXPORT:_snprintf=_snprintf
 build\kernelbase.lib: build
 	lib /NOLOGO /MACHINE:X64 /DEF /OUT:build\kernelbase.lib /NAME:kernelbase.dll /EXPORT:PathMatchSpecW=PathMatchSpecW
+bin\index\index_dll.bin: bin\symbol-scrape.exe bin\index
+	bin\symbol-scrape.exe --index-only --dll
+bin\index\index_lib.bin: bin\symbol-scrape.exe bin\index
+	bin\symbol-scrape.exe --index-only --lib
+bin\index\index_obj.bin: bin\symbol-scrape.exe bin\index
+	bin\symbol-scrape.exe --index-only --obj
+tools\index.h: bin\embed.exe bin\index\index_dll.bin bin\index\index_lib.bin bin\index\index_obj.bin tools
+	bin\embed.exe -o tools\index.obj -H tools\index.h -w bin\index\index_o.bin bin\index\index_dll.bin bin\index\index_lib.bin bin\index\index_obj.bin
 bin\autocmp.json: autocmp.json bin
 	type autocmp.json > bin\autocmp.json
 bin\err.exe: script\err.exe bin
