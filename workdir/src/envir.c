@@ -6,6 +6,7 @@
 #include "args.h"
 #include "path_utils.h"
 #include "mem.h"
+#include "stddef.h"
 
 /* CREATE_PROG asm in FASM
 format binary
