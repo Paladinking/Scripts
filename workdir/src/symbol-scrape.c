@@ -530,7 +530,7 @@ HashMap* find_symbols(const wchar_t* var, const wchar_t* pattern,
 }
 
 const wchar_t *HELP_MESSAGE =
-    L"Usage: %s [OPTION]... [FILE]...\n"
+    L"Usage: %s [OPTION]... SYMBOL\n"
     L"Find what objects / libraries export a specific symbol\n\n"
     L"-a, --all               implies --dll --lib --obj\n"
 #ifndef EMBEDDED_SYMBOLS
@@ -574,7 +574,10 @@ int main() {
     ErrorInfo err;
     if (!find_flags(argv, &argc, flags, flag_count, &err)) {
         wchar_t *err_msg = format_error(&err, flags, flag_count);
-        _wprintf_e(L"%s\n", err_msg);
+        if (err_msg) {
+            _wprintf_e(L"%s\n", err_msg);
+            Mem_free(err_msg);
+        }
         if (argc > 0) {
             _wprintf_e(L"Run '%s --help' for more information\n", argv[0]);
         }

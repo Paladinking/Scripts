@@ -103,6 +103,14 @@ bool is_file(const wchar_t* str) {
     return GetFileAttributesW(str) != INVALID_FILE_ATTRIBUTES;
 }
 
+bool is_directory(const wchar_t *str) {
+    DWORD attr = GetFileAttributesW(str);
+    if (attr == INVALID_FILE_ATTRIBUTES) {
+        return false;
+    }
+    return attr & FILE_ATTRIBUTE_DIRECTORY;
+}
+
 bool find_file_relative(wchar_t* buf, size_t size, const wchar_t *filename, bool exists) {
     HMODULE mod;
     if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
@@ -154,6 +162,33 @@ bool to_windows_path(const wchar_t* path, WString* s) {
     return true;
 }
 
+
+bool make_absolute(const wchar_t* path, WString* dest) {
+    WString win;
+    if (!WString_create(&win)) {
+        return false;
+    }
+    if (!to_windows_path(path, &win)) {
+        return false;
+    }
+    DWORD size = GetFullPathNameW(win.buffer, dest->capacity, dest->buffer, NULL);
+    if (size >= dest->capacity) {
+        if (!WString_reserve(dest, size)) {
+            WString_free(&win);
+            return false;
+        }
+        size = GetFullPathNameW(win.buffer, dest->capacity, dest->buffer, NULL);
+        if (size >= dest->capacity) {
+            WString_free(&win);
+            return false;
+        }
+    }
+    dest->length = size;
+    WString_free(&win);
+    return true;
+}
+
+
 DWORD get_file_attrs(const wchar_t* path) {
     WString s;
     WString_create(&s);
@@ -168,7 +203,7 @@ DWORD get_file_attrs(const wchar_t* path) {
     return attrs;
 }
 
-bool matches(const wchar_t* pattern, const wchar_t* str) {
+bool matches_glob(const wchar_t* pattern, const wchar_t* str) {
     // Remove . and ..
     if (str[0] == L'.' && (str[1] == L'\0' || (str[1] == L'.' && str[2] == L'\0'))) {
         return false;
@@ -287,7 +322,7 @@ bool Glob_next(GlobCtx* ctx, Path** path) {
         struct _GlobCtxNode n = ctx->stack[ctx->stack_size - 1];
         if (ctx->handle != INVALID_HANDLE_VALUE) {
             while (FindNextFileW(ctx->handle, &data)) {
-                if (!matches(n.pattern + ctx->last_segment, data.cFileName)) {
+                if (!matches_glob(n.pattern + ctx->last_segment, data.cFileName)) {
                     continue;
                 }
                 if (!WString_append_count(&p->path, n.pattern, ctx->last_segment)) {
@@ -327,7 +362,7 @@ bool Glob_next(GlobCtx* ctx, Path** path) {
                     if (!(data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
                         continue;
                     }
-                    if (!matches(n.pattern + n.pattern_offset, data.cFileName)) {
+                    if (!matches_glob(n.pattern + n.pattern_offset, data.cFileName)) {
                         continue;
                     }
                     if (ctx->stack_size == ctx->stack_capacity) {
@@ -368,7 +403,7 @@ bool Glob_next(GlobCtx* ctx, Path** path) {
                         break;
                     }
                     ctx->handle = h;
-                    if (matches(n.pattern + ctx->last_segment, data.cFileName)) {
+                    if (matches_glob(n.pattern + ctx->last_segment, data.cFileName)) {
                         if (!WString_append_count(&p->path, n.pattern, ctx->last_segment)) {
                             goto fail;
                         }
