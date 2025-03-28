@@ -115,26 +115,19 @@ bool find_file_relative(wchar_t* buf, size_t size, const wchar_t *filename, bool
     if (res == 0 || res >= size) {
         return false;
     }
-    const wchar_t* ext = wcsrchr(filename, L'.');
-    size_t name_len;
-    if (ext == NULL) {
-        name_len = wcslen(filename);
-    } else {
-        name_len = ext - filename;
-    }
-    wchar_t name_buf[512];
-    if (name_len > 512) {
-        return 0;
-    }
-    memcpy(name_buf, filename, name_len * sizeof(wchar_t));
-    name_buf[name_len] = L'\0';
-    wchar_t drive[10], dir[1024];
-    if (_wsplitpath_s(buf, drive, 10, dir, 1024, NULL, 0, NULL, 0) != 0) {
+    wchar_t* dir_sep = wcsrchr(buf, L'\\');
+    if (dir_sep == NULL) {
         return false;
     }
-    if (_wmakepath_s(buf, size, drive, dir, name_buf, ext) != 0) {
+    size_t len = dir_sep - buf;
+    size_t name_len = wcslen(filename);
+    if (filename[0] != '\\') {
+        len += 1;
+    }
+    if (len + name_len + 1 >= size) {
         return false;
     }
+    memcpy(buf + len, filename, (name_len + 1) * sizeof(wchar_t));
     if (!exists) {
         return true;
     }

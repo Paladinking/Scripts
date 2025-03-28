@@ -55,6 +55,8 @@ def main():
     ntdll = ImportLib("ntutils.lib", "ntdll.dll", ntsymbols)
     kernelbase = ImportLib("kernelbase.lib", "kernelbase.dll", kernelbasesymbols)
 
+    embed = Executable("embed.exe", "tools/embed.c", cmp_flags="", link_flags="")
+
     Executable("pathc.exe", "src/pathc.c", "src/path_utils.c", *arg_src, ntdll)
     Executable("parse-template.exe", "src/parse-template.c", "src/args.c",
                "src/dynamic_string.c", "src/mem.c", ntdll)
@@ -88,8 +90,28 @@ def main():
                "src/path_utils.c", "src/unicode_width.c",
                whashmap, lhashmap, ntdll)
     Executable("symbol-dump.exe", "src/symbol-dump.c", "src/coff.c", *arg_src, ntdll)
-    Executable("symbol-scrape.exe", "src/symbol-scrape.c", "src/path_utils.c",
+    scrape = Executable("symbol-scrape.exe", "src/symbol-scrape.c", "src/path_utils.c",
                "src/glob.c", "src/coff.c", whashmap, hashmap, *arg_src, ntdll)
+
+    index = [
+        Command(f"index_dll.bin", f"{scrape.product} --index-only --dll",
+                scrape, directory=f"{bin_dir()}/index"),
+        Command(f"index_lib.bin", f"{scrape.product} --index-only --lib",
+                scrape, directory=f"{bin_dir()}/index"),
+        Command(f"index_obj.bin", f"{scrape.product} --index-only --obj",
+                scrape, directory=f"{bin_dir()}/index"),
+    ]
+    index_files = f"{bin_dir()}\\index\\index_o.bin " + \
+                  " ".join(cmd.product for cmd in index)
+    embed_index = Command(f"index.h", 
+                          f"{embed.product} -o tools\\index.obj -H " + 
+                          f"tools\\index.h -w {index_files}",
+                          embed, *index, directory="tools")
+
+    symbols = Object("symbols.obj", "src/symbol-scrape.c", 
+                     defines=["EMBEDDED_SYMBOLS"], depends=[embed_index])
+    Executable("symbols.exe", symbols, hashmap, *arg_src, ntdll, 
+               extra_link_flags="tools\\index.obj")
 
     CopyToBin("autocmp.json", "script/err.exe", "script/2to3.bat",
               "script/cal.bat", "script/ports.bat", "script/short.bat",

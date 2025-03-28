@@ -24,11 +24,22 @@ WORKDIR: pathlib.Path
 Product = Union['Obj', 'Cmd', 'Exe']
 
 class Obj:
-    def __init__(self, name: str, source: str, cmp_flags: str="", namespace: str="") -> None:
+    def __init__(self, name: str, source: str, cmp_flags: str="", namespace: str="",
+                 depends: List[Union[str, Product]]=[]) -> None:
         self.name = name
         self.namespace = namespace
         self.source = source
         self.cmp_flags=cmp_flags
+        self.depends: List[str] = []
+        for dep in depends:
+            if isinstance(dep, str):
+                self.depends.append(dep)
+            else:
+                self.depends.append(dep.product)
+
+    @property
+    def product(self) -> str:
+        return str(pathlib.PurePath(BUILD_DIR) / self.name)
 
 class Cmd:
     def __init__(self, name: str, cmd: str, depends: List[Union[str, Product]], 
@@ -38,11 +49,14 @@ class Cmd:
             if isinstance(dep, str):
                 self.depends.append(dep)
             else:
-                assert hasattr(dep, "name")
-                self.depends.append(dep.name)
+                self.depends.append(dep.product)
         self.name = name
         self.cmd = cmd
         self.dir = directory
+
+    @property
+    def product(self) -> str:
+        return str(pathlib.PurePath(self.dir) / self.name)
 
 class Exe:
     def __init__(self, name: str, objs: List[Obj], cmds: List[Cmd],
@@ -52,6 +66,10 @@ class Exe:
         self.cmds = cmds
         self.link_flags = link_flags
         self.dll = dll
+
+    @property
+    def product(self) -> str:
+        return str(pathlib.PurePath(BIN_DIR) / self.name)
 
 class BackendBase:
     builddir: str
@@ -78,7 +96,7 @@ class ZigCC(BackendBase):
         return True
 
     def compile_obj(self, obj: Obj) -> str:
-        return f"zig.exe cc -c -o {BUILD_DIR}\\{obj.name} {obj.cmp_flags} {obj.source}"
+        return f"zig.exe cc -c -o {obj.product} {obj.cmp_flags} {obj.source}"
 
     def find_headers(self, obj: Obj) -> List[str]:
         cmd = f"zig.exe cc -MM {obj.cmp_flags} {obj.source}"
@@ -90,12 +108,12 @@ class ZigCC(BackendBase):
         return line.split()[2:]
 
     def link_exe(self, exe: Exe) -> str:
-        row = " ".join([f"{BUILD_DIR}\\{obj.name}" for obj in exe.objs] + [f"{cmd.dir}\\{cmd.name}" for cmd in exe.cmds])
-        return f"zig.exe cc -o {BIN_DIR}\\{exe.name} {exe.link_flags} {row}"
+        row = " ".join([f"{obj.product}" for obj in exe.objs] + [f"{cmd.product}" for cmd in exe.cmds])
+        return f"zig.exe cc -o {exe.product} {exe.link_flags} {row}"
 
     def link_dll(self, exe: Exe) -> str:
-        row = " ".join([f"{BUILD_DIR}\\{obj.name}" for obj in exe.objs] + [f"{cmd.dir}\\{cmd.name}" for cmd in exe.cmds])
-        return f"zig.exe cc -shared -o {BIN_DIR}\\{exe.name} {exe.link_flags} {row}"
+        row = " ".join([f"{obj.product}" for obj in exe.objs] + [f"{cmd.product}" for cmd in exe.cmds])
+        return f"zig.exe cc -shared -o {exe.product} {exe.link_flags} {row}"
 
     def define(self, key: str, val: Optional[str]) -> str:
         if val:
@@ -118,7 +136,7 @@ class Mingw(BackendBase):
         return True
     
     def compile_obj(self, obj: Obj) -> str:
-        return f"gcc.exe -c -o {BUILD_DIR}\\{obj.name} {obj.cmp_flags} {obj.source}"
+        return f"gcc.exe -c -o {obj.product} {obj.cmp_flags} {obj.source}"
 
     def find_headers(self, obj: Obj) -> List[str]:
         cmd = f"gcc.exe -MM {obj.cmp_flags} {obj.source}"
@@ -130,12 +148,12 @@ class Mingw(BackendBase):
         return line.split()[2:]
 
     def link_exe(self, exe: Exe) -> str:
-        row = " ".join([f"{BUILD_DIR}\\{obj.name}" for obj in exe.objs] + [f"{cmd.dir}\\{cmd.name}" for cmd in exe.cmds])
-        return f"gcc.exe -o {BIN_DIR}\\{exe.name} {exe.link_flags} {row}"
+        row = " ".join([f"{obj.product}" for obj in exe.objs] + [f"{cmd.product}" for cmd in exe.cmds])
+        return f"gcc.exe -o {exe.product} {exe.link_flags} {row}"
 
     def link_dll(self, exe: Exe) -> str:
-        row = " ".join([f"{BUILD_DIR}\\{obj.name}" for obj in exe.objs] + [f"{cmd.dir}\\{cmd.name}" for cmd in exe.cmds])
-        return f"gcc.exe -shared -o {BIN_DIR}\\{exe.name} {exe.link_flags} {row}"
+        row = " ".join([f"{obj.product}" for obj in exe.objs] + [f"{cmd.product}" for cmd in exe.cmds])
+        return f"gcc.exe -shared -o {exe.product} {exe.link_flags} {row}"
 
     def define(self, key: str, val: Optional[str]) -> str:
         if val:
@@ -159,7 +177,7 @@ class Msvc(BackendBase):
         return True
 
     def compile_obj(self, obj: Obj) -> str:
-        return f"cl.exe /c /Fo:{BUILD_DIR}\\{obj.name} {obj.cmp_flags} {obj.source}"
+        return f"cl.exe /c /Fo:{obj.product} {obj.cmp_flags} {obj.source}"
 
     def find_headers(self, obj: Obj) -> List[str]:
         cl = shutil.which("cl.exe")
@@ -183,12 +201,12 @@ class Msvc(BackendBase):
         return list(headers.keys())
     
     def link_exe(self, exe: Exe) -> str:
-        row = " ".join([f"{BUILD_DIR}\\{obj.name}" for obj in exe.objs] + [f"{cmd.dir}\\{cmd.name}" for cmd in exe.cmds])
+        row = " ".join([f"{obj.product}" for obj in exe.objs] + [f"{cmd.product}" for cmd in exe.cmds])
         return f"link /OUT:{BIN_DIR}\\{exe.name} {exe.link_flags} {row}"
 
     def link_dll(self, exe: Exe) -> str:
-        row = " ".join([f"{BUILD_DIR}\\{obj.name}" for obj in exe.objs] + [f"{cmd.dir}\\{cmd.name}" for cmd in exe.cmds])
-        return f"link /OUT:{BIN_DIR}\\{exe.name} /DLL {exe.link_flags} {row}"
+        row = " ".join([f"{obj.product}" for obj in exe.objs] + [f"{cmd.product}" for cmd in exe.cmds])
+        return f"link /OUT:{exe.product} /DLL {exe.link_flags} {row}"
 
     def define(self, key: str, val: Optional[str]) -> str:
         if val:
@@ -202,6 +220,7 @@ class Msvc(BackendBase):
 
 
 def Object(name: str, source: str, cmp_flags: Optional[str]=None, namespace: str="",
+           depends: List[Union[str, Product]]=[],
            defines: List[Union[str, Tuple[str, str]]]=[]) -> Obj:
     if cmp_flags is None:
         cmp_flags = CLFLAGS
@@ -214,8 +233,8 @@ def Object(name: str, source: str, cmp_flags: Optional[str]=None, namespace: str
         
     source = str(pathlib.PurePath(source))
     if namespace:
-        name = namespace + "\\" + name
-    obj = Obj(name, source, cmp_flags, namespace)
+        name = str(pathlib.PurePath(namespace) / name)
+    obj = Obj(name, source, cmp_flags, namespace, depends)
 
     if namespace:
         DIRECTORIES[namespace] = None
@@ -245,7 +264,7 @@ def Executable(name: str, *sources: Union[str, Obj, Cmd],
     for src in sources:
         if isinstance(src, str):
             obj_name = str(pathlib.PurePath(src).with_suffix('.obj').name)
-            obj = Object(obj_name, src, cmp_flags, namespace, defines)
+            obj = Object(obj_name, src, cmp_flags, namespace, defines=defines)
         else:
             if isinstance(src, Cmd):
                 if src not in cmds:
@@ -268,7 +287,7 @@ def Command(name: str, cmd: str, *depends: Union[str, Product],
     if name in CUSTOMS:
         raise RuntimeError(f"Duplicate command {name}")
     DIRECTORIES[directory] = None
-    command = Cmd(name, cmd, list(depends), directory)
+    command = Cmd(name, cmd, list(depends), str(pathlib.PurePath(directory)))
     CUSTOMS[name] = command
     return command
 
@@ -309,7 +328,34 @@ def find_headers(obj: Obj) -> List[str]:
             return cache['headers']
     except Exception:
         cache = None
-    headers = BACKEND.find_headers(obj)
+    created: List[pathlib.Path] = []
+    for dep in obj.depends:
+        path = pathlib.Path(dep)
+        if path.suffix in [".h", ".hpp", ".inl"]:
+            if not path.exists():
+                try:
+                    path.touch()
+                    created.append(path)
+                except Exception:
+                    pass
+
+    try:
+        headers = BACKEND.find_headers(obj)
+        for ix in range(len(headers)):
+            header = headers[ix]
+            try:
+                header = str(pathlib.Path(header).resolve().relative_to(WORKDIR))
+                headers[ix] = header
+            except Exception:
+                pass
+    finally:
+        for path in created:
+            try:
+                path.unlink()
+            except Exception:
+                pass
+
+
     if data is None:
         data = dict()
 
@@ -333,31 +379,47 @@ def makefile() -> None:
 
     for key, exe in EXECUTABLES.items():
         print(" \\")
-        print(f"\t{BIN_DIR}\\{exe.name}", end="")
+        print(f"\t{exe.product}", end="")
     for key, cmd in CUSTOMS.items():
         if cmd.dir != BIN_DIR:
             continue
         print(" \\")
-        print(f"\t{BIN_DIR}\\{cmd.name}", end="")
+        print(f"\t{cmd.product}", end="")
     print("\n")
 
-    for d in DIRECTORIES.keys():
-        print(f"{d}:\n\t-@ if NOT EXIST \"{d}\" mkdir \"{d}\"")
+    dirs = list(DIRECTORIES.keys())
+
+    while len(dirs) > 0:
+        d = dirs.pop()
+        path = pathlib.PurePath(d)
+        parents = [str(p) for p in path.parents[:-1]]
+        for parent in parents:
+            DIRECTORIES[parent] = None
+        dirs.extend(parents)
+    for d in DIRECTORIES:
+        path = pathlib.PurePath(d)
+        parents = [str(p) for p in path.parents[:-1]]
+        if len(parents) > 0:
+            parent_str = " " + " ".join(parents)
+        else:
+            parent_str = ""
+        print(f"{path}:{parent_str}\n\t-@ if NOT EXIST \"{path}\" mkdir \"{path}\"")
+
     print()
 
     for key, obj in OBJECTS.items():
         if obj.namespace:
-            bld_dir = f"{BUILD_DIR}\\{obj.namespace}"
+            bld_dir = str(pathlib.PurePath(BUILD_DIR) / obj.namespace)
         else:
             bld_dir = BUILD_DIR
         headers = find_headers(obj)
-        depends = " ".join([obj.source] + headers + [bld_dir])
-        print(f"{BUILD_DIR}\\{obj.name}: {depends}")
+        depends = " ".join([obj.source] + headers + [bld_dir] + obj.depends)
+        print(f"{obj.product}: {depends}")
         print(f"\t{BACKEND.compile_obj(obj)}")
     print()
     for key, exe in EXECUTABLES.items():
-        row = " ".join([f"{BUILD_DIR}\\{obj.name}" for obj in exe.objs] + [f"{cmd.dir}\\{cmd.name}" for cmd in exe.cmds])
-        print(f"{BIN_DIR}\\{exe.name}: {row} {BIN_DIR}")
+        row = " ".join([f"{obj.product}" for obj in exe.objs] + [f"{cmd.product}" for cmd in exe.cmds])
+        print(f"{exe.product}: {row} {BIN_DIR}")
         if exe.dll:
             print(f"\t{BACKEND.link_dll(exe)}")
         else:
@@ -365,7 +427,7 @@ def makefile() -> None:
     print()
     for key, cmd in CUSTOMS.items():
         row = " ".join(cmd.depends + [cmd.dir])
-        print(f"{cmd.dir}\\{cmd.name}: {row}")
+        print(f"{cmd.product}: {row}")
         print(f"\t{cmd.cmd}")
     print()
     print(f"clean:\n\tdel /S /Q {BUILD_DIR}\\*\n\tdel /S /Q {BIN_DIR}\\*")
