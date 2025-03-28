@@ -17,11 +17,13 @@ const wchar_t *HELP_MESSAGE =
     L"Usage: %s [OPTION]... DIR\n"
     L"Recursivly list files in a directory\n\n"
     L"-a, --absolute               list absolute file paths\n"
+    L"-c, --count=COUNT            list at most COUNT files\n"
     L"    --file-only              only match files\n"
     L"    --folder-only            only match folders\n"
     L"-h, --help                   display this message and exit\n"
     L"    --max-depth=DEPTH        specify max depth to search\n"
-    L"-n, --name=NAME              specify name pattern to match\n";
+    L"-n, --name=NAME              specify name pattern to match\n"
+    L"-q, --quit                   quit after first match, same as --count=1\n";
 
 
 typedef struct Filter {
@@ -29,19 +31,23 @@ typedef struct Filter {
     wchar_t* name_pattern;
     bool file;
     bool folder;
+    uint64_t max_count;
 } Filter;
 
 
 uint32_t parse_options(int* argc, wchar_t** argv, Filter* filter) {
     FlagValue max_depth_val = {FLAG_REQUIRED_VALUE | FLAG_UINT};
     FlagValue name_pattern = {FLAG_REQUIRED_VALUE | FLAG_STRING};
+    FlagValue count = {FLAG_REQUIRED_VALUE | FLAG_UINT};
     FlagInfo flags[] = {
         {L'a', L"absolute", NULL},
         {L'h', L"help", NULL},
         {L'\0', L"max-depth", &max_depth_val},
         {L'n', L"name", &name_pattern},
         {L'\0', L"file-only", NULL},
-        {L'\0', L"folder-only", NULL}
+        {L'\0', L"folder-only", NULL},
+        {L'c', L"count", &count},
+        {L'q', L"quit", NULL}
     };
     const uint32_t flag_count = sizeof(flags) / sizeof(FlagInfo);
     ErrorInfo err;
@@ -72,6 +78,15 @@ uint32_t parse_options(int* argc, wchar_t** argv, Filter* filter) {
     }
     filter->file = flags[4].count > 0;
     filter->folder = flags[5].count > 0;
+    if (flags[6].ord >= flags[7].ord) {
+        if (flags[6].count > 0) {
+            filter->max_count = count.uint;
+        }  else {
+            filter->max_count = 0xFFFFFFFFFFFFFFFF;
+        }
+    } else {
+        filter->max_count = 1;
+    }
 
     uint32_t opts = OPTION_VALID;
     OPTION_IF(opts, flags[0].count > 0, OPTION_ABSOLUTE);
@@ -97,6 +112,9 @@ bool matches_filter(Path* path, Filter* filter) {
 int find(Path* dir, Filter* filter) {
     uint32_t stack_size = 0;
     uint32_t stack_cap = 16;
+    if (filter->max_count == 0) {
+        return 0;
+    }
 
     typedef struct Node {
         WalkCtx ctx;
@@ -108,27 +126,36 @@ int find(Path* dir, Filter* filter) {
     }
     WalkDir_begin(&stack[0].ctx, dir->path.buffer, true);
     stack_size = 1;
+
+    uint64_t matches = 0;
     if (matches_filter(dir, filter)) {
         _wprintf(L"%s\n", dir->path.buffer);
+        ++matches;
     }
-    if (filter->max_depth == 0) {
+    if (filter->max_depth == 0 || filter->max_count == matches) {
         WalkDir_abort(&stack[0].ctx);
         --stack_size;
     }
 
+    int status = 0;
     while (stack_size > 0) {
         Node* elem = &stack[stack_size - 1];
         Path* path;
         if (WalkDir_next(&elem->ctx, &path)) {
             if (matches_filter(path, filter)) {
                 _wprintf(L"%s\n", path->path.buffer);
+                ++matches;
+                if (filter->max_count == matches) {
+                    break;
+                }
             }
             if (path->is_dir && stack_size < filter->max_depth) {
                 if (stack_size == stack_cap) {
                     Node* new_stack = Mem_realloc(stack, 
                             stack_cap * 2 * sizeof(Node));
                     if (new_stack == NULL) {
-                        goto fail;
+                        status = 1;
+                        break;
                     }
                     stack_cap *= 2;
                     stack = new_stack;
@@ -140,15 +167,12 @@ int find(Path* dir, Filter* filter) {
             --stack_size;
         }
     }
-
-    Mem_free(stack);
-    return 0;
-fail:
     for (uint32_t ix = 0; ix < stack_size; ++ix) {
         WalkDir_abort(&stack[ix].ctx);
     }
+
     Mem_free(stack);
-    return 1;
+    return status;
 }
 
 
