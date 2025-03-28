@@ -5,38 +5,41 @@ CLFLAGS="/GS- /GL /O1 /favor:AMD64 /nologo"
 LINKFLAGS="kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main"
 DLLFLAGS="kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:DLLMain"
 
-#CLFLAGS="/GS- /Z7 /favor:AMD64 /nologo"
-#LINKFLAGS="kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /entry:main /DEBUG"
-#DLLFLAGS="kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /entry:DLLMain /DEBUG"
-
-#CLFLAGS = "-g -pg"
-#LINKFLAGS = "-g -pg"
-#DLLFLAGS = "-g -pg"
-
-BUILD_DIR = "build-dbg"
+BUILD_DIR = "build"
 BIN_DIR = "bin"
 
-WORKDIR = pathlib.Path(__file__).parent.resolve()
 
-def export_lib(libname: str, dllname: str, symbols: list) -> Cmd:
-    exports = " ".join([f"/EXPORT:{s}={s}" for s in symbols])
-    cmd = f"lib /MACHINE:X64 /DEF /OUT:{BUILD_DIR}\\{libname} /NAME:{dllname} {exports}"
-    return Command(libname, cmd)
+CLFLAGS_DBG = "-g -Og"
+LINKFLAGS_DBG = "-g"
+
+BUILD_DIR_DBG = "build-gcc"
+BIN_DIR_DBG = "bin-gcc"
+
+BUILD_DIR_ZIG = "build-zig"
+BIN_DIR_ZIG = "bin-zig"
+
+
+WORKDIR = pathlib.Path(__file__).parent.resolve()
 
 def translate(*src: str) -> List[Cmd]:
     res = []
     for file in src:
         template = f"script\\{file}.template"
-        exe = f"{BIN_DIR}\\parse-template.exe"
-        cmd = Command(file, f"{exe} {template} script\\translations {BIN_DIR}\\{file}",
-                      template, exe, "script\\translations", directory=BIN_DIR)
+        exe = f"{bin_dir()}\\parse-template.exe"
+        cmd = Command(file, f"{exe} {template} script\\translations {bin_dir()}\\{file}",
+                      template, exe, "script\\translations", directory=bin_dir())
         res.append(cmd)
     return res
 
 
 add_backend("Msvc", BUILD_DIR, BIN_DIR, WORKDIR, CLFLAGS, LINKFLAGS)
+add_backend("Mingw", BUILD_DIR_DBG, BIN_DIR_DBG, WORKDIR, CLFLAGS_DBG, LINKFLAGS_DBG)
+add_backend("Zigcc", BUILD_DIR_ZIG, BIN_DIR_ZIG, WORKDIR, CLFLAGS_DBG, LINKFLAGS_DBG)
 
 set_backend("Msvc")
+
+if not backend().msvc:
+    DLLFLAGS = None
 
 def main():
     ntsymbols = ["memcpy", "strlen", "memmove", "_wsplitpath_s", "wcslen",
@@ -49,8 +52,8 @@ def main():
     kernelbasesymbols = ["PathMatchSpecW"]
 
     arg_src = ["src/args.c", "src/mem.c", "src/dynamic_string.c", "src/printf.c"]
-    ntdll = export_lib("ntutils.lib", "ntdll.dll", ntsymbols)
-    kernelbase = export_lib("kernelbase.lib", "kernelbase.dll", kernelbasesymbols)
+    ntdll = ImportLib("ntutils.lib", "ntdll.dll", ntsymbols)
+    kernelbase = ImportLib("kernelbase.lib", "kernelbase.dll", kernelbasesymbols)
 
     Executable("pathc.exe", "src/pathc.c", "src/path_utils.c", *arg_src, ntdll)
     Executable("parse-template.exe", "src/parse-template.c", "src/args.c",
@@ -67,18 +70,19 @@ def main():
                "src/glob.c", ntdll)
     Executable("list-dir.exe", "src/list-dir.c", "src/args.c", "src/printf.c",
                "src/perm.c", "src/glob.c", "src/dynamic_string.c", "src/mem.c",
-               "src/unicode_width.c", ntdll, link_flags=LINKFLAGS + " " + "Advapi32.lib")
+               "src/unicode_width.c", ntdll, 
+               extra_link_flags="Advapi32.lib" if backend().msvc else "-ladvapi32")
     
-    whashmap = Object("whashmap.obj", "src/hashmap.c", cmp_flags=CLFLAGS + " " +
-                      define('HASHMAP_WIDE') + " " + define('HASHMAP_CASE_INSENSITIVE'))
-    lhashmap = Object("lhashmap.obj", "src/hashmap.c", cmp_flags=CLFLAGS + " " +
-                     define("HASHMAP_LINKED"))
+    whashmap = Object("whashmap.obj", "src/hashmap.c", 
+                      defines=['HASHMAP_WIDE', 'HASHMAP_CASE_INSENSITIVE'])
+    lhashmap = Object("lhashmap.obj", "src/hashmap.c", defines=['HASHMAP_LINKED'])
     hashmap = Object("hashmap.obj", "src/hashmap.c")
 
     Executable("autocmp.dll", "src/autocmp.c", *arg_src, "src/match_node.c",
                "src/subprocess.c", whashmap, lhashmap, "src/json.c", 
                "src/cli.c", "src/glob.c", "src/path_utils.c", ntdll,
-               "src/unicode_width.c", link_flags=DLLFLAGS, dll=True)
+               "src/unicode_width.c",
+               link_flags=DLLFLAGS, dll=True)
     Executable("test.exe", "src/test.c", "src/match_node.c", "src/glob.c", 
                "src/cli.c", *arg_src, "src/json.c", "src/subprocess.c", 
                "src/path_utils.c", "src/unicode_width.c",
