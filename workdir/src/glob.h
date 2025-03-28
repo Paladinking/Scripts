@@ -22,6 +22,10 @@ bool find_file_relative(wchar_t* buf, size_t size, const wchar_t *filename, bool
 
 bool is_file(const wchar_t* str);
 
+bool is_directory(const wchar_t* str);
+
+bool make_absolute(const wchar_t* path, WString* dest);
+
 typedef struct _Path {
     WString path;
     uint32_t name_len;
@@ -49,7 +53,7 @@ typedef struct _GlobCtx {
     uint32_t last_segment;
 } GlobCtx;
 
-bool matches(const wchar_t* pattern, const wchar_t* str);
+bool matches_glob(const wchar_t* pattern, const wchar_t* str);
 
 bool Glob_begin(const wchar_t* pattern, GlobCtx* ctx);
 
