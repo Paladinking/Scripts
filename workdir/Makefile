@@ -12,6 +12,7 @@ all: \
 	bin\symbol-dump.exe \
 	bin\symbol-scrape.exe \
 	bin\find-file.exe \
+	bin\type-file.exe \
 	bin\autocmp.json \
 	bin\err.exe \
 	bin\2to3.bat \
@@ -92,6 +93,8 @@ build\symbol-scrape.obj: src\symbol-scrape.c src\args.h src\coff.h src\glob.h sr
 	cl.exe /c /Fo:build\symbol-scrape.obj /GS- /GL /O1 /favor:AMD64 /nologo src\symbol-scrape.c
 build\find-file.obj: src\find-file.c src\args.h src\mem.h src\glob.h src\dynamic_string.h src\printf.h build
 	cl.exe /c /Fo:build\find-file.obj /GS- /GL /O1 /favor:AMD64 /nologo src\find-file.c
+build\type-file.obj: src\type-file.c src\args.h src\glob.h src\dynamic_string.h src\mem.h src\printf.h build
+	cl.exe /c /Fo:build\type-file.obj /GS- /GL /O1 /favor:AMD64 /nologo src\type-file.c
 
 bin\pathc.exe: build\pathc.obj build\path_utils.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib bin
 	link /OUT:bin\pathc.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\pathc.obj build\path_utils.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib
@@ -119,6 +122,8 @@ bin\symbol-scrape.exe: build\symbol-scrape.obj build\path_utils.obj build\glob.o
 	link /OUT:bin\symbol-scrape.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\symbol-scrape.obj build\path_utils.obj build\glob.obj build\coff.obj build\whashmap.obj build\hashmap.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib
 bin\find-file.exe: build\find-file.obj build\glob.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib bin
 	link /OUT:bin\find-file.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\find-file.obj build\glob.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib
+bin\type-file.exe: build\type-file.obj build\glob.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib bin
+	link /OUT:bin\type-file.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\type-file.obj build\glob.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib
 
 build\ntutils.lib: build
 	lib /NOLOGO /MACHINE:X64 /DEF /OUT:build\ntutils.lib /NAME:ntdll.dll /EXPORT:memcpy=memcpy /EXPORT:strlen=strlen /EXPORT:memmove=memmove /EXPORT:_wsplitpath_s=_wsplitpath_s /EXPORT:wcslen=wcslen /EXPORT:_wmakepath_s=_wmakepath_s /EXPORT:strchr=strchr /EXPORT:_stricmp=_stricmp /EXPORT:towlower=towlower /EXPORT:_wcsicmp=_wcsicmp /EXPORT:_snwprintf_s=_snwprintf_s /EXPORT:_snprintf_s=_snprintf_s /EXPORT:_vscwprintf=_vscwprintf /EXPORT:_vsnprintf=_vsnprintf /EXPORT:_vsnwprintf=_vsnwprintf /EXPORT:_vscprintf=_vscprintf /EXPORT:memset=memset /EXPORT:wcscmp=wcscmp /EXPORT:strcmp=strcmp /EXPORT:_fltused=_fltused /EXPORT:wcschr=wcschr /EXPORT:wcsrchr=wcsrchr /EXPORT:strtol=strtol /EXPORT:wcsncmp=wcsncmp /EXPORT:memcmp=memcmp /EXPORT:tolower=tolower /EXPORT:strncmp=strncmp /EXPORT:strnlen=strnlen /EXPORT:wcsstr=wcsstr /EXPORT:_snprintf=_snprintf

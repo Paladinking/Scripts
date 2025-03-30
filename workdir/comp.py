@@ -114,6 +114,7 @@ def main():
     #           extra_link_flags="tools\\index.obj")
 
     Executable("find-file.exe", "src/find-file.c", "src/glob.c", *arg_src, ntdll)
+    Executable("type-file.exe", "src/type-file.c", "src/glob.c", *arg_src, ntdll)
 
     CopyToBin("autocmp.json", "script/err.exe", "script/2to3.bat",
               "script/cal.bat", "script/ports.bat", "script/short.bat",

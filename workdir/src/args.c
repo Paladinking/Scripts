@@ -246,7 +246,8 @@ BOOL find_flags(wchar_t** argv, int* argc, FlagInfo* flags, uint32_t flag_count,
                 if (len == 0) {
                     continue;
                 }
-                if (len <= flags[j].shared) {
+                if (len <= flags[j].shared &&
+                    len != wcslen(flags[j].long_name)) {
                     err->type = FLAG_AMBIGUOS;
                     err->value = argv[ix];
                     if (argv[ix][len + 2] == L'=') {
