@@ -257,7 +257,7 @@ bool read_file_chunked(HANDLE in, bool number, bool eol, bool number_nonblank) {
     bool could_write = true;
     while (could_write) {
         DWORD r;
-        if (!ReadFile(in, s.buffer + s.length, 5, &r, NULL) || r == 0) {
+        if (!ReadFile(in, s.buffer + s.length, 0x1000000, &r, NULL) || r == 0) {
             break;
         }
         s.length += r;
