@@ -11,6 +11,7 @@ all: \
 	bin\test.exe \
 	bin\symbol-dump.exe \
 	bin\symbol-scrape.exe \
+	bin\defer.exe \
 	bin\find-file.exe \
 	bin\type-file.exe \
 	bin\autocmp.json \
@@ -83,14 +84,18 @@ build\subprocess.obj: src\subprocess.c src\subprocess.h src\dynamic_string.h src
 	cl.exe /c /Fo:build\subprocess.obj /GS- /GL /O1 /favor:AMD64 /nologo src\subprocess.c
 build\json.obj: src\json.c src\json.h src\linkedhashmap.h src\hashmap.h src\mem.h src\dynamic_string.h build
 	cl.exe /c /Fo:build\json.obj /GS- /GL /O1 /favor:AMD64 /nologo src\json.c
-build\test.obj: src\test.c src\args.h src\glob.h src\dynamic_string.h src\mem.h src\printf.h build
+build\test.obj: src\test.c src\args.h src\regex.h src\glob.h src\dynamic_string.h src\mem.h src\printf.h build
 	cl.exe /c /Fo:build\test.obj /GS- /GL /O1 /favor:AMD64 /nologo src\test.c
+build\regex.obj: src\regex.c src\regex.h src\dynamic_string.h src\mem.h build
+	cl.exe /c /Fo:build\regex.obj /GS- /GL /O1 /favor:AMD64 /nologo src\regex.c
 build\symbol-dump.obj: src\symbol-dump.c src\coff.h src\printf.h src\args.h src\mem.h build
 	cl.exe /c /Fo:build\symbol-dump.obj /GS- /GL /O1 /favor:AMD64 /nologo src\symbol-dump.c
 build\coff.obj: src\coff.c src\mem.h src\coff.h src\args.h build
 	cl.exe /c /Fo:build\coff.obj /GS- /GL /O1 /favor:AMD64 /nologo src\coff.c
 build\symbol-scrape.obj: src\symbol-scrape.c src\args.h src\coff.h src\glob.h src\dynamic_string.h src\mem.h src\hashmap.h src\path_utils.h src\printf.h src\whashmap.h build
 	cl.exe /c /Fo:build\symbol-scrape.obj /GS- /GL /O1 /favor:AMD64 /nologo src\symbol-scrape.c
+build\defer.obj: src\defer.c src\dynamic_string.h src\mem.h src\args.h src\glob.h src\printf.h build
+	cl.exe /c /Fo:build\defer.obj /GS- /GL /O1 /favor:AMD64 /nologo src\defer.c
 build\find-file.obj: src\find-file.c src\args.h src\mem.h src\glob.h src\dynamic_string.h src\printf.h build
 	cl.exe /c /Fo:build\find-file.obj /GS- /GL /O1 /favor:AMD64 /nologo src\find-file.c
 build\type-file.obj: src\type-file.c src\args.h src\glob.h src\dynamic_string.h src\mem.h src\printf.h build
@@ -114,12 +119,14 @@ bin\list-dir.exe: build\list-dir.obj build\args.obj build\printf.obj build\perm.
 	link /OUT:bin\list-dir.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main Advapi32.lib build\list-dir.obj build\args.obj build\printf.obj build\perm.obj build\glob.obj build\dynamic_string.obj build\mem.obj build\unicode_width.obj build\ntutils.lib
 bin\autocmp.dll: build\autocmp.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\match_node.obj build\subprocess.obj build\whashmap.obj build\lhashmap.obj build\json.obj build\cli.obj build\glob.obj build\path_utils.obj build\unicode_width.obj build\ntutils.lib bin
 	link /OUT:bin\autocmp.dll /DLL kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:DLLMain build\autocmp.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\match_node.obj build\subprocess.obj build\whashmap.obj build\lhashmap.obj build\json.obj build\cli.obj build\glob.obj build\path_utils.obj build\unicode_width.obj build\ntutils.lib
-bin\test.exe: build\test.obj build\match_node.obj build\glob.obj build\cli.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\json.obj build\subprocess.obj build\path_utils.obj build\unicode_width.obj build\whashmap.obj build\lhashmap.obj build\ntutils.lib bin
-	link /OUT:bin\test.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\test.obj build\match_node.obj build\glob.obj build\cli.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\json.obj build\subprocess.obj build\path_utils.obj build\unicode_width.obj build\whashmap.obj build\lhashmap.obj build\ntutils.lib
+bin\test.exe: build\test.obj build\glob.obj build\regex.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib bin
+	link /OUT:bin\test.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\test.obj build\glob.obj build\regex.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib
 bin\symbol-dump.exe: build\symbol-dump.obj build\coff.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib bin
 	link /OUT:bin\symbol-dump.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\symbol-dump.obj build\coff.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib
 bin\symbol-scrape.exe: build\symbol-scrape.obj build\path_utils.obj build\glob.obj build\coff.obj build\whashmap.obj build\hashmap.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib bin
 	link /OUT:bin\symbol-scrape.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\symbol-scrape.obj build\path_utils.obj build\glob.obj build\coff.obj build\whashmap.obj build\hashmap.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib
+bin\defer.exe: build\defer.obj build\glob.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib bin
+	link /OUT:bin\defer.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\defer.obj build\glob.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib
 bin\find-file.exe: build\find-file.obj build\glob.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib bin
 	link /OUT:bin\find-file.exe kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main build\find-file.obj build\glob.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib
 bin\type-file.exe: build\type-file.obj build\glob.obj build\args.obj build\mem.obj build\dynamic_string.obj build\printf.obj build\ntutils.lib bin
