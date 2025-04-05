@@ -85,10 +85,7 @@ def main():
                "src/cli.c", "src/glob.c", "src/path_utils.c", ntdll,
                "src/unicode_width.c",
                link_flags=DLLFLAGS, dll=True)
-    Executable("test.exe", "src/test.c", "src/match_node.c", "src/glob.c", 
-               "src/cli.c", *arg_src, "src/json.c", "src/subprocess.c", 
-               "src/path_utils.c", "src/unicode_width.c",
-               whashmap, lhashmap, ntdll)
+    Executable("test.exe", "src/test.c", "src/glob.c", "src/regex.c", *arg_src, ntdll)
     Executable("symbol-dump.exe", "src/symbol-dump.c", "src/coff.c", *arg_src, ntdll)
     scrape = Executable("symbol-scrape.exe", "src/symbol-scrape.c", "src/path_utils.c",
                "src/glob.c", "src/coff.c", whashmap, hashmap, *arg_src, ntdll)
@@ -112,6 +109,8 @@ def main():
     #                 defines=["EMBEDDED_SYMBOLS"], depends=[embed_index])
     #Executable("symbols.exe", symbols, hashmap, *arg_src, ntdll, 
     #           extra_link_flags="tools\\index.obj")
+
+    Executable("defer.exe", "src/defer.c", "src/glob.c", *arg_src, ntdll)
 
     Executable("find-file.exe", "src/find-file.c", "src/glob.c", *arg_src, ntdll)
     Executable("type-file.exe", "src/type-file.c", "src/glob.c", *arg_src, ntdll)

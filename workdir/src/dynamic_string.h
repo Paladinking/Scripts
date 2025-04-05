@@ -51,6 +51,8 @@ bool String_startswith(const String* s, const char* str);
 
 bool String_equals(const String* s, const String* str);
 
+bool String_equals_str(const String* s, const char* str);
+
 // Free a string
 void String_free(String* s);
 
@@ -109,6 +111,8 @@ string_size_t WString_count(const WString* s, wchar_t c);
 bool WString_startswith(const WString* s, const wchar_t* str);
 
 bool WString_equals(const WString* s, const WString* str);
+
+bool WString_equals_str(const WString* s, const wchar_t* str);
 
 // Free a string
 void WString_free(WString* s);

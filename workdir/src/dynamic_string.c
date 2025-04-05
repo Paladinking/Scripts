@@ -46,7 +46,7 @@ bool String_insert_count(String* s, string_size_t ix, const char* buf, string_si
         return false;
     }
     s->length += count;
-    memmove(s->buffer + ix + count, s->buffer + ix, (s->length - ix - count));
+    memmove(s->buffer + ix + count, s->buffer + ix, (s->length - ix - count) + 1);
     memmove(s->buffer + ix, buf, count);
 
     return true;
@@ -92,6 +92,9 @@ bool String_create(String *s) {
 }
 
 bool String_create_capacity(String_noinit* s, string_size_t cap) {
+    if (cap > 0x7fffffff) {
+        return false;
+    }
     s->length = 0;
     s->capacity = 4;
     while (s->capacity < cap) {
@@ -142,7 +145,16 @@ bool String_equals(const String* s, const String* str) {
     if (s->length != str->length) {
         return false;
     }
-    return memcmp(s, str, s->length) == 0;
+    return memcmp(s->buffer, str->buffer, s->length) == 0;
+}
+
+
+bool String_equals_str(const String* s, const char* str) {
+    uint64_t len = strlen(str);
+    if (s->length != len) {
+        return false;
+    }
+    return memcmp(s->buffer, str, s->length) == 0;
 }
 
 void String_free(String *s) {
@@ -306,6 +318,9 @@ bool WString_create(WString *s) {
 }
 
 bool WString_create_capacity(WString_noinit* s, string_size_t cap) {
+    if (cap > 0x7fffffff) {
+        return false;
+    }
     s->length = 0;
     s->capacity = 4;
     while (s->capacity < cap) {
@@ -356,7 +371,16 @@ bool WString_equals(const WString* s, const WString* str) {
     if (s->length != str->length) {
         return false;
     }
-    return memcmp(s, str, s->length * sizeof(wchar_t)) == 0;
+    return memcmp(s->buffer, str->buffer, 
+                  s->length * sizeof(wchar_t)) == 0;
+}
+
+bool WString_equals_str(const WString* s, const wchar_t* str) {
+    uint64_t len = wcslen(str);
+    if (s->length != len) {
+        return false;
+    }
+    return memcmp(s->buffer, str, s->length * sizeof(wchar_t)) == 0;
 }
 
 void WString_free(WString *s) {
