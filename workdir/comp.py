@@ -10,7 +10,7 @@ BIN_DIR = "bin"
 
 
 CLFLAGS_DBG = "-g -Og"
-LINKFLAGS_DBG = "-g"
+LINKFLAGS_DBG = "-g -Og"
 
 BUILD_DIR_DBG = "build-gcc"
 BIN_DIR_DBG = "bin-gcc"
@@ -110,7 +110,7 @@ def main():
     #Executable("symbols.exe", symbols, hashmap, *arg_src, ntdll, 
     #           extra_link_flags="tools\\index.obj")
 
-    Executable("defer.exe", "src/defer.c", "src/glob.c", *arg_src, ntdll)
+    Executable("defer.exe", "src/defer.c", "src/subprocess.c", "src/glob.c", *arg_src, ntdll)
 
     Executable("find-file.exe", "src/find-file.c", "src/glob.c", *arg_src, ntdll)
     Executable("type-file.exe", "src/type-file.c", "src/glob.c", *arg_src, ntdll)
