@@ -14,9 +14,11 @@
 
 void HashMap_Free(HashMap* map) {
     for (uint32_t i = 0; i < map->bucket_count; ++i) {
+#ifdef HASHMAP_STRINGKEY
         for (uint32_t j = 0; j < map->buckets[i].size; ++j) {
             HASHMAP_FREE_FN((ckey_t*)map->buckets[i].data[j].key);
         } 
+#endif
         HASHMAP_FREE_FN(map->buckets[i].data);
     }
     map->element_count = 0;
@@ -64,9 +66,11 @@ int HashMap_Allocate(HashMap* map, uint32_t bucket_count) {
 
 void HashMap_Clear(HashMap* map) {
     for (uint32_t i = 0; i < map->bucket_count; ++i) {
+#ifdef HASHMAP_STRINGKEY
         for (uint32_t j = 0; j < map->buckets[i].size; ++j) {
             HASHMAP_FREE_FN((ckey_t*)map->buckets[i].data[j].key);
         }
+#endif
         map->buckets[i].size = 0;
     }
     map->element_count = 0;
@@ -82,7 +86,8 @@ int HashMap_Create(HashMap* map) {
     return HashMap_Allocate(map, HASHMAP_INIT_BUCKETS);
 }
 
-static uint64_t hash(const ckey_t* str) {
+static uint64_t hash(const ckey_t str) {
+#ifdef HASHMAP_STRINGKEY
     uint64_t hash = 5381;
     int c;
     while ((c = *str++)) {
@@ -96,16 +101,18 @@ static uint64_t hash(const ckey_t* str) {
         hash = ((hash << 5) + hash) + c;
     }
     return hash;
+#endif
 }
 
-static HashElement* HashMap_GetElement(HashMap* map, const ckey_t* key, HashBucket** bucket) {
+static HashElement* HashMap_GetElement(HashMap* map, const ckey_t key, HashBucket** bucket) {
     uint64_t h = hash(key);
     *bucket = &map->buckets[h % map->bucket_count];
     for (uint32_t i = 0; i < (*bucket)->size; ++i) {
-        if (keycmp(key, (*bucket)->data[i].key) == 0) {
+        if (keyequal(key, (*bucket)->data[i].key)) {
             return &((*bucket)->data[i]);
         }
     }
+
     return NULL;
 }
 
@@ -164,7 +171,7 @@ static int HashMap_Rehash(HashMap* map) {
     return 1;
 }
 
-int HashMap_Insert(HashMap* map, const ckey_t* key, void* value) {
+int HashMap_Insert(HashMap* map, const ckey_t key, void* value) {
     if (map->bucket_count == map->element_count) {
         CHECKED_CALL(HashMap_Rehash(map));
     }
@@ -174,16 +181,20 @@ int HashMap_Insert(HashMap* map, const ckey_t* key, void* value) {
         elem->value = value;
         return 1;
     }
+#ifdef HASHMAP_STRINGKEY
     uint32_t len = keylen(key);
-    ckey_t* buf;
-    CHECKED_ALLOC(buf, (len + 1) * sizeof(ckey_t));
-    memcpy(buf, key, (len + 1) * sizeof(ckey_t));
+    ckey_t buf;
+    CHECKED_ALLOC(buf, (len + 1) * sizeof(*key));
+    memcpy(buf, key, (len + 1) * sizeof(*key));
     HashElement he = {buf, value};
+#else
+    HashElement he = {key, value};
+#endif
     CHECKED_CALL(HashMap_AddElement(map, bucket, he));
     return 1;
 }
 
-HashElement* HashMap_Get(HashMap* map, const ckey_t* key) {
+HashElement* HashMap_Get(HashMap* map, const ckey_t key) {
     if (map->bucket_count == map->element_count) {
         CHECKED_CALL(HashMap_Rehash(map));
     }
@@ -192,21 +203,25 @@ HashElement* HashMap_Get(HashMap* map, const ckey_t* key) {
     if (elem != NULL) {
         return elem;
     }
+#ifdef HASHMAP_STRINGKEY
     uint32_t len = keylen(key);
-    ckey_t* buf;
+    ckey_t buf;
     CHECKED_ALLOC(buf, (len + 1) * sizeof(ckey_t));
     memcpy(buf, key, (len + 1) * sizeof(ckey_t));
     HashElement he = {buf, NULL};
+#else
+    HashElement he = {key, value};;
+#endif
     CHECKED_CALL(HashMap_AddElement(map, bucket, he));
     return &(bucket->data[bucket->size - 1]);
 }
 
-HashElement* HashMap_Find(HashMap* map, const ckey_t* key) {
+HashElement* HashMap_Find(HashMap* map, const ckey_t key) {
     HashBucket* bucket;
     return HashMap_GetElement(map, key, &bucket);
 }
 
-void* HashMap_Value(HashMap* map, const ckey_t* key) {
+void* HashMap_Value(HashMap* map, const ckey_t key) {
     HashBucket *bucket;
     HashElement* element = HashMap_GetElement(map, key, &bucket);
     if (element == NULL) {
@@ -237,13 +252,15 @@ static void HashMap_RemoveElement(HashMap* map, HashBucket* bucket, HashElement*
     }
 
 #endif
-    HASHMAP_FREE_FN((char*)element->key);
+#ifdef HASHMAP_STRINGKEY
+    HASHMAP_FREE_FN((ckey_t)element->key);
+#endif
     memmove(element, element + 1, (bucket->size - elem_ix - 1) * sizeof(HashElement));
     --bucket->size;
     --map->element_count;
 }
 
-int HashMap_Remove(HashMap* map, const ckey_t* key) {
+int HashMap_Remove(HashMap* map, const ckey_t key) {
     HashBucket* bucket;
     HashElement* element = HashMap_GetElement(map, key, &bucket);
     if (element == NULL) {
@@ -253,7 +270,7 @@ int HashMap_Remove(HashMap* map, const ckey_t* key) {
     return 1;
 }
 
-int HashMap_RemoveGet(HashMap* map, const ckey_t* key, void** old_val) {
+int HashMap_RemoveGet(HashMap* map, const ckey_t key, void** old_val) {
     HashBucket* bucket;
     HashElement* element = HashMap_GetElement(map, key, &bucket);
     if (element == NULL) {

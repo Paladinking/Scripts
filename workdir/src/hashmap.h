@@ -32,11 +32,15 @@
 #endif
 #endif
 
-#undef keycmp
+#undef keyequal
 #undef keylen
 #undef ckey_t
+#ifdef HASHMAP_STRINGKEY
+#undef HASHMAP_STRINGKEY
+#endif
 
 #ifdef HASHMAP_WIDE
+    #define HASHMAP_STRINGKEY
 
     #ifdef HASHMAP_LINKED
         #ifndef HASHMAP_WIDE_LINKED
@@ -45,11 +49,11 @@
         #endif
     #endif
 
-    #define ckey_t wchar_t
+    #define ckey_t wchar_t*
     #ifdef HASHMAP_CASE_INSENSITIVE
-        #define keycmp(a, b) _wcsicmp(a, b)
+        #define keyequal(a, b) (_wcsicmp(a, b) == 0)
     #else
-        #define keycmp(a, b) wcscmp(a, b)
+        #define keyequal(a, b) (wcscmp(a, b) == 0)
     #endif
     #define keylen(k) wcslen(k)
 
@@ -89,11 +93,13 @@
         #define HashMap_RemoveGet WHashMap_RemoveGet
     #endif
 #else
-    #define ckey_t char
+    #define HASHMAP_STRINGKEY
+
+    #define ckey_t char*
     #ifdef HASHMAP_CASE_INSENSITIVE
-        #define keycmp(a, b) _stricmp(a, b)
+        #define keyequal(a, b) (_stricmp(a, b) == 0)
     #else
-        #define keycmp(a, b) strcmp(a, b)
+        #define keyequal(a, b) (strcmp(a, b) == 0)
     #endif
     #define keylen(k) strlen(k)
 
@@ -122,7 +128,7 @@
 
 
 typedef struct HashElement {
-    const ckey_t* const key;
+    const ckey_t const key;
     void* value;
 #ifdef HASHMAP_LINKED
     uint32_t next_bucket_ix;
@@ -158,17 +164,17 @@ void HashMap_Clear(HashMap* map);
 
 int HashMap_Create(HashMap* map);
 
-int HashMap_Insert(HashMap* map, const ckey_t* key, void* value);
+int HashMap_Insert(HashMap* map, const ckey_t key, void* value);
 
-HashElement* HashMap_Find(HashMap* map, const ckey_t* key);
+HashElement* HashMap_Find(HashMap* map, const ckey_t key);
 
-HashElement* HashMap_Get(HashMap* map, const ckey_t* key);
+HashElement* HashMap_Get(HashMap* map, const ckey_t key);
 
-void* HashMap_Value(HashMap* map, const ckey_t* key);
+void* HashMap_Value(HashMap* map, const ckey_t key);
 
-int HashMap_Remove(HashMap* map, const ckey_t* key);
+int HashMap_Remove(HashMap* map, const ckey_t key);
 
-int HashMap_RemoveGet(HashMap* map, const ckey_t* key, void** old_val);
+int HashMap_RemoveGet(HashMap* map, const ckey_t key, void** old_val);
 
 #ifdef HASHMAP_LINKED
 
