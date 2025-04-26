@@ -74,8 +74,8 @@ typedef struct ParseCtx {
     String pattern;
 } ParseCtx;
 
-//#define DFA_REJECT_NODE ((uint32_t)-1)
-#define DFA_REJECT_NODE 255
+#define DFA_REJECT_NODE ((uint32_t)-1)
+//#define DFA_REJECT_NODE 255
 
 typedef struct NodeSet {
     uint32_t *nodes;
@@ -134,6 +134,7 @@ typedef struct DFABuilder {
     uint32_t *stack;
     uint32_t stack_size;
     uint32_t stack_cap;
+    uint32_t minlen;
 } DFABuilder;
 
 bool parse_init(ParseCtx *ctx) {
@@ -1300,7 +1301,78 @@ void dfa_node_mark_literal(NodeDFA *node, NodeDFABuilder *builder) {
     Mem_free(node->utf8_edges);
 }
 
+uint32_t dfa_minlen(DFABuilder* b) {
+    NodeDFA* dfa = b->nodes;
+    uint32_t* visited = Mem_alloc(b->node_count * sizeof(uint32_t));
+    if (visited == NULL) {
+        return UINT32_MAX;
+    }
+    memset(visited, 0, b->node_count * sizeof(uint32_t));
+    struct Node {
+        uint32_t ix;
+        uint32_t cost;
+    };
+    struct Node* to_visit = Mem_alloc(4 * sizeof(struct Node));
+    if (to_visit == NULL) {
+        Mem_free(visited);
+        return UINT32_MAX;
+    }
+    uint32_t to_visit_size = 1;
+    uint32_t to_visit_cap = 4;
+    uint32_t cost = UINT32_MAX;
+
+    to_visit[0].cost = 0;
+    to_visit[0].ix = 0;
+
+    while (to_visit_size > 0) {
+        --to_visit_size;
+        struct Node n = to_visit[to_visit_size];
+        if (dfa[n.ix].accept) {
+            if (n.cost < cost) {
+                cost = n.cost;
+            }
+        }
+
+        for (uint32_t ix = 0; ix < b->builders[n.ix].ascii_edge_count; ++ix) {
+            if (dfa[n.ix].ascii_edges[ix] == DFA_REJECT_NODE) {
+                continue;
+            }
+            uint32_t cost = visited[dfa[n.ix].ascii_edges[ix]];
+            if (cost == 0 || cost > n.cost + 1) {
+                if (!RESERVE(&to_visit, &to_visit_cap, to_visit_size + 1, struct Node)) {
+                    goto end;
+                }
+                visited[dfa[n.ix].ascii_edges[ix]] = n.cost + 1;
+                to_visit[to_visit_size].ix = dfa[n.ix].ascii_edges[ix];
+                to_visit[to_visit_size].cost = n.cost + 1;
+                ++to_visit_size;
+            }
+        }
+        for (uint32_t ix = 0; ix < dfa[n.ix].utf8_edge_count; ++ix) {
+            if (dfa[n.ix].utf8_edges[ix].node_ix == DFA_REJECT_NODE) {
+                continue;
+            }
+            uint32_t cost = visited[dfa[n.ix].utf8_edges[ix].node_ix];
+            if (cost == 0 || cost > n.cost + 1) {
+                if (!RESERVE(&to_visit, &to_visit_cap, to_visit_size + 1, struct Node)) {
+                    goto end;
+                }
+                visited[dfa[n.ix].utf8_edges[ix].node_ix] = n.cost + 1;
+                to_visit[to_visit_size].ix = dfa[n.ix].utf8_edges[ix].node_ix;
+                to_visit[to_visit_size].cost = n.cost + 1;
+                ++to_visit_size;
+            }
+        }
+    }
+end:
+    Mem_free(to_visit);
+    Mem_free(visited);
+    return cost;
+}
+
 bool dfa_finalize(DFABuilder *builder) {
+    builder->minlen = dfa_minlen(builder);
+
     for (uint32_t ix = 0; ix < builder->node_count; ++ix) {
         Mem_free(builder->builders[ix].nodes.nodes);
         Mem_free(builder->builders[ix].edges.edges);
@@ -1436,7 +1508,7 @@ bool dfa_finalize(DFABuilder *builder) {
         }*/
         // END OPTIM
         
-        for (uint32_t i = 0; i < builder->builders[i].ascii_edge_count; ++i) {
+        for (uint32_t i = 0; i < builder->builders[ix].ascii_edge_count; ++i) {
             if (n->ascii_edges[i] == DFA_REJECT_NODE) {
                 continue;
             }
@@ -1472,7 +1544,7 @@ bool nfa_copy(NFA* in, NFA* out) {
     return true;
 }
 
-RegexResult nfa_to_dfa(NFA *nfa, char *chars, NodeDFA **dfa) {
+RegexResult nfa_to_dfa(NFA *nfa, char *chars, NodeDFA **dfa, uint32_t* minlen) {
     if (!nfa_split_literals(nfa, chars)) {
         return REGEX_ERROR;
     }
@@ -1565,6 +1637,7 @@ RegexResult nfa_to_dfa(NFA *nfa, char *chars, NodeDFA **dfa) {
     }
 
     *dfa = b.nodes;
+    *minlen = b.minlen;
 
     return REGEX_MATCH;
 }
@@ -1589,9 +1662,11 @@ Regex *Regex_compile(const char *pattern) {
 
     NFA nfa_cpy;
     NodeDFA* dfa = NULL;
+    uint32_t minlen;
     if (nfa_copy(&nfa, &nfa_cpy)) {
-        if (nfa_to_dfa(&nfa_cpy, ctx.pattern.buffer, &dfa) != REGEX_MATCH) {
+        if (nfa_to_dfa(&nfa_cpy, ctx.pattern.buffer, &dfa, &minlen) != REGEX_MATCH) {
             dfa = NULL;
+            minlen = UINT32_MAX;
         }
         Mem_free(nfa_cpy.nodes);
         Mem_free(nfa_cpy.edges);
@@ -1608,6 +1683,7 @@ Regex *Regex_compile(const char *pattern) {
     regex->chars = ctx.pattern.buffer;
     regex->nfa = nfa;
     regex->dfa = dfa;
+    regex->minlen = minlen;
 
     return regex;
 }
@@ -1704,6 +1780,9 @@ RegexResult Regex_anymatch_dfa(Regex* regex, const char* str, uint64_t len) {
     NodeDFA* dfa = regex->dfa;
     for (uint64_t s = 0; s < len; ++s) {
         uint32_t node_ix = 0;
+        if (len - s < regex->minlen) {
+            return REGEX_NO_MATCH;
+        }
         for (uint64_t ix = s; ix < len;) {
             if (dfa[node_ix].accept) {
                 return REGEX_MATCH;
@@ -1712,8 +1791,11 @@ RegexResult Regex_anymatch_dfa(Regex* regex, const char* str, uint64_t len) {
                 if (len - ix < dfa[node_ix].literal.str_len) {
                     break;
                 }
-                if (memcmp(str + ix, dfa[node_ix].literal.str, dfa[node_ix].literal.str_len) != 0) {
-                    break;
+                // for some reason, loop is faster than memcmp...
+                for (uint64_t i = 0; i < dfa[node_ix].literal.str_len; ++i) {
+                    if (dfa[node_ix].literal.str[i] != str[ix + i]) {
+                        goto next;
+                    }
                 }
                 ix += dfa[node_ix].literal.str_len;
                 node_ix = dfa[node_ix].literal.node_ix;
@@ -1736,6 +1818,7 @@ RegexResult Regex_anymatch_dfa(Regex* regex, const char* str, uint64_t len) {
                 break;
             }
         }
+        next:
         if (node_ix != DFA_REJECT_NODE && dfa[node_ix].accept) {
             return REGEX_MATCH;
         }
