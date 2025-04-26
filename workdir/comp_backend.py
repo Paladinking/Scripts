@@ -448,17 +448,24 @@ all_backends: Dict[str, 'Backend'] = {"msvc": Msvc(), "mingw": Mingw(), 'zigcc':
 active_backends: Dict[str, 'Backend'] = {}
 
 args = None
+parser = None
 
-def get_args() -> 'argparse.Namespace':
-    global args
-    if args is None:
+def get_parser() -> 'argparse.ArgumentParser':
+    global parser
+    if parser is None:
         parser = argparse.ArgumentParser(description="Generate makefile and compile commands.")
         parser.add_argument("--compiledb", "-c", action="store_true",
                             help="Generate compile commands database instead of Makefile")
         parser.add_argument("--backend", "-b", choices = [key for key in active_backends],
                             type=str.lower,
                             default=None, help="Specify the backend to use.")
+    return parser
 
+
+def get_args() -> 'argparse.Namespace':
+    global args
+    if args is None:
+        parser = get_parser()
         args = parser.parse_args()
     return args
 
