@@ -58,7 +58,7 @@ typedef struct ErrorInfo {
 
 #define BASE_FROM_PREFIX 0xff
 /**
- * Parse string containing a signedd or unsigned integer.
+ * Parse string containing a signed or unsigned integer.
  * Returns False if the string is not just a valid number.
  * Base can be 16, 10, 8, or BASE_FROM_PREFIX.
  * Any other value is seen as BASE_FROM_PREFIX.
