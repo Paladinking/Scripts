@@ -2,6 +2,7 @@
 #include "args.h"
 #include "glob.h"
 #include "printf.h"
+#include "subprocess.h"
 
 
 typedef struct Defered {
@@ -16,6 +17,26 @@ typedef struct ParseCtx {
     bool eof;
     bool err;
 } ParseCtx;
+
+bool write_file(const wchar_t* filename, String* buf) {
+    HANDLE file =
+        CreateFileW(filename, GENERIC_WRITE | DELETE, 0, NULL,
+                    CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    DWORD w;
+    uint32_t written = 0;
+    while (written < buf->length) {
+        if (!WriteFile(file, buf->buffer + written, buf->length - written, &w, NULL) || w == 0) {
+            CloseHandle(file);
+            return false;
+        }
+        written += w;
+    }
+    CloseHandle(file);
+    return true;
+}
 
 bool should_abort(ParseCtx* ctx) {
     if (ctx->err) {
@@ -92,8 +113,10 @@ bool skip_paren(ParseCtx* ctx, char open, char close) {
         char c = ctx->data.buffer[ctx->ix];
         if (c == open) {
             paren_count += 1;
+            ctx->ix += 1;
         } else if (c == close) {
             paren_count -= 1;
+            ctx->ix += 1;
             if (paren_count == 0) {
                 ctx->ix += 1;
                 return true;
@@ -422,6 +445,7 @@ bool parse(String* data) {
         if (func_start(&ctx, &buf)) {
             if (!parse_func(&ctx, &buf)) {
                 String_free(&buf);
+                *data = ctx.data;
                 if (ctx.eof) {
                     return true;
                 } else {
@@ -431,6 +455,7 @@ bool parse(String* data) {
         } else {
             if (should_abort(&ctx)) {
                 String_free(&buf);
+                *data = ctx.data;
                 return !ctx.err;
             }
             ctx.ix += 1;
@@ -444,31 +469,137 @@ int main() {
     int argc;
     wchar_t** argv = parse_command_line(args, &argc);
 
+    int status = 1;
+
     if (argc < 2) {
         _wprintf_e(L"Missing argument\n");
         Mem_free(argv);
         return 1;
     }
 
-    wchar_t* filename = argv[1];
-    String data;
-    if (!read_text_file(&data, filename)) {
-        _wprintf_e(L"Failed reading file '%s'\n", filename);
-        Mem_free(argv);
-        return 1;
+    uint32_t cmp_ix = 0;
+    wchar_t** cmp_args = Mem_alloc(argc * sizeof(wchar_t*));
+    if (cmp_args == NULL) {
+        goto end;
+    }
+    wchar_t *build_dir = NULL;
+    for (uint32_t ix = 1; ix < argc; ++ix) {
+        if (wcscmp(argv[ix], L"--defer-out") == 0) {
+            if (ix + 1 >= argc) {
+                _wprintf_e(L"Missing dir argument for '--defer-out\n'");
+                goto end;
+            }
+            build_dir = argv[ix + 1];
+            ++ix;
+        }
+    }
+    if (build_dir == NULL) {
+        build_dir = L".";
+    } else {
+        if (!is_directory(build_dir)) {
+            if (!CreateDirectoryW(build_dir, NULL)) {
+                _wprintf_e(L"Failed making direcory '%s'\n", build_dir);
+                goto end;
+            }
+        }
     }
 
-    if (!parse(&data)) {
-        _wprintf_e(L"Failed parsing file '%s'\n", filename);
-        String_free(&data);
-        Mem_free(argv);
-        return 1;
+    for (uint32_t ix = 1; ix < argc; ++ix) {
+        if (wcscmp(argv[ix], L"--defer-out") == 0) {
+            ++ix;
+        } else if (wcscmp(argv[ix], L"--defer-source") == 0) {
+            if (ix + 1 >= argc) {
+                _wprintf_e(L"Missing source argument for '--defer-source'\n");
+                goto end;
+            }
+
+            wchar_t* filename = argv[ix + 1];
+            String data;
+            if (!read_text_file(&data, filename)) {
+                _wprintf_e(L"Failed reading file '%s'\n", filename);
+                goto end;
+            }
+            if (!parse(&data)) {
+                String_free(&data);
+                _wprintf_e(L"Failed parsing file '%s'\n", filename);
+                goto end;
+            }
+            wchar_t* filesep = wcsrchr(filename, L'\\');
+            wchar_t* filesep2 = wcsrchr(filename, L'/');
+            if (filesep == NULL || filesep2 > filesep) {
+                filesep = filesep2;
+            }
+            if (filesep == NULL) {
+                filesep = filename;
+            } else {
+                filesep = filesep + 1;
+            }
+            WString name_buf;
+            if (!WString_create(&name_buf)) {
+                String_free(&data);
+                goto end;
+            }
+            if (!WString_extend(&name_buf, build_dir) ||
+                !WString_append(&name_buf, L'\\')) {
+                String_free(&data);
+                goto end;
+            }
+            wchar_t* ext = wcsrchr(filesep, L'.');
+            if (ext == NULL) {
+                if (!WString_extend(&name_buf, filesep) ||
+                    !WString_extend(&name_buf, L"_precompiled") ||
+                    !WString_append(&name_buf, L'\0')) {
+                    String_free(&data);
+                    goto end;
+
+                }
+            } else {
+                if (!WString_append_count(&name_buf, filesep, ext - filesep) ||
+                    !WString_extend(&name_buf, L"_precompiled") ||
+                    !WString_extend(&name_buf, ext) ||
+                    !WString_append(&name_buf, L'\0')) {
+                    String_free(&data);
+                    goto end;
+                }
+            }
+            if (!write_file(name_buf.buffer, &data)) {
+                _wprintf_e(L"Failed writing '%s'\n", name_buf.buffer);
+                String_free(&data);
+                goto end;
+            }
+            String_free(&data);
+            cmp_args[cmp_ix] = name_buf.buffer;
+            ++cmp_ix;
+            ++ix;
+        } else {
+            cmp_args[cmp_ix] = argv[ix];
+            ++cmp_ix;
+        }
     }
-    
-    _wprintf(L"%S", data.buffer);
 
-    String_free(&data);
+    WString cmd;
+    if (!WString_create(&cmd)) {
+        goto end;
+    }
+    for (uint64_t ix = 0; ix < cmp_ix; ++ix) {
+        if (!WString_extend(&cmd, cmp_args[ix]) ||
+            !WString_append(&cmd, ' ')) {
+            goto end;
+        }
+    }
+    unsigned long exit_code;
+    String out;
+    String_create(&out);
+    if (!subprocess_run(cmd.buffer, &out, 20 * 1000, &exit_code, 0)) {
+        _wprintf_e(L"Failed running '%s'\n", cmd.buffer);
+        goto end;
+    }
+    _wprintf(L"%S\n", out.buffer);
+    String_free(&out);
 
+    status = exit_code;
+end:
+    Mem_free(cmp_args);
     Mem_free(argv);
-    return 0;
+    return status;
 }
