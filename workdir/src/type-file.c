@@ -5,7 +5,7 @@
 #include "glob.h"
 #include "printf.h"
 
-const uint8_t utf8_len_table[] = {
+const uint8_t utf8_len_table[256] = {
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
@@ -27,9 +27,26 @@ static inline uint8_t utf8_len(uint8_t b) {
     return utf8_len_table[b];
 }
 
+// Convert w from utf16 to utf8, storing the result in dest.
+// Keep any partial utf16 sequences at the end of w for later processing.
+bool convert_utf16_chunk(WString* w, String* dest) {
+    if (IS_HIGH_SURROGATE(w->buffer[w->length - 1])) {
+        if (!String_from_utf16_bytes(dest, w->buffer, w->length - 1)) {
+            return false;
+        }
+        WString_remove(w, 0, w->length - 1);
+    } else {
+        if (!String_from_utf16_bytes(dest, w->buffer, w->length)) {
+            return false;
+        }
+        WString_clear(w);
+    }
+    return true;
+}
+
 // Convert s from utf8 to utf16, storing the result in dest.
 // Keep any partial utf8 sequences at the end of s for later processing.
-bool convert_chunk(String* s, WString* dest) {
+bool convert_utf8_chunk(String* s, WString* dest) {
     uint32_t ix = s->length - 1;
     uint8_t *buf = (uint8_t*)s->buffer;
     if ((buf[ix] >= 0x80 && buf[ix] <= 0xBF) || utf8_len(buf[ix]) > 1) {
@@ -84,7 +101,9 @@ bool output_utf8_lines(HANDLE out, String* s, OutputState* state) {
                     return false;
                 }
             }
-            ++state->lineno;
+            if (state->number || (state->number_nonblank && state->non_blank)) {
+                ++state->lineno;
+            }
             has_header = false;
             uint32_t l = ix - last_ix;
             if (!WriteFile(out, s->buffer + last_ix, 
@@ -170,7 +189,9 @@ bool output_utf16_lines(HANDLE out, WString* s, OutputState* state) {
                     return false;
                 }
             }
-            ++state->lineno;
+            if (state->number || (state->number_nonblank && state->non_blank)) {
+                ++state->lineno;
+            }
             has_header = false;
             uint32_t l = ix - last_ix;
             if (!WriteConsoleW(out, s->buffer + last_ix, 
@@ -227,6 +248,100 @@ bool output_utf16_lines(HANDLE out, WString* s, OutputState* state) {
     return true;
 }
 
+
+bool read_console_chunked(HANDLE in, bool number, bool eol, bool number_nonblank) {
+    HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+    DWORD type = GetFileType(out);
+    bool parse_lines = number || eol || number_nonblank;
+    OutputState state;
+    if (parse_lines) {
+        state.non_blank = false;
+        state.last_cr = false;
+        state.number_nonblank = number_nonblank;
+        state.number = number;
+        state.eol = eol;
+        state.lineno = 1;
+    }
+    if (in == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    WString w;
+    if (!WString_create_capacity(&w, 0x500000 + 5)) {
+        return false;
+    }
+    String s;
+    if (type != FILE_TYPE_CHAR) {
+        if (!String_create_capacity(&s, 0x500000)) {
+            WString_free(&w);
+            return false;
+        }
+    }
+    bool could_write = true;
+    while (could_write) {
+        DWORD r;
+        if (!ReadConsoleW(in, w.buffer + w.length, 0x500000, &r, NULL) || r == 0) {
+            break;
+        }
+        w.length += r;
+        uint32_t written = 0;
+        if (type == FILE_TYPE_CHAR) {
+            // If output is a console, just write the utf16 data.
+            if (parse_lines) {
+                could_write = output_utf16_lines(out, &w, &state);
+                w.length = 0;
+                continue;
+            }
+            while (written < w.length) {
+                if (!WriteConsoleW(out, w.buffer + written, w.length - written,
+                               &r, NULL) || r == 0) {
+                    could_write = false;
+                    break;
+                }
+                written += r;
+            }
+            w.length = 0;
+            continue;
+        }
+        w.buffer[w.length] = L'\0';
+        // Console can only properly display unicode from utf16, convert
+        if (!convert_utf16_chunk(&w, &s)) {
+            goto fail;
+        }
+        if (parse_lines) {
+            could_write = output_utf8_lines(out, &s, &state);
+            continue;
+        }
+        while (written < s.length) {
+            if (!WriteFile(out, s.buffer + written, s.length - written,
+                           &r, NULL) || r == 0) {
+                could_write = false;
+                break;
+            }
+            written += r;
+        }
+    }
+    if (could_write && w.length > 0) {
+        String_from_utf16_bytes(&s, w.buffer, w.length);
+        if (parse_lines) {
+            output_utf8_lines(out, &s, &state);
+        } else {
+            WriteFile(out, s.buffer, s.length, NULL, NULL);
+        }
+    }
+    WString_free(&w);
+    if (type != FILE_TYPE_CHAR) {
+        String_free(&s);
+    }
+    return true;
+fail:
+    WString_free(&w);
+    if (type != FILE_TYPE_CHAR) {
+        String_free(&s);
+    }
+    return false;
+}
+
+
 bool read_file_chunked(HANDLE in, bool number, bool eol, bool number_nonblank) {
     HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
     DWORD type = GetFileType(out);
@@ -263,6 +378,7 @@ bool read_file_chunked(HANDLE in, bool number, bool eol, bool number_nonblank) {
         s.length += r;
         uint32_t written = 0;
         if (type != FILE_TYPE_CHAR) {
+            // If output is not a console, just write the (assumed) utf8 data.
             if (parse_lines) {
                 could_write = output_utf8_lines(out, &s, &state);
                 s.length = 0;
@@ -280,7 +396,8 @@ bool read_file_chunked(HANDLE in, bool number, bool eol, bool number_nonblank) {
             continue;
         }
         s.buffer[s.length] = L'\0';
-        if (!convert_chunk(&s, &w)) {
+        // Console can only properly display unicode from utf16, convert
+        if (!convert_utf8_chunk(&s, &w)) {
             goto fail;
         }
         if (parse_lines) {
@@ -364,8 +481,12 @@ int main() {
     bool number_nonblank = flags[2].count > 0;
 
     if (argc < 2) {
-        read_file_chunked(GetStdHandle(STD_INPUT_HANDLE),
-                          number, show_ends, number_nonblank);
+        HANDLE in = GetStdHandle(STD_INPUT_HANDLE);
+        if (GetFileType(in) == FILE_TYPE_CHAR) {
+            read_console_chunked(in, number, show_ends, number_nonblank);
+        } else {
+            read_file_chunked(in, number, show_ends, number_nonblank);
+        }
 
         Mem_free(argv);
         return 0;
@@ -375,7 +496,11 @@ int main() {
         HANDLE in;
         if (argv[ix][0] == L'-' && argv[ix][1] == L'\0') {
             in = GetStdHandle(STD_INPUT_HANDLE);
-            read_file_chunked(in, number, show_ends, number_nonblank);
+            if (GetFileType(in) == FILE_TYPE_CHAR) {
+                read_console_chunked(in, number, show_ends, number_nonblank);
+            } else {
+                read_file_chunked(in, number, show_ends, number_nonblank);
+            }
         } else {
             in = CreateFileW(argv[ix], GENERIC_READ,
                              FILE_SHARE_READ, NULL,
