@@ -17,7 +17,7 @@
 #undef HASHMAP_H_00
 #endif
 
-#undef keycmp
+#undef keyequal
 #undef keylen
 #undef HashElement
 #undef HashBucket

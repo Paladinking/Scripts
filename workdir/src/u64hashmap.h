@@ -1,7 +1,7 @@
-#ifndef LINKED_HASHMAP_00
-#define LINKED_HASHMAP_00
+#ifndef U64HASHMAP_H_00
+#define U64HASHMAP_H_00
 
-#define HASHMAP_LINKED
+#define HASHMAP_U64
 
 #ifdef HASHMAP_H_00
 #undef HASHMAP_H_00
@@ -18,7 +18,6 @@
 #endif
 
 #undef keyequal
-#undef keylen
 #undef HashElement
 #undef HashBucket
 #undef HashMap
@@ -34,9 +33,7 @@
 #undef HashMap_Value
 #undef HashMap_Remove
 #undef HashMap_RemoveGet
-#undef HashMap_Freeze
-#undef HashMap_FreeFrozen
 
-#undef HASHMAP_LINKED
+#undef HASHMAP_U64
 
 #endif

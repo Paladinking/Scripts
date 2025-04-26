@@ -39,7 +39,57 @@
 #undef HASHMAP_STRINGKEY
 #endif
 
+#ifdef HASHMAP_U64
 #ifdef HASHMAP_WIDE
+#error "Both HASHMAP_U64 and HASHMAP_WIDE defined"
+#endif
+    #ifdef HASHMAP_LINKED
+        #ifndef HASHMAP_U64_LINKED
+            #undef HASHMAP_LINKED
+            #define HASHMAP_U64_UNLINKED
+        #endif
+    #endif
+
+    #define ckey_t uint64_t
+    #define keyequal(a, b) (a == b)
+
+    #ifdef HASHMAP_LINKED
+        #define HashElement LinkedU64HashElement
+        #define HashBucket LinkedU64HashBucket
+        #define HashMap LinkedU64HashMap
+
+        #define HashMap_Free LinkedU64HashMap_Free
+        #define HashMap_Allocate LinkedU64HashMap_Allocate
+        #define HashMap_Clear LinkedU64HashMap_Clear
+        #define HashMap_Create LinkedU64HashMap_Create
+        #define HashMap_Insert LinkedU64HashMap_Insert
+        #define HashMap_Find LinkedU64HashMap_Find
+        #define HashMap_Get LinkedU64HashMap_Get
+        #define HashMap_Value LinkedU64HashMap_Value
+        #define HashMap_Remove LinkedU64HashMap_Remove
+        #define HashMap_RemoveGet LinkedU64HashMap_RemoveGet
+
+        #define HashMapIterator LinkedU64HashMapIterator
+        #define HashMapIter_Begin LinkedU64HashMapIter_Begin
+        #define HashMapIter_Next LinkedU64HashMapIter_Next
+    #else
+        #define HashElement U64HashElement
+        #define HashBucket U64HashBucket
+        #define HashMap U64HashMap
+
+        #define HashMap_Free U64HashMap_Free
+        #define HashMap_Allocate U64HashMap_Allocate
+        #define HashMap_Clear U64HashMap_Clear
+        #define HashMap_Create U64HashMap_Create
+        #define HashMap_Insert U64HashMap_Insert
+        #define HashMap_Find U64HashMap_Find
+        #define HashMap_Get U64HashMap_Get
+        #define HashMap_Value U64HashMap_Value
+        #define HashMap_Remove U64HashMap_Remove
+        #define HashMap_RemoveGet U64HashMap_RemoveGet
+    #endif
+
+#elif defined HASHMAP_WIDE
     #define HASHMAP_STRINGKEY
 
     #ifdef HASHMAP_LINKED
@@ -128,7 +178,11 @@
 
 
 typedef struct HashElement {
+#ifdef HASHMAP_STRINGKEY
     const ckey_t const key;
+#else
+    const ckey_t key;
+#endif
     void* value;
 #ifdef HASHMAP_LINKED
     uint32_t next_bucket_ix;
@@ -196,4 +250,8 @@ HashElement* HashMapIter_Next(HashMapIterator* it);
 #define HASHMAP_LINKED
 #endif
 
+#ifdef HASHMAP_U64_UNLINKED
+#undef HASHMAP_U64_UNLINKED
+#define HASHMAP_LINKED
+#endif
 #endif
