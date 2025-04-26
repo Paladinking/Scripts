@@ -20,6 +20,7 @@ typedef struct Regex {
     char* chars;
     NFA nfa;
     NodeDFA* dfa;
+    uint32_t minlen;
 } Regex;
 
 typedef enum RegexResult {
@@ -39,8 +40,6 @@ struct RegexMatchCtx {
     uint8_t* visited;
     uint64_t visited_cap;
 };
-
-extern uint64_t edge_time;
 
 Regex* Regex_compile(const char* pattern);
 
