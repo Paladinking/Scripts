@@ -22,15 +22,20 @@ const wchar_t *HELP_MESSAGE =
     L"    --folder-only            only match folders\n"
     L"-h, --help                   display this message and exit\n"
     L"    --max-depth=DEPTH        specify max depth to search\n"
-    L"-n, --name=NAME              specify name pattern to match\n"
+    L"-n, --name=NAME              specify name glob pattern to match\n"
+    L"-s, --substring              specify that -n and -w match if pattern is \n"
+    L"                             a substring of the filename, not a glob match.\n"
+    L"-w, --whole-name             specify glob pattern for path to match\n"
     L"-q, --quit                   quit after first match, same as --count=1\n";
 
 
 typedef struct Filter {
     uint64_t max_depth;
     wchar_t* name_pattern;
+    wchar_t* path_pattern;
     bool file;
     bool folder;
+    bool substring;
     uint64_t max_count;
 } Filter;
 
@@ -38,6 +43,7 @@ typedef struct Filter {
 uint32_t parse_options(int* argc, wchar_t** argv, Filter* filter) {
     FlagValue max_depth_val = {FLAG_REQUIRED_VALUE | FLAG_UINT};
     FlagValue name_pattern = {FLAG_REQUIRED_VALUE | FLAG_STRING};
+    FlagValue wholename_pattern = {FLAG_REQUIRED_VALUE | FLAG_STRING};
     FlagValue count = {FLAG_REQUIRED_VALUE | FLAG_UINT};
     FlagInfo flags[] = {
         {L'a', L"absolute", NULL},
@@ -47,7 +53,9 @@ uint32_t parse_options(int* argc, wchar_t** argv, Filter* filter) {
         {L'\0', L"file-only", NULL},
         {L'\0', L"folder-only", NULL},
         {L'c', L"count", &count},
-        {L'q', L"quit", NULL}
+        {L'q', L"quit", NULL},
+        {L'w', L"whole-name", &wholename_pattern},
+        {L's', L"substring", NULL}
     };
     const uint32_t flag_count = sizeof(flags) / sizeof(FlagInfo);
     ErrorInfo err;
@@ -87,11 +95,34 @@ uint32_t parse_options(int* argc, wchar_t** argv, Filter* filter) {
     } else {
         filter->max_count = 1;
     }
+    if (flags[8].count > 0) {
+        filter->path_pattern = wholename_pattern.str;
+    } else {
+        filter->path_pattern = NULL;
+    }
+    filter->substring = flags[9].count > 0;
 
     uint32_t opts = OPTION_VALID;
     OPTION_IF(opts, flags[0].count > 0, OPTION_ABSOLUTE);
 
     return opts;
+}
+
+bool contains_substr(const wchar_t* s, const wchar_t* substr) {
+    for (uint64_t ix = 0; s[ix] != L'\0'; ++ix) {
+        for (uint64_t j = 0;; ++j) {
+            if (substr[j] == L'\0') {
+                return true;
+            }
+            if (s[ix + j] == L'\0') {
+                return false;
+            }
+            if (towlower(s[ix + j]) != towlower(substr[j])) {
+                break;
+            }
+        }
+    }
+    return false;
 }
 
 bool matches_filter(Path* path, Filter* filter) {
@@ -103,10 +134,25 @@ bool matches_filter(Path* path, Filter* filter) {
     if (filter->folder && !path->is_dir) {
         return false;
     }
-    if (filter->name_pattern == NULL) {
-        return true;
+    bool matches_name = true;
+    bool matches_path = true;
+    if (filter->name_pattern != NULL) {
+        if (filter->substring) {
+            matches_name = contains_substr(name, filter->name_pattern);
+        } else {
+            matches_name = matches_glob(filter->name_pattern, name);
+        }
     }
-    return matches_glob(filter->name_pattern, name);
+    if (filter->path_pattern != NULL) {
+        if (filter->substring) {
+            matches_path = contains_substr(path->path.buffer,
+                                           filter->path_pattern);
+        } else {
+            matches_path = matches_glob(filter->path_pattern,
+                                        path->path.buffer);
+        }
+    }
+    return matches_name && matches_path;
 }
 
 int find(Path* dir, Filter* filter) {
@@ -176,11 +222,7 @@ int find(Path* dir, Filter* filter) {
 }
 
 
-int main() {
-    wchar_t* args = GetCommandLineW();
-    int argc;
-    wchar_t** argv = parse_command_line(args, &argc);
-
+int find_file(int argc, wchar_t** argv) {
     Filter filter;
     uint32_t opts = parse_options(&argc, argv, &filter);
     if (opts == OPTION_HELP) {
@@ -194,13 +236,11 @@ int main() {
     if (argc >= 2) {
         if (!WString_extend(&path.path, argv[1])) {
             WString_free(&path.path);
-            Mem_free(argv);
             return 1;
         }
     } else {
         if (!WString_append(&path.path, L'.')) {
             WString_free(&path.path);
-            Mem_free(argv);
             return 1;
         }
 
@@ -208,7 +248,6 @@ int main() {
     if (opts & OPTION_ABSOLUTE) {
         if (!make_absolute(path.path.buffer, &path.path)) {
             WString_free(&path.path);
-            Mem_free(argv);
             return 1;
         }
     }
@@ -225,6 +264,18 @@ int main() {
 
     int status = find(&path, &filter);
     WString_free(&path.path);
-    Mem_free(argv);
     return status;
+}
+
+int main() {
+    wchar_t* args = GetCommandLineW();
+    int argc;
+    wchar_t** argv = parse_command_line(args, &argc);
+    int status = 1;
+    if (argv != NULL) {
+        status = find_file(argc, argv);
+        Mem_free(argv);
+    }
+
+    ExitProcess(status);
 }
