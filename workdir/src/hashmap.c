@@ -101,6 +101,23 @@ static uint64_t hash(const ckey_t str) {
         hash = ((hash << 5) + hash) + c;
     }
     return hash;
+#elif defined HASHMAP_U64
+    #define HASHVAL_INITIAL ((uint64_t)14695981039346656037ULL)
+    #define HASHVAL_PRIME ((uint64_t)1099511628211ULL)
+
+    uint64_t val = HASHVAL_INITIAL;
+    uint8_t* v = (uint8_t*)(&str);
+    val ^= (uint64_t)(v[0]); val *= HASHVAL_PRIME;
+    val ^= (uint64_t)(v[1]); val *= HASHVAL_PRIME;
+    val ^= (uint64_t)(v[2]); val *= HASHVAL_PRIME;
+    val ^= (uint64_t)(v[3]); val *= HASHVAL_PRIME;
+    val ^= (uint64_t)(v[4]); val *= HASHVAL_PRIME;
+    val ^= (uint64_t)(v[5]); val *= HASHVAL_PRIME;
+    val ^= (uint64_t)(v[6]); val *= HASHVAL_PRIME;
+    val ^= (uint64_t)(v[7]); val *= HASHVAL_PRIME;
+    return val;
+#else
+    #error "No hash function"
 #endif
 }
 
@@ -210,7 +227,7 @@ HashElement* HashMap_Get(HashMap* map, const ckey_t key) {
     memcpy(buf, key, (len + 1) * sizeof(ckey_t));
     HashElement he = {buf, NULL};
 #else
-    HashElement he = {key, value};;
+    HashElement he = {key, NULL};
 #endif
     CHECKED_CALL(HashMap_AddElement(map, bucket, he));
     return &(bucket->data[bucket->size - 1]);

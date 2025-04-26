@@ -15,6 +15,8 @@
 #ifdef WHASHMAP_H_00_UNDEF
 #undef WHASHMAP_H_00_UNDEF
 #define WHASHMAP_H_00
+#else
+#undef WHASHMAP_H_00
 #endif
 
 #undef HashMapIterator
