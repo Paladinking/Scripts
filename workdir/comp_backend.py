@@ -6,7 +6,7 @@ import sys
 import shutil
 import argparse
 
-from typing import List, Optional, Union, Tuple, Dict
+from typing import List, Optional, TextIO, Type, Union, Tuple, Dict
 
 BUILD_DIR: str
 BIN_DIR: str
@@ -369,8 +369,8 @@ def find_headers(obj: Obj) -> List[str]:
         pass
     return headers
         
-def makefile() -> None:
-    print("all:", end="")
+def makefile(dest: TextIO = sys.stdout) -> None:
+    print("all:", end="", file=dest)
     for obj in OBJECTS.values():
         p = pathlib.Path(obj.source).resolve()
         if not p.is_file():
@@ -378,14 +378,14 @@ def makefile() -> None:
             return
 
     for key, exe in EXECUTABLES.items():
-        print(" \\")
-        print(f"\t{exe.product}", end="")
+        print(" \\", file=dest)
+        print(f"\t{exe.product}", end="", file=dest)
     for key, cmd in CUSTOMS.items():
         if cmd.dir != BIN_DIR:
             continue
-        print(" \\")
-        print(f"\t{cmd.product}", end="")
-    print("\n")
+        print(" \\", file=dest)
+        print(f"\t{cmd.product}", end="", file=dest)
+    print("\n", file=dest)
 
     dirs = list(DIRECTORIES.keys())
 
@@ -403,9 +403,9 @@ def makefile() -> None:
             parent_str = " " + " ".join(parents)
         else:
             parent_str = ""
-        print(f"{path}:{parent_str}\n\t-@ if NOT EXIST \"{path}\" mkdir \"{path}\"")
+        print(f"{path}:{parent_str}\n\t-@ if NOT EXIST \"{path}\" mkdir \"{path}\"", file=dest)
 
-    print()
+    print(file=dest)
 
     for key, obj in OBJECTS.items():
         if obj.namespace:
@@ -414,25 +414,25 @@ def makefile() -> None:
             bld_dir = BUILD_DIR
         headers = find_headers(obj)
         depends = " ".join([obj.source] + headers + [bld_dir] + obj.depends)
-        print(f"{obj.product}: {depends}")
-        print(f"\t{BACKEND.compile_obj(obj)}")
-    print()
+        print(f"{obj.product}: {depends}", file=dest)
+        print(f"\t{BACKEND.compile_obj(obj)}", file=dest)
+    print(file=dest)
     for key, exe in EXECUTABLES.items():
         row = " ".join([f"{obj.product}" for obj in exe.objs] + [f"{cmd.product}" for cmd in exe.cmds])
-        print(f"{exe.product}: {row} {BIN_DIR}")
+        print(f"{exe.product}: {row} {BIN_DIR}", file=dest)
         if exe.dll:
-            print(f"\t{BACKEND.link_dll(exe)}")
+            print(f"\t{BACKEND.link_dll(exe)}", file=dest)
         else:
-            print(f"\t{BACKEND.link_exe(exe)}")
-    print()
+            print(f"\t{BACKEND.link_exe(exe)}", file=dest)
+    print(file=dest)
     for key, cmd in CUSTOMS.items():
         row = " ".join(cmd.depends + [cmd.dir])
-        print(f"{cmd.product}: {row}")
-        print(f"\t{cmd.cmd}")
-    print()
-    print(f"clean:\n\tdel /S /Q {BUILD_DIR}\\*\n\tdel /S /Q {BIN_DIR}\\*")
+        print(f"{cmd.product}: {row}", file=dest)
+        print(f"\t{cmd.cmd}", file=dest)
+    print(file=dest)
+    print(f"clean:\n\tdel /S /Q {BUILD_DIR}\\*\n\tdel /S /Q {BIN_DIR}\\*", file=dest)
 
-def compile_commands() -> None:
+def compile_commands(dest: TextIO = sys.stdout) -> None:
     directory = str(WORKDIR.resolve())
     res = []
     for obj in OBJECTS.values():
@@ -442,9 +442,9 @@ def compile_commands() -> None:
         json["file"] = str(pathlib.Path(obj.source).resolve())
         res.append(json)
     import json
-    print(json.dumps(res, indent=4))
+    print(json.dumps(res, indent=4), file=dest)
 
-all_backends: Dict[str, 'Backend'] = {"msvc": Msvc(), "mingw": Mingw(), 'zigcc': ZigCC()}
+all_backends: Dict[str, Type['Backend']] = {"msvc": Msvc, "mingw": Mingw, 'zigcc': ZigCC}
 active_backends: Dict[str, 'Backend'] = {}
 
 args = None
@@ -459,6 +459,8 @@ def get_parser() -> 'argparse.ArgumentParser':
         parser.add_argument("--backend", "-b", choices = [key for key in active_backends],
                             type=str.lower,
                             default=None, help="Specify the backend to use.")
+        parser.add_argument("--target", "-t", help="Specify target to build", action="store", 
+                            default="all")
     return parser
 
 
@@ -470,11 +472,11 @@ def get_args() -> 'argparse.Namespace':
     return args
 
 
-def add_backend(name: str, builddir: str, bindir: str, 
+def add_backend(name: str, backend_name: str, builddir: str, bindir: str, 
                 workdir: pathlib.Path, clflags: str, linkflags: str) -> None:
-    if name.lower() not in all_backends:
+    if backend_name.lower() not in all_backends:
         raise RuntimeError("Invalid backend")
-    backend = all_backends[name.lower()]
+    backend = all_backends[name.lower()]()
     backend.builddir = builddir
     backend.bindir = bindir
     backend.workdir = workdir
@@ -514,3 +516,29 @@ def generate() -> None:
         compile_commands()
     else:
         makefile()
+
+def get_make() -> str:
+    make = shutil.which('nmake.exe')
+    if make is None:
+        raise RuntimeError("Could not find nmake exe")
+    return make
+
+def build(comp_file: str) -> None:
+    comp_stamp = os.path.getmtime(pathlib.Path(comp_file))
+    compiledb = WORKDIR / 'compile_commands.json'
+    make = pathlib.Path(BUILD_DIR) / 'Makefile'
+    try:
+        if not compiledb.exists() or os.path.getmtime(compiledb) < comp_stamp or get_args().compiledb:
+            with open(compiledb, 'w') as file:
+                compile_commands(dest=file)
+        if not make.exists() or os.path.getmtime(make) < comp_stamp:
+            with open(make, 'w') as file:
+                makefile(dest=file)
+    except Exception as e:
+        print(f"Failed building: {e}", file=sys.stderr)
+        exit(1)
+
+    make_exe = get_make()
+    subprocess.run([make_exe, '-f', str(make), '/NOLOGO', get_args().target])
+
+

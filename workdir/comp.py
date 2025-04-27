@@ -36,9 +36,9 @@ def translate(*src: str) -> List[Cmd]:
     return res
 
 
-add_backend("Msvc", BUILD_DIR, BIN_DIR, WORKDIR, CLFLAGS, LINKFLAGS)
-add_backend("Mingw", BUILD_DIR_DBG, BIN_DIR_DBG, WORKDIR, CLFLAGS_DBG, LINKFLAGS_DBG)
-add_backend("Zigcc", BUILD_DIR_ZIG, BIN_DIR_ZIG, WORKDIR, CLFLAGS_DBG, LINKFLAGS_DBG)
+add_backend("Msvc", "Msvc", BUILD_DIR, BIN_DIR, WORKDIR, CLFLAGS, LINKFLAGS)
+add_backend("Mingw", "Mingw", BUILD_DIR_DBG, BIN_DIR_DBG, WORKDIR, CLFLAGS_DBG, LINKFLAGS_DBG)
+add_backend("Zigcc", "Zigcc", BUILD_DIR_ZIG, BIN_DIR_ZIG, WORKDIR, CLFLAGS_DBG, LINKFLAGS_DBG)
 
 get_parser().add_argument("--scrape", "-s", action="store_true")
 
@@ -132,9 +132,7 @@ def main():
             ", GIT_PATH, and VCVARS_PATH", directory="script")
     translate("cmdrc.bat", "password.bat", "vcvarsall.bat")
 
-
-    generate()
-    #print(f"\ninstall: all\n\tcopy {BIN_DIR}\\* ..")
+    build(__file__)
 
 
 if __name__ == "__main__":
