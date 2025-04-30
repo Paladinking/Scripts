@@ -74,7 +74,7 @@ unsigned str_width(WString *str) {
 wchar_t **format_file_times(WString *buffer, FileObj *obj, uint32_t count,
                             uint32_t opt, uint32_t *width) {
     wchar_t **buf = Mem_alloc(count * sizeof(wchar_t *));
-    SYSTEMTIME st, now_st;
+    SYSTEMTIME st, lt;
     GetSystemTime(&st);
     FILETIME now_ft;
     int64_t now = 0;
@@ -83,7 +83,7 @@ wchar_t **format_file_times(WString *buffer, FileObj *obj, uint32_t count,
         now = now_ft.dwLowDateTime | (now << 32);
     }
 
-    uint64_t half_year = (uint64_t)10 * 1000 * 1000 * 60 * 60 * 24 * 182;
+    const int64_t half_year = (int64_t)10 * 1000 * 1000 * 60 * 60 * 24 * 182;
     const wchar_t *months[] = {L"",    L"Jan", L"Feb", L"Mar", L"Apr",
                                L"May", L"Jun", L"Jul", L"Aug", L"Sep",
                                L"Oct", L"Mov", L"Dec"};
@@ -92,18 +92,19 @@ wchar_t **format_file_times(WString *buffer, FileObj *obj, uint32_t count,
         buf[ix] = (void *)(uintptr_t)buffer->length;
         int64_t stamp = obj[ix].stamp.dwHighDateTime;
         stamp = (obj[ix].stamp.dwLowDateTime) | (stamp << 32);
-        if (!FileTimeToSystemTime(&obj[ix].stamp, &st)) {
-            memset(&st, 0, sizeof(st));
-            st.wMonth = 1;
-            st.wDay = 1;
+        if (!FileTimeToSystemTime(&obj[ix].stamp, &st) ||
+            !SystemTimeToTzSpecificLocalTimeEx(NULL, &st, &lt)) {
+            memset(&lt, 0, sizeof(lt));
+            lt.wMonth = 1;
+            lt.wDay = 1;
         }
         if (now - stamp > half_year) {
-            WString_format_append(buffer, L"%s %2u  %4u", months[st.wMonth],
-                                  st.wDay, st.wYear);
+            WString_format_append(buffer, L"%s %2u  %4u", months[lt.wMonth],
+                                  lt.wDay, lt.wYear);
         } else {
             WString_format_append(buffer, L"%s %2u %02u:%02u",
-                                  months[st.wMonth], st.wDay, st.wHour,
-                                  st.wMinute);
+                                  months[lt.wMonth], lt.wDay, lt.wHour,
+                                  lt.wMinute);
         }
         WString_append(buffer, L'\0');
     }
