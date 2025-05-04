@@ -8,10 +8,14 @@ import argparse
 
 from typing import List, Optional, TextIO, Type, Union, Tuple, Dict
 
-BUILD_DIR: str
-BIN_DIR: str
+BUILD_DIR: pathlib.Path
+BIN_DIR: pathlib.Path
+WORKDIR: pathlib.Path
+
+Product = Union['Obj', 'Cmd', 'Exe']
 
 DIRECTORIES: Dict[str, None] = dict()
+TARGET_GROUPS: Dict[str, List[Product]] = dict()
 OBJECTS: Dict[str, 'Obj'] = dict()
 EXECUTABLES: Dict[str, 'Exe'] = dict()
 CUSTOMS: Dict[str, 'Cmd'] = dict()
@@ -19,9 +23,32 @@ CUSTOMS: Dict[str, 'Cmd'] = dict()
 CLFLAGS: str
 LINKFLAGS: str
 
-WORKDIR: pathlib.Path
+g_context: Optional['Context'] = None
 
-Product = Union['Obj', 'Cmd', 'Exe']
+class Context:
+    def __init__(self, directory: Optional[str]=None,
+                 group: Optional[str]=None,
+                 defines: List[Union[str, Tuple[str, str]]]=[],
+                 includes: List[str]=[],
+                 namespace: Optional[str]=None) -> None:
+        self.group = group
+        self.directory = directory and str(pathlib.PurePath(directory))
+        self.defines = defines
+        self.includes = includes
+        self.namespace = namespace or ""
+
+    def __enter__(self) -> 'Context':
+        global g_context
+        if g_context is not None:
+            raise RuntimeError("Recursive Context not allowed")
+        g_context = self
+        return self
+
+    def __exit__(self, t, v, tb) -> None:
+        global g_context
+        assert g_context is self
+        g_context = None
+        return
 
 class Obj:
     def __init__(self, name: str, source: str, cmp_flags: str="", namespace: str="",
@@ -39,7 +66,7 @@ class Obj:
 
     @property
     def product(self) -> str:
-        return str(pathlib.PurePath(BUILD_DIR) / self.name)
+        return str(BUILD_DIR / self.name)
 
 class Cmd:
     def __init__(self, name: str, cmd: str, depends: List[Union[str, Product]], 
@@ -60,7 +87,8 @@ class Cmd:
 
 class Exe:
     def __init__(self, name: str, objs: List[Obj], cmds: List[Cmd],
-                 link_flags: str="", dll: bool=False) -> None:
+                 link_flags: str, dll: bool, directory: str) -> None:
+        self.directory = directory
         self.name = name
         self.objs = objs
         self.cmds = cmds
@@ -69,11 +97,11 @@ class Exe:
 
     @property
     def product(self) -> str:
-        return str(pathlib.PurePath(BIN_DIR) / self.name)
+        return str(pathlib.PurePath(self.directory) / self.name)
 
 class BackendBase:
-    builddir: str
-    bindir: str
+    builddir: pathlib.Path
+    bindir: pathlib.Path
     workdir: pathlib.Path
     clflags: str
     linkflags: str
@@ -86,7 +114,7 @@ class BackendBase:
         return False
     @property
     def clang(self) -> bool:
-        return True
+        return False
 
 class ZigCC(BackendBase):
     name = "zigcc"
@@ -115,17 +143,21 @@ class ZigCC(BackendBase):
         row = " ".join([f"{obj.product}" for obj in exe.objs] + [f"{cmd.product}" for cmd in exe.cmds])
         return f"zig.exe cc -shared -o {exe.product} {exe.link_flags} {row}"
 
+    def include(self, directory: str) -> str:
+        return f"-I{directory}"
+
     def define(self, key: str, val: Optional[str]) -> str:
         if val:
             return f"-D{key}={val}"
         return f"-D{key}"
 
     def import_lib_cmd(self, out: str, dll: str, symbols: List[str]) -> Cmd:
-        def_path = pathlib.Path(out).with_suffix(".def").name
-        cmd = f"echo EXPORTS > {BUILD_DIR}\\{def_path}\n"
+        def_path = BUILD_DIR / pathlib.PurePath(out).with_suffix(".def").name
+        out_path = BUILD_DIR / out
+        cmd = f"echo EXPORTS > {def_path}\n"
         for sym in symbols:
-            cmd += f"\techo {sym} >> {BUILD_DIR}\\{def_path}\n"
-        cmd += f"\tzig.exe dlltool -D {dll} -d {BUILD_DIR}\\{def_path} -l {BUILD_DIR}\\{out}"
+            cmd += f"\techo {sym} >> {def_path}\n"
+        cmd += f"\tzig.exe dlltool -D {dll} -d {def_path} -l {out_path}"
         return Command(out, cmd)
 
 class Mingw(BackendBase):
@@ -155,17 +187,21 @@ class Mingw(BackendBase):
         row = " ".join([f"{obj.product}" for obj in exe.objs] + [f"{cmd.product}" for cmd in exe.cmds])
         return f"gcc.exe -shared -o {exe.product} {exe.link_flags} {row}"
 
+    def include(self, directory: str) -> str:
+        return f"-I{directory}"
+
     def define(self, key: str, val: Optional[str]) -> str:
         if val:
             return f"-D{key}={val}"
         return f"-D{key}"
 
     def import_lib_cmd(self, out: str, dll: str, symbols: List[str]) -> Cmd:
-        def_path = pathlib.PurePath(out).with_suffix(".def").name
-        cmd = f"echo EXPORTS > {BUILD_DIR}\\{def_path}\n"
+        def_path = BUILD_DIR / pathlib.PurePath(out).with_suffix(".def").name
+        out_path = BUILD_DIR / out
+        cmd = f"echo EXPORTS > {def_path}\n"
         for sym in symbols:
-            cmd += f"\techo {sym} >> {BUILD_DIR}\\{def_path}\n"
-        cmd += f"\tdlltool --dllname {dll} --def {BUILD_DIR}\\{def_path} --output-lib {BUILD_DIR}\\{out}"
+            cmd += f"\techo {sym} >> {def_path}\n"
+        cmd += f"\tdlltool --dllname {dll} --def {def_path} --output-lib {out_path}"
         return Command(out, cmd)
 
 
@@ -202,11 +238,14 @@ class Msvc(BackendBase):
     
     def link_exe(self, exe: Exe) -> str:
         row = " ".join([f"{obj.product}" for obj in exe.objs] + [f"{cmd.product}" for cmd in exe.cmds])
-        return f"link /OUT:{BIN_DIR}\\{exe.name} {exe.link_flags} {row}"
+        return f"link /OUT:{exe.product} {exe.link_flags} {row}"
 
     def link_dll(self, exe: Exe) -> str:
         row = " ".join([f"{obj.product}" for obj in exe.objs] + [f"{cmd.product}" for cmd in exe.cmds])
         return f"link /OUT:{exe.product} /DLL {exe.link_flags} {row}"
+
+    def include(self, directory: str) -> str:
+        return f"/I{directory}"
 
     def define(self, key: str, val: Optional[str]) -> str:
         if val:
@@ -215,21 +254,32 @@ class Msvc(BackendBase):
 
     def import_lib_cmd(self, out: str, dll: str, symbols: List[str]) -> Cmd:
         exports = " ".join([f"/EXPORT:{s}={s}" for s in symbols])
-        cmd = f"lib /NOLOGO /MACHINE:X64 /DEF /OUT:{BUILD_DIR}\\{out} /NAME:{dll} {exports}"
+        cmd = f"lib /NOLOGO /MACHINE:X64 /DEF /OUT:{BUILD_DIR / out} /NAME:{dll} {exports}"
         return Command(out, cmd)
 
 
 def Object(name: str, source: str, cmp_flags: Optional[str]=None, namespace: str="",
            depends: List[Union[str, Product]]=[],
-           defines: List[Union[str, Tuple[str, str]]]=[]) -> Obj:
+           defines: List[Union[str, Tuple[str, str]]]=[],
+           includes: List[str]=[],
+           context: Optional[Context]=g_context) -> Obj:
+    if context is None:
+        context = g_context
     if cmp_flags is None:
         cmp_flags = CLFLAGS
+    if context is not None:
+        defines = defines + context.defines
+        includes = includes + context.includes
+        if not namespace:
+            namespace = context.namespace
     for define in defines:
         if isinstance(define, tuple):
             key, val = define
         else:
             key, val = define, None
         cmp_flags += " " + BACKEND.define(key, val)
+    for directory in includes:
+        cmp_flags += " " + BACKEND.include(str(pathlib.PurePath(directory)))
         
     source = str(pathlib.PurePath(source))
     if namespace:
@@ -237,7 +287,7 @@ def Object(name: str, source: str, cmp_flags: Optional[str]=None, namespace: str
     obj = Obj(name, source, cmp_flags, namespace, depends)
 
     if namespace:
-        DIRECTORIES[namespace] = None
+        DIRECTORIES[str(BUILD_DIR / namespace)] = None
 
     if name in OBJECTS:
         other = OBJECTS[name]
@@ -252,19 +302,27 @@ def Executable(name: str, *sources: Union[str, Obj, Cmd],
                cmp_flags: Optional[str]=None, link_flags: Optional[str]=None,
                namespace: str="", dll: bool=False,
                extra_link_flags: Optional[str]=None,
-               defines: List[Union[str, Tuple[str, str]]]=[]) -> Exe:
+               defines: List[Union[str, Tuple[str, str]]]=[],
+               includes: List[str]=[],
+               directory: Optional[str]=None, 
+               group: Optional[str]=None,
+               context: Optional[Context]=None) -> Exe:
+    if context is None:
+        context = g_context
     if cmp_flags is None:
         cmp_flags = CLFLAGS
     if link_flags is None:
         link_flags = LINKFLAGS
     if extra_link_flags is not None:
         link_flags += " " + extra_link_flags
+
     objs = []
     cmds = []
     for src in sources:
         if isinstance(src, str):
             obj_name = str(pathlib.PurePath(src).with_suffix('.obj').name)
-            obj = Object(obj_name, src, cmp_flags, namespace, defines=defines)
+            obj = Object(obj_name, src, cmp_flags, namespace, defines=defines,
+                         includes=includes, context=context)
         else:
             if isinstance(src, Cmd):
                 if src not in cmds:
@@ -274,21 +332,43 @@ def Executable(name: str, *sources: Union[str, Obj, Cmd],
             obj = src
         if obj not in objs:
             objs.append(obj)
-    exe = Exe(name, objs, cmds, link_flags, dll)
-    if name in EXECUTABLES:
-        raise RuntimeError(f"Duplicate exe {name}")
-    EXECUTABLES[name] = exe
+    if directory is None:
+        if context is not None:
+            directory = context.directory or str(BIN_DIR)
+        else:
+            directory = str(BIN_DIR)
+    else:
+        directory = str(pathlib.PurePath(directory))
+    if group is None:
+        if context is not None:
+            group = context.group or "all"
+        else:
+            group = "all"
+    exe = Exe(name, objs, cmds, link_flags, dll, directory)
+    if exe.product in EXECUTABLES:
+        raise RuntimeError(f"Duplicate exe {exe.product}")
+    EXECUTABLES[exe.product] = exe
+    if directory is not None:
+        DIRECTORIES[directory] = None
+    if group not in TARGET_GROUPS:
+        TARGET_GROUPS[group] = [exe]
+    else:
+        TARGET_GROUPS[group].append(exe)
     return exe
 
 def Command(name: str, cmd: str, *depends: Union[str, Product],
             directory: Optional[str]=None) -> Cmd:
     if directory is None:
-        directory = BUILD_DIR
+        directory = str(BUILD_DIR)
+    else:
+        directory = str(pathlib.PurePath(directory))
     if name in CUSTOMS:
         raise RuntimeError(f"Duplicate command {name}")
     DIRECTORIES[directory] = None
-    command = Cmd(name, cmd, list(depends), str(pathlib.PurePath(directory)))
+    command = Cmd(name, cmd, list(depends), directory)
     CUSTOMS[name] = command
+    if directory == str(BIN_DIR):
+        TARGET_GROUPS["all"].append(command)
     return command
 
 def CopyToBin(*src: str) -> List[Cmd]:
@@ -296,7 +376,8 @@ def CopyToBin(*src: str) -> List[Cmd]:
     for file in src:
         f = pathlib.PurePath(file)
         name = pathlib.PurePath(file).name
-        res.append(Command(name, f"type {f} > {BIN_DIR}\\{name}", str(f), directory=BIN_DIR))
+        res.append(Command(name, f"type {f} > {BIN_DIR}\\{name}", str(f),
+                           directory=str(BIN_DIR)))
     return res
 
 
@@ -370,22 +451,18 @@ def find_headers(obj: Obj) -> List[str]:
     return headers
         
 def makefile(dest: TextIO = sys.stdout) -> None:
-    print("all:", end="", file=dest)
     for obj in OBJECTS.values():
         p = pathlib.Path(obj.source).resolve()
         if not p.is_file():
             print(f"File '{p}' does not exist", file=sys.stderr)
             return
 
-    for key, exe in EXECUTABLES.items():
-        print(" \\", file=dest)
-        print(f"\t{exe.product}", end="", file=dest)
-    for key, cmd in CUSTOMS.items():
-        if cmd.dir != BIN_DIR:
-            continue
-        print(" \\", file=dest)
-        print(f"\t{cmd.product}", end="", file=dest)
-    print("\n", file=dest)
+    for group, targets in TARGET_GROUPS.items():
+        print(f"{group}:", end="", file=dest)
+        for prod in targets:
+            print(" \\", file=dest)
+            print(f"\t{prod.product}", end="", file=dest)
+        print("\n", file=dest)
 
     dirs = list(DIRECTORIES.keys())
 
@@ -409,9 +486,9 @@ def makefile(dest: TextIO = sys.stdout) -> None:
 
     for key, obj in OBJECTS.items():
         if obj.namespace:
-            bld_dir = str(pathlib.PurePath(BUILD_DIR) / obj.namespace)
+            bld_dir = str(BUILD_DIR / obj.namespace)
         else:
-            bld_dir = BUILD_DIR
+            bld_dir = str(BUILD_DIR)
         headers = find_headers(obj)
         depends = " ".join([obj.source] + headers + [bld_dir] + obj.depends)
         print(f"{obj.product}: {depends}", file=dest)
@@ -419,7 +496,7 @@ def makefile(dest: TextIO = sys.stdout) -> None:
     print(file=dest)
     for key, exe in EXECUTABLES.items():
         row = " ".join([f"{obj.product}" for obj in exe.objs] + [f"{cmd.product}" for cmd in exe.cmds])
-        print(f"{exe.product}: {row} {BIN_DIR}", file=dest)
+        print(f"{exe.product}: {row} {exe.directory}", file=dest)
         if exe.dll:
             print(f"\t{BACKEND.link_dll(exe)}", file=dest)
         else:
@@ -477,8 +554,8 @@ def add_backend(name: str, backend_name: str, builddir: str, bindir: str,
     if backend_name.lower() not in all_backends:
         raise RuntimeError("Invalid backend")
     backend = all_backends[name.lower()]()
-    backend.builddir = builddir
-    backend.bindir = bindir
+    backend.builddir = pathlib.Path(builddir)
+    backend.bindir = pathlib.Path(bindir)
     backend.workdir = workdir
     backend.clflags = clflags
     backend.linkflags = linkflags
@@ -498,8 +575,9 @@ def set_backend(name: str) -> None:
     WORKDIR = backend.workdir
     CLFLAGS = backend.clflags
     LINKFLAGS = backend.linkflags
-    DIRECTORIES[BUILD_DIR] = None
-    DIRECTORIES[BIN_DIR] = None
+    DIRECTORIES[str(BUILD_DIR)] = None
+    DIRECTORIES[str(BIN_DIR)] = None
+    TARGET_GROUPS["all"] = []
     BACKEND = backend
 
     return
@@ -507,9 +585,9 @@ def set_backend(name: str) -> None:
 def backend() -> Backend:
     return BACKEND
 def build_dir() -> str:
-    return BUILD_DIR
+    return str(BUILD_DIR)
 def bin_dir() -> str:
-    return BIN_DIR
+    return str(BIN_DIR)
 
 def generate() -> None:
     if get_args().compiledb:
@@ -526,19 +604,34 @@ def get_make() -> str:
 def build(comp_file: str) -> None:
     comp_stamp = os.path.getmtime(pathlib.Path(comp_file))
     compiledb = WORKDIR / 'compile_commands.json'
-    make = pathlib.Path(BUILD_DIR) / 'Makefile'
+    make = BUILD_DIR / 'Makefile'
     try:
         if not compiledb.exists() or os.path.getmtime(compiledb) < comp_stamp or get_args().compiledb:
-            with open(compiledb, 'w') as file:
-                compile_commands(dest=file)
+            file_open = False
+            try:
+                with open(compiledb, 'w') as file:
+                    file_open = True
+                    compile_commands(dest=file)
+            except:
+                if file_open:
+                    compiledb.unlink()
+                raise
         if not make.exists() or os.path.getmtime(make) < comp_stamp:
-            with open(make, 'w') as file:
-                makefile(dest=file)
+            file_open = False
+            try:
+                with open(make, 'w') as file:
+                    file_open = True
+                    makefile(dest=file)
+            except:
+                if file_open:
+                    make.unlink()
+                raise
     except Exception as e:
         print(f"Failed building: {e}", file=sys.stderr)
         exit(1)
 
     make_exe = get_make()
-    subprocess.run([make_exe, '-f', str(make), '/NOLOGO', get_args().target])
+    res = subprocess.run([make_exe, '-f', str(make), '/NOLOGO', get_args().target])
 
+    exit(res.returncode)
 
