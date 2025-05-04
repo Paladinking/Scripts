@@ -132,6 +132,12 @@ def main():
             ", GIT_PATH, and VCVARS_PATH", directory="script")
     translate("cmdrc.bat", "password.bat", "vcvarsall.bat")
 
+    with Context(group="tests", directory=f"{bin_dir()}/tests",
+                 includes=["src"], namespace="tests"):
+        Executable("test_regex.exe", "src/tests/test_regex.c", "src/regex.c",
+                   "src/printf.c", "src/dynamic_string.c", "src/args.c", ntdll)
+    
+    #generate()
     build(__file__)
 
 
