@@ -20,6 +20,7 @@ typedef struct Regex {
     char* chars;
     NFA nfa;
     NodeDFA* dfa;
+    uint32_t dfa_nodes;
     uint32_t minlen;
 } Regex;
 
@@ -29,17 +30,17 @@ typedef enum RegexResult {
     REGEX_MATCH = 1
 } RegexResult;
 
-struct Node {
-    uint64_t str_ix;
-    uint32_t node_ix;
-};
+typedef struct RegexMatch {
+    uint64_t ix;
+    uint64_t size;
+} RegexMatch;
 
-struct RegexMatchCtx {
-    struct Node* to_visit;
-    uint64_t to_visit_cap;
-    uint8_t* visited;
-    uint64_t visited_cap;
-};
+typedef struct RegexAllCtx {
+    uint64_t start;
+    Regex* regex;
+    const char* str;
+    uint64_t len;
+} RegexAllCtx;
 
 Regex* Regex_compile(const char* pattern);
 
@@ -51,6 +52,12 @@ RegexResult Regex_fullmatch(Regex* regex, const char* str, uint64_t len);
 
 RegexResult Regex_anymatch_dfa(Regex* regex, const char* str, uint64_t len);
 
-RegexResult Regex_anymatch(Regex* regex, const char* str, uint64_t len, struct RegexMatchCtx* ctx);
+RegexResult Regex_anymatch(Regex* regex, const char* str, uint64_t len);
+
+void Regex_allmatch_init(Regex* regex, const char* str, uint64_t len, RegexAllCtx* ctx);
+
+RegexResult Regex_allmatch_dfa(RegexAllCtx* ctx, const char** match, uint64_t* len);
+
+RegexResult Regex_allmatch(RegexAllCtx* ctx, const char** match, uint64_t* len);
 
 #endif

@@ -4,6 +4,209 @@
 #include "dynamic_string.h"
 #include <stdlib.h>
 
+const static uint8_t utf8_len_table[256] = {
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2,
+    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3,
+    3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 1, 1, 1, 1, 1,
+    1, 1, 1, 1, 1, 1
+};
+
+const static uint8_t utf8_valid_table[] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+    0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+    0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+    0xa0, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+    0x80, 0x9f, 0x80, 0x80, 0x90, 0x80, 0x80, 0x80, 0x8f, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+};
+
+// get how many bytes should be considered one sequence,
+// the sequence might be invalid.
+// If the sequence is invalid, includes byte 0 and up to
+// 3 bytes that cannot start a sequence
+static uint8_t get_utf8_seq(const uint8_t* bytes, uint64_t len) {
+    if (len < 2) {
+        return len;
+    }
+    if (bytes[0] <= 127) {
+        return 1;
+    }
+    uint8_t v = utf8_valid_table[bytes[0] - 128];
+    uint8_t l = utf8_len_table[bytes[0]];
+    if (v == 0) { // Illegal byte 0
+        if (bytes[1] >= 0x80 && bytes[1] <= 0xBF) {
+            if (len > 2 && bytes[2] >= 0x80 && bytes[2] <= 0xBF) {
+                if (len > 3 && bytes[3] >= 0x80 && bytes[3] <= 0xBF) {
+                    return 4;
+                }
+                return 3;
+            }
+            return 2;
+        }
+        return 1;
+    }
+
+    if (l > len) { // Not enough bytes for full sequence
+        if (bytes[1] >= 0x80 && bytes[1] <= 0xBF) {
+            if (len > 2 && bytes[2] >= 0x80 && bytes[1] <= 0xBF) {
+                return 3;
+            }
+            return 2;
+        }
+        return 1;
+    }
+
+    if (((v & 1) && (bytes[1] < 0x80 || bytes[1] > v)) ||
+         (!(v & 1) && (bytes[1] < v || bytes[1] > 0xBF))) { // Illegal byte 1
+        // Still include all bytes that cannot start a sequence
+        if (bytes[1] >= 0x80 && bytes[1] <= 0xBF) {
+            if (len > 2 && bytes[2] >= 0x80 && bytes[2] <= 0xBF) {
+                if (len > 3 && bytes[3] >= 0x80 && bytes[3] <= 0xBF) {
+                    return 4;
+                }
+                return 3;
+            }
+            return 2;
+        }
+        return 1;
+    }
+    if (l > 2) {
+        if (bytes[2] < 0x80 || bytes[2] > 0xBF) { // Illegal byte 2
+            return 2;
+        }
+        if (l > 3) {
+            if (bytes[3] < 0x80 || bytes[3] > 0xBF) { // Illegal byte 3
+                return 3;
+            }
+            return 4;
+        }
+        return 3;
+    }
+    return 2;
+}
+
+// Validate a single utf8 charpoint
+static bool validate_utf8_seq(const uint8_t* bytes, uint64_t len) {
+    if (len < 1) {
+        return false;
+    }
+    if (bytes[0] <= 127) {
+        return true;
+    }
+    uint8_t v = utf8_valid_table[bytes[0] - 128];
+    uint8_t l = utf8_len_table[bytes[0]];
+    if (v == 0 || l > len) {
+        return false;
+    }
+    // Now known that l > 1, since all single byte sequences start with < 128
+    if (l > 2) {
+        if (bytes[2] < 0x80 || bytes[2] > 0xBF) {
+            return false;
+        }
+        if (l > 3 && (bytes[3] < 0x80 || bytes[3] > 0xBF)) {
+            return false;
+        }
+    }
+    if (v & 1) {
+        if (bytes[1] < 0x80 || bytes[1] > v) {
+            return false;
+        }
+    } else if (bytes[1] < v || bytes[1] > 0xBF) {
+        return false;
+    }
+    return true;
+}
+
+#define UTF8_EQ(s1, s2, l) ((s1)[0] == (s2)[0] && \
+                            ((l) < 2 || ((s1)[1] == (s2)[1] && \
+                             ((l) < 3 || ((s1)[2] == (s2)[2] && \
+                              ((l) < 4 || (s1)[3] == (s2)[3]))))))
+
+// WRONG on error, should not compare with 0x7F
+static uint_fast8_t utf8_to_utf32(const uint8_t* utf8, uint64_t len, uint32_t* utf32) {
+    if (*utf8 <= 0x7F) {
+        *utf32 = *utf8;
+        return 1;
+    }
+    *utf32 = 0;
+
+    uint8_t l = utf8_len_table[*utf8];
+    uint8_t v = utf8_valid_table[*utf8 - 128];
+    if (v == 0) {
+        return 1;
+    }
+    if (len < l) {
+        return len;
+    }
+    if (l == 1) {
+        *utf32 = *utf8;
+        return l;
+    }
+    if (v & 1) {
+        if (utf8[1] < 0x80 || utf8[1] > v) {
+            if (l > 2 && utf8[2] > 0x7F) {
+                if (l > 3 && utf8[3] > 0x7F) {
+                    return 4;
+                }
+                return 3;
+            }
+            return 2;
+        }
+    } else {
+        if (utf8[1] < v || utf8[1] > 0xBF) {
+            if (l > 2 && utf8[2] > 0x7F) {
+                if (l > 3 && utf8[3] > 0x7F) {
+                    return 4;
+                }
+                return 3;
+            }
+            return 2;
+        }
+    }
+
+    if (l == 2) {
+        *utf32 = ((uint32_t)utf8[1] & 0b111111) |
+                 (((uint32_t)utf8[0] & 0b11111) << 6);
+
+        return 2;
+    } else if (l == 3) {
+        if (utf8[2] < 0x80 || utf8[2] > 0xBF) {
+            return 3;
+        }
+        *utf32 = (((uint32_t)utf8[2]) & 0b111111) |
+                 (((uint32_t)utf8[1] & 0b111111) << 6) |
+                 (((uint32_t)utf8[0] & 0b1111) << 12);
+        return 3;
+    } else {
+        if (utf8[2] < 0x80 || utf8[2] > 0xBF) {
+            if (utf8[3] > 0x7F) {
+                return 4;
+            }
+            return 3;
+        }
+        if (utf8[3] < 0x80 || utf8[3] > 0xBF) {
+            return 4;
+        }
+        *utf32 = (((uint32_t)utf8[3]) & 0b111111) |
+                 (((uint32_t)utf8[2] & 0b111111) << 6) |
+                 (((uint32_t)utf8[1] & 0b111111) << 12) |
+                 (((uint32_t)utf8[0] & 0b111) << 18);
+        return 4;
+    }
+}
+
 enum EdgeType {
     NFA_EDGE_ANY,
     NFA_EDGE_LITERAL,
@@ -52,7 +255,7 @@ typedef struct RegexAst {
             uint32_t node_ix;
         } paren;
         struct {
-            bool not ;
+            bool not;
             uint32_t str_ix;
             uint32_t size;
         } literal_union;
@@ -88,7 +291,7 @@ typedef struct EdgeSet {
 } EdgeSet;
 
 typedef struct Utf8Edge {
-    uint8_t c;
+    uint8_t bytes[4];
     uint32_t node_ix;
 } Utf8Edge;
 
@@ -285,14 +488,32 @@ bool repeat_last(ParseCtx *ctx, uint32_t min, uint32_t max,
                  bool split_literal) {
     if (split_literal && ctx->ast[ctx->node_ix].type == REGEX_LITERAL &&
         ctx->ast[ctx->node_ix].literal.size > 1) {
+        uint32_t ix = ctx->pattern.length - 1;
+        while (ix > ctx->ast[ctx->node_ix].literal.str_ix) {
+            uint8_t c = (uint8_t) ctx->pattern.buffer[ix];
+            if (c < 0x80 || c > 0xBF) {
+                break;
+            }
+            --ix;
+        }
+        uint8_t* s = (uint8_t*)ctx->pattern.buffer + ix;
+        if (!validate_utf8_seq(s, ctx->pattern.length - ix)) {
+            // invalid unicode
+            return false;
+        }
+        uint8_t len = utf8_len_table[s[0]];
+        if (len != ctx->pattern.length - ix) {
+            // should never happen
+            return false;
+        }
         // Split last literal to only repeat last character
-        --ctx->ast[ctx->node_ix].literal.size;
+        ctx->ast[ctx->node_ix].literal.size -= len;
         RegexAst *node = newnode(ctx, REGEX_LITERAL, false);
         if (node == NULL) {
             return false;
         }
-        node->literal.size = 1;
-        node->literal.str_ix = ctx->pattern.length - 1;
+        node->literal.size = len;
+        node->literal.str_ix = ctx->pattern.length - len;
         ctx->node_ix = node - ctx->ast;
     }
     RegexAst *node = newnode(ctx, REGEX_REPEAT, false);
@@ -896,7 +1117,7 @@ static bool merge_nodes(uint32_t **dest, uint32_t *dest_size, uint32_t *other,
     return true;
 }
 
-bool dfa_get_state(DFABuilder *builder, NodeSet *nodes, EdgeSet *edges,
+bool dfa_get_state(NFA* nfa, DFABuilder *builder, NodeSet *nodes, EdgeSet *edges,
                    uint32_t *node_ix) {
     for (uint32_t i = 0; i < builder->node_count; ++i) {
         NodeSet *n = &builder->builders[i].nodes;
@@ -959,11 +1180,20 @@ bool dfa_get_state(DFABuilder *builder, NodeSet *nodes, EdgeSet *edges,
     builder->stack[builder->stack_size] = builder->node_count - 1;
     builder->stack_size += 1;
 
+    for (uint32_t ix = 0; ix < nodes->node_count; ++ix) {
+        if (nfa->nodes[nodes->nodes[ix]].accept) {
+            node->accept = true;
+            break;
+        }
+    }
+
     return true;
 }
 
+// NFA edges has already been validated for valid utf8
+// bytes: 1-4 bytes of valid utf8
 bool dfa_char_state(NFA *nfa, char *chars, DFABuilder *builder,
-                    NodeDFABuilder *b, uint8_t utf8c, uint32_t *ix,
+                    NodeDFABuilder *b, uint8_t* bytes, uint32_t *ix,
                     uint32_t *matching_edges) {
     NodeSet node_set;
     EdgeSet edge_set;
@@ -975,19 +1205,41 @@ bool dfa_char_state(NFA *nfa, char *chars, DFABuilder *builder,
     NodeSet nodes;
     EdgeSet edges;
     *matching_edges = 0;
+    uint8_t l = utf8_len_table[bytes[0]];
 
     for (uint32_t i = 0; i < b->edges.edge_count; ++i) {
         EdgeNFA *e = &nfa->edges[b->edges.edges[i]];
+        uint8_t* e_chars = (uint8_t*)chars + e->str_ix;
         if (e->type == NFA_EDGE_LITERAL) {
-            if (chars[e->str_ix] != utf8c) {
+            if (utf8_len_table[e_chars[0]] != l) {
                 continue;
             }
-        } else if (e->type == NFA_EDGE_UNION) {
-            if (memchr(chars + e->str_ix, utf8c, e->str_size) == NULL) {
+            if (e_chars[0] != bytes[0] || (l > 1 && e_chars[1] != bytes[1]) ||
+                (l > 2 && e_chars[2] != bytes[2]) ||
+                (l > 3 && e_chars[3] != bytes[3])) {
                 continue;
             }
-        } else if (e->type == NFA_EDGE_UNION_NOT) {
-            if (memchr(chars + e->str_ix, utf8c, e->str_size) != NULL) {
+        } else if (e->type == NFA_EDGE_UNION || e->type == NFA_EDGE_UNION_NOT) {
+            bool found = false;
+            for (uint32_t ix = 0; ix < e->str_size;
+                 ix += utf8_len_table[e_chars[ix]]) {
+                if (utf8_len_table[e_chars[ix]] != l) {
+                    continue;
+                }
+                if (e_chars[ix] != bytes[0] ||
+                    (l > 1 && e_chars[ix + 1] != bytes[1]) ||
+                    (l > 2 && e_chars[ix + 2] != bytes[2]) ||
+                    (l > 3 && e_chars[ix + 3] != bytes[3])) {
+                    continue;
+                }
+                found = true;
+                break;
+            }
+            if (!found) {
+                if (e->type == NFA_EDGE_UNION) {
+                    continue;
+                }
+            } else if (e->type == NFA_EDGE_UNION_NOT) {
                 continue;
             }
         }
@@ -1016,7 +1268,7 @@ bool dfa_char_state(NFA *nfa, char *chars, DFABuilder *builder,
         return true;
     }
 
-    if (!dfa_get_state(builder, &node_set, &edge_set, ix)) {
+    if (!dfa_get_state(nfa, builder, &node_set, &edge_set, ix)) {
         Mem_free(node_set.nodes);
         Mem_free(edge_set.edges);
         return false;
@@ -1024,11 +1276,14 @@ bool dfa_char_state(NFA *nfa, char *chars, DFABuilder *builder,
     return true;
 }
 
-bool dfa_node_add_utf8_edge(NodeDFA *node, NodeDFABuilder *builder,
-                            uint8_t utf8c, uint32_t dest) {
+bool dfa_add_utf8_edge(NodeDFA *node, NodeDFABuilder *builder,
+                            uint8_t* bytes, uint32_t dest) {
+    uint8_t len = utf8_len_table[bytes[0]];
     for (uint32_t ix = 0; ix < node->utf8_edge_count; ++ix) {
-        if (node->utf8_edges[ix].c == utf8c) {
-            return true;
+        if (utf8_len_table[node->utf8_edges[ix].bytes[0]] == len) {
+            if (memcmp(bytes, node->utf8_edges[ix].bytes, len) == 0) {
+                return true;
+            }
         }
     }
     if (node->utf8_edge_count == builder->utf8_edge_cap) {
@@ -1049,26 +1304,29 @@ bool dfa_node_add_utf8_edge(NodeDFA *node, NodeDFABuilder *builder,
             builder->utf8_edge_cap = builder->utf8_edge_cap * 2;
         }
     }
-    node->utf8_edges[node->utf8_edge_count].c = utf8c;
+    node->utf8_edges[node->utf8_edge_count].bytes[0] = bytes[0];
+    node->utf8_edges[node->utf8_edge_count].bytes[1] = len > 1 ? bytes[1] : 0;
+    node->utf8_edges[node->utf8_edge_count].bytes[2] = len > 2 ? bytes[2] : 0;
+    node->utf8_edges[node->utf8_edge_count].bytes[3] = len > 3 ? bytes[3] : 0;
     node->utf8_edges[node->utf8_edge_count].node_ix = dest;
     ++node->utf8_edge_count;
     return true;
 }
 
 bool dfa_add_edge(DFABuilder *b, NodeDFA *node, NodeDFABuilder *builder,
-                  uint8_t utf8c, uint32_t dest) {
-    if (builder->ascii_edge_count == 256 && utf8c <= 127) {
+                  uint8_t* utf8, uint32_t dest) {
+    if (builder->ascii_edge_count == 256 && utf8[0] <= 127) {
         return false;
     }
     if (dest != DFA_REJECT_NODE) {
         b->builders[dest].in_edge_count += 1;
     }
-    if (utf8c > 127) {
-        return dfa_node_add_utf8_edge(node, builder, utf8c, dest);
+    if (utf8[0] > 127) {
+        return dfa_add_utf8_edge(node, builder, utf8, dest);
     }
     for (uint32_t ix = 0; ix < builder->ascii_edge_count; ++ix) {
         if (node->ascii_edges[ix] == dest) {
-            node->ascii[utf8c] = ix;
+            node->ascii[utf8[0]] = ix;
             return true;
         }
     }
@@ -1082,7 +1340,7 @@ bool dfa_add_edge(DFABuilder *b, NodeDFA *node, NodeDFABuilder *builder,
         builder->ascii_edge_cap *= 2;
     }
     node->ascii_edges[builder->ascii_edge_count] = dest;
-    node->ascii[utf8c] = builder->ascii_edge_count;
+    node->ascii[utf8[0]] = builder->ascii_edge_count;
     ++builder->ascii_edge_count;
     return true;
 }
@@ -1128,7 +1386,7 @@ bool dfa_default_state(NFA *nfa, char *chars, DFABuilder *builder,
         return true;
     }
 
-    if (!dfa_get_state(builder, &node_set, &edge_set, ix)) {
+    if (!dfa_get_state(nfa, builder, &node_set, &edge_set, ix)) {
         Mem_free(node_set.nodes);
         Mem_free(edge_set.edges);
         return false;
@@ -1143,10 +1401,17 @@ bool nfa_split_literals(NFA *nfa, char *chars) {
         for (uint64_t i = 0; i < nfa->nodes[node_ix].edge_count; ++i) {
             uint64_t edge_ix = nfa->nodes[node_ix].edge_ix + i;
             if (nfa->edges[edge_ix].type != NFA_EDGE_LITERAL ||
-                nfa->edges[edge_ix].str_size <= 1) {
+                nfa->edges[edge_ix].str_size == 0) {
                 continue;
             }
-            char first = chars[nfa->edges[edge_ix].str_ix];
+            uint8_t* str = (uint8_t*)&chars[nfa->edges[edge_ix].str_ix];
+            if (!validate_utf8_seq(str, nfa->edges[edge_ix].str_size)) {
+                return false;
+            }
+            uint8_t clen = utf8_len_table[str[0]];
+            if (clen == nfa->edges[edge_ix].str_size) {
+                continue;
+            }
             if (!RESERVE(&nfa->nodes, node_cap, nfa->node_count + 1, NodeNFA)) {
                 return false;
             }
@@ -1154,8 +1419,8 @@ bool nfa_split_literals(NFA *nfa, char *chars) {
                 return false;
             }
 
-            EdgeNFA edge = {NFA_EDGE_LITERAL, nfa->edges[edge_ix].str_ix + 1,
-                            nfa->edges[edge_ix].str_size - 1, nfa->node_count,
+            EdgeNFA edge = {NFA_EDGE_LITERAL, nfa->edges[edge_ix].str_ix + clen,
+                            nfa->edges[edge_ix].str_size - clen, nfa->node_count,
                             nfa->edges[edge_ix].to};
             nfa->edges[nfa->edge_count] = edge;
             nfa->edge_count += 1;
@@ -1163,7 +1428,7 @@ bool nfa_split_literals(NFA *nfa, char *chars) {
             nfa->nodes[nfa->node_count].edge_ix = nfa->edge_count - 1;
             nfa->nodes[nfa->node_count].edge_count = 1;
             nfa->edges[edge_ix].to = nfa->node_count;
-            nfa->edges[edge_ix].str_size = 1;
+            nfa->edges[edge_ix].str_size = clen;
             uint64_t new_node = nfa->node_count;
             nfa->node_count += 1;
 
@@ -1173,16 +1438,30 @@ bool nfa_split_literals(NFA *nfa, char *chars) {
                     continue;
                 }
                 EdgeNFA *e2 = &nfa->edges[e2_ix];
-                if (e2->type != NFA_EDGE_LITERAL || e2->str_size == 0 ||
-                    chars[e2->str_ix] != first) {
+                if (e2->type != NFA_EDGE_LITERAL || e2->str_size == 0) {
                     continue;
                 }
+                uint8_t* e2_str = (uint8_t*)chars + e2->str_ix;
+                if (!validate_utf8_seq((uint8_t*)chars + e2->str_ix,
+                                       e2->str_size)) {
+                    return false;
+                }
+                if (clen != utf8_len_table[e2_str[0]]) {
+                    continue;
+                }
+                if (str[0] != e2_str[0] ||
+                    (clen > 1 && str[1] != e2_str[1]) ||
+                    (clen > 2 && str[2] != e2_str[2]) ||
+                    (clen > 3 && str[3] != e2_str[3])) {
+                    continue;
+                }
+
                 if (!RESERVE(&nfa->edges, edge_cap, nfa->edge_count + 1,
                              EdgeNFA)) {
                     return false;
                 }
-                EdgeNFA edge = {NFA_EDGE_LITERAL, nfa->edges[e2_ix].str_ix + 1,
-                                nfa->edges[e2_ix].str_size - 1, nfa->node_count,
+                EdgeNFA edge = {NFA_EDGE_LITERAL, nfa->edges[e2_ix].str_ix + clen,
+                                nfa->edges[e2_ix].str_size - clen, nfa->node_count,
                                 nfa->edges[e2_ix].to};
                 nfa->edges[nfa->edge_count] = edge;
                 nfa->edge_count += 1;
@@ -1273,8 +1552,11 @@ bool dfa_single_out_edge(DFABuilder *builder, uint32_t node_ix, uint32_t *dest,
     }
     if (builder->nodes[node_ix].utf8_edge_count > 0) {
         *dest = builder->nodes[node_ix].utf8_edges[0].node_ix;
-        *edge = builder->nodes[node_ix].utf8_edges[0].c;
-        return true;
+        uint8_t* bytes = builder->nodes[node_ix].utf8_edges[0].bytes;
+        for (uint32_t ix = 0; ix < utf8_len_table[bytes[0]]; ++ix) {
+            edge[ix] = bytes[ix];
+        }
+        return *dest != DFA_REJECT_NODE;
     }
     for (uint32_t ix = 0; ix < 128; ++ix) {
         if (builder->nodes[node_ix].ascii[ix] > 0) {
@@ -1286,7 +1568,7 @@ bool dfa_single_out_edge(DFABuilder *builder, uint32_t node_ix, uint32_t *dest,
                 }
             }
             *dest = builder->nodes[node_ix].ascii_edges[1];
-            return true;
+            return *dest != DFA_REJECT_NODE;
         }
     }
     return false;
@@ -1380,8 +1662,8 @@ bool dfa_finalize(DFABuilder *builder) {
             continue;
         }
         uint32_t dest_node;
-        uint8_t first_edge;
-        if (!dfa_single_out_edge(builder, ix, &dest_node, &first_edge)) {
+        uint8_t first_edge[4] = {0, 0, 0, 0};
+        if (!dfa_single_out_edge(builder, ix, &dest_node, first_edge)) {
             continue;
         }
         if (builder->builders[dest_node].in_edge_count != 1) {
@@ -1392,23 +1674,26 @@ bool dfa_finalize(DFABuilder *builder) {
             continue;
         }
 
+        uint8_t l = utf8_len_table[first_edge[0]];
         if (builder->nodes[dest_node].literal_node) {
-            if (builder->nodes[dest_node].literal.str_len == 144) {
+            if (builder->nodes[dest_node].literal.str_len + l > 144) {
                 continue;
             }
             dfa_node_mark_literal(n, &builder->builders[ix]);
             n->literal_node = true;
             builder->nodes[dest_node].literal_node = false;
-            n->literal.str_len = builder->nodes[dest_node].literal.str_len + 1;
-            n->literal.str[0] = first_edge;
-            memcpy(n->literal.str + 1, builder->nodes[dest_node].literal.str,
-                   n->literal.str_len - 1);
+            n->literal.str_len = builder->nodes[dest_node].literal.str_len + l;
+            for (uint8_t i = 0; i < l; ++i) {
+                n->literal.str[i] = first_edge[i];
+            }
+            memcpy(n->literal.str + l, builder->nodes[dest_node].literal.str,
+                   n->literal.str_len - l);
             n->literal.node_ix = builder->nodes[dest_node].literal.node_ix;
             continue;
         }
         uint32_t next_dest;
-        uint8_t c;
-        if (!dfa_single_out_edge(builder, dest_node, &next_dest, &c)) {
+        uint8_t c[4] = {0, 0, 0, 0};
+        if (!dfa_single_out_edge(builder, dest_node, &next_dest, c)) {
             continue;
         }
         dfa_node_mark_literal(n, &builder->builders[ix]);
@@ -1416,13 +1701,17 @@ bool dfa_finalize(DFABuilder *builder) {
                               &builder->builders[dest_node]);
         n->literal_node = true;
         n->literal.node_ix = next_dest;
-        n->literal.str[0] = first_edge;
-        n->literal.str[1] = c;
-        n->literal.str_len = 2;
+        for (uint8_t i = 0; i < l; ++i) {
+            n->literal.str[i] = first_edge[i];
+        }
+        for (uint8_t i = 0; i < utf8_len_table[c[0]]; ++i) {
+            n->literal.str[l + i] = c[i];
+        }
+        n->literal.str_len = l + utf8_len_table[c[0]];
         builder->builders[ix].is_literal = true;
         builder->builders[dest_node].is_literal = true;
 
-        while (n->literal.str_len < 144) {
+        while (1) {
             if (builder->builders[next_dest].in_edge_count != 1) {
                 break;
             }
@@ -1430,14 +1719,21 @@ bool dfa_finalize(DFABuilder *builder) {
             if (n->accept != builder->nodes[dest].accept) {
                 break;
             }
-            if (!dfa_single_out_edge(builder, next_dest, &next_dest, &c)) {
+            if (!dfa_single_out_edge(builder, next_dest, &next_dest, c)) {
                 break;
             }
+            uint8_t l = utf8_len_table[c[0]];
+            if (n->literal.str_len + l > 144) {
+                break;
+            }
+
             dfa_node_mark_literal(&builder->nodes[dest],
                                   &builder->builders[dest]);
             n->literal.node_ix = next_dest;
-            n->literal.str[n->literal.str_len] = c;
-            n->literal.str_len += 1;
+            for (uint8_t i = 0; i < l; ++i) {
+                n->literal.str[n->literal.str_len + i] = c[i];
+            }
+            n->literal.str_len += l;
         }
     }
 
@@ -1544,7 +1840,8 @@ bool nfa_copy(NFA* in, NFA* out) {
     return true;
 }
 
-RegexResult nfa_to_dfa(NFA *nfa, char *chars, NodeDFA **dfa, uint32_t* minlen) {
+RegexResult nfa_to_dfa(NFA *nfa, char *chars, NodeDFA **dfa,
+                       uint32_t* dfa_nodes, uint32_t* minlen) {
     if (!nfa_split_literals(nfa, chars)) {
         return REGEX_ERROR;
     }
@@ -1562,7 +1859,7 @@ RegexResult nfa_to_dfa(NFA *nfa, char *chars, NodeDFA **dfa, uint32_t* minlen) {
         return REGEX_ERROR;
     }
     uint32_t ix;
-    if (!dfa_get_state(&b, &nodes, &edges, &ix)) {
+    if (!dfa_get_state(nfa, &b, &nodes, &edges, &ix)) {
         dfa_builder_free(&b);
         return REGEX_ERROR;
     }
@@ -1576,11 +1873,13 @@ RegexResult nfa_to_dfa(NFA *nfa, char *chars, NodeDFA **dfa, uint32_t* minlen) {
             dfa_builder_free(&b);
             return REGEX_ERROR;
         }
-        if (!dfa_add_edge(&b, &b.nodes[node_ix], &b.builders[node_ix], '\0',
-                          default_ix)) {
+        uint8_t null_bytes[] = {0, 0, 0, 0};
+        if (!dfa_add_edge(&b, &b.nodes[node_ix], &b.builders[node_ix],
+                          null_bytes, default_ix)) {
             dfa_builder_free(&b);
             return REGEX_ERROR;
         }
+
         memset(&b.nodes[node_ix].ascii, 0, 128);
         b.nodes[node_ix].default_edge = default_ix;
         for (uint32_t i = 0; i < b.builders[node_ix].edges.edge_count; ++i) {
@@ -1589,41 +1888,34 @@ RegexResult nfa_to_dfa(NFA *nfa, char *chars, NodeDFA **dfa, uint32_t* minlen) {
             uint32_t dest_ix;
             uint32_t matching_edges;
             if (e->type == NFA_EDGE_LITERAL) {
-                if (!dfa_char_state(nfa, chars, &b, &b.builders[node_ix],
-                                    chars[e->str_ix], &dest_ix,
-                                    &matching_edges) ||
-                    !dfa_add_edge(&b, &b.nodes[node_ix], &b.builders[node_ix],
-                                  chars[e->str_ix], dest_ix)) {
+                uint8_t* bytes = (uint8_t*)chars + e->str_ix;
+                if (!validate_utf8_seq(bytes, e->str_size)) {
                     dfa_builder_free(&b);
                     return REGEX_ERROR;
                 }
-                for (uint32_t ix = 0; ix < b.builders[dest_ix].nodes.node_count;
-                     ++ix) {
-                    if (nfa->nodes[b.builders[dest_ix].nodes.nodes[ix]]
-                            .accept) {
-                        b.nodes[dest_ix].accept = true;
-                        break;
-                    }
+                if (!dfa_char_state(nfa, chars, &b, &b.builders[node_ix],
+                                    bytes, &dest_ix,
+                                    &matching_edges) ||
+                    !dfa_add_edge(&b, &b.nodes[node_ix], &b.builders[node_ix],
+                                  bytes, dest_ix)) {
+                    dfa_builder_free(&b);
+                    return REGEX_ERROR;
                 }
             } else if (e->type == NFA_EDGE_UNION_NOT ||
                        e->type == NFA_EDGE_UNION) {
-                for (uint32_t ix = e->str_ix; ix < e->str_ix + e->str_size;
-                     ++ix) {
-                    uint8_t c = (uint8_t)chars[ix];
-                    if (!dfa_char_state(nfa, chars, &b, &b.builders[node_ix], c,
-                                        &dest_ix, &matching_edges) ||
-                        !dfa_add_edge(&b, &b.nodes[node_ix],
-                                      &b.builders[node_ix], c, dest_ix)) {
+                for (uint32_t ix = 0; ix < e->str_size;) {
+                    uint8_t* bytes = (uint8_t*)chars + e->str_ix + ix;
+                    if (!validate_utf8_seq(bytes, e->str_size - ix)) {
                         dfa_builder_free(&b);
                         return REGEX_ERROR;
                     }
-                    for (uint32_t ix = 0;
-                         ix < b.builders[dest_ix].nodes.node_count; ++ix) {
-                        if (nfa->nodes[b.builders[dest_ix].nodes.nodes[ix]]
-                                .accept) {
-                            b.nodes[dest_ix].accept = true;
-                            break;
-                        }
+                    ix += utf8_len_table[bytes[0]];
+                    if (!dfa_char_state(nfa, chars, &b, &b.builders[node_ix],
+                                        bytes, &dest_ix, &matching_edges) ||
+                        !dfa_add_edge(&b, &b.nodes[node_ix],
+                                      &b.builders[node_ix], bytes, dest_ix)) {
+                        dfa_builder_free(&b);
+                        return REGEX_ERROR;
                     }
                 }
             }
@@ -1638,6 +1930,7 @@ RegexResult nfa_to_dfa(NFA *nfa, char *chars, NodeDFA **dfa, uint32_t* minlen) {
 
     *dfa = b.nodes;
     *minlen = b.minlen;
+    *dfa_nodes = b.node_count;
 
     return REGEX_MATCH;
 }
@@ -1663,10 +1956,12 @@ Regex *Regex_compile(const char *pattern) {
     NFA nfa_cpy;
     NodeDFA* dfa = NULL;
     uint32_t minlen;
+    uint32_t dfa_nodes;
     if (nfa_copy(&nfa, &nfa_cpy)) {
-        if (nfa_to_dfa(&nfa_cpy, ctx.pattern.buffer, &dfa, &minlen) != REGEX_MATCH) {
+        if (nfa_to_dfa(&nfa_cpy, ctx.pattern.buffer, &dfa, &dfa_nodes, &minlen) != REGEX_MATCH) {
             dfa = NULL;
             minlen = UINT32_MAX;
+            dfa_nodes = 0;
         }
         Mem_free(nfa_cpy.nodes);
         Mem_free(nfa_cpy.edges);
@@ -1684,6 +1979,7 @@ Regex *Regex_compile(const char *pattern) {
     regex->nfa = nfa;
     regex->dfa = dfa;
     regex->minlen = minlen;
+    regex->dfa_nodes = dfa_nodes;
 
     return regex;
 }
@@ -1694,6 +1990,16 @@ void Regex_free(Regex *regex) {
     String s;
     s.buffer = regex->chars;
     String_free(&s);
+    if (regex->dfa != NULL) {
+        for (uint32_t i = 0; i < regex->dfa_nodes; ++i) {
+            if (regex->dfa[i].literal_node) {
+                continue;
+            }
+            Mem_free(regex->dfa[i].utf8_edges);
+            Mem_free(regex->dfa[i].ascii_edges);
+        }
+        Mem_free(regex->dfa);
+    }
     Mem_free(regex);
 }
 
@@ -1753,14 +2059,20 @@ RegexResult Regex_fullmatch_dfa(Regex* regex, const char* str, uint64_t len) {
             node_ix = dfa[node_ix].literal.node_ix;
         } else {
             uint8_t c = (uint8_t)str[ix];
-            ++ix;
             if (c < 128) {
+                ++ix;
                 node_ix = dfa[node_ix].ascii_edges[dfa[node_ix].ascii[c]];
             } else {
-                node_ix = dfa[node_ix].default_edge;
-                for (uint32_t i = 0; i < dfa[node_ix].utf8_edge_count; ++i) {
-                    if (dfa[node_ix].utf8_edges[i].c == c) {
-                        node_ix = dfa[node_ix].utf8_edges[i].node_ix;
+                uint8_t* bytes = (uint8_t*)str + ix;
+                uint8_t seq_len = get_utf8_seq(bytes, len - ix);
+                ix += seq_len;
+                uint64_t n_ix = node_ix;
+                node_ix = dfa[n_ix].default_edge;
+                for (uint32_t i = 0; i < dfa[n_ix].utf8_edge_count; ++i) {
+                    uint8_t* edge = dfa[n_ix].utf8_edges[i].bytes;
+                    uint8_t l = utf8_len_table[edge[0]];
+                    if (l == seq_len && UTF8_EQ(bytes, edge, l)) {
+                        node_ix = dfa[n_ix].utf8_edges[i].node_ix;
                         break;
                     }
                 }
@@ -1772,6 +2084,91 @@ RegexResult Regex_fullmatch_dfa(Regex* regex, const char* str, uint64_t len) {
     }
     if (node_ix != DFA_REJECT_NODE && dfa[node_ix].accept) {
         return REGEX_MATCH;
+    }
+    return REGEX_NO_MATCH;
+}
+
+void Regex_allmatch_init(Regex* regex, const char* str, uint64_t len, RegexAllCtx* ctx) {
+    ctx->regex = regex;
+    ctx->str = str;
+    ctx->len = len;
+    ctx->start = 0;
+}
+
+RegexResult Regex_allmatch_dfa(RegexAllCtx* ctx, const char** match, uint64_t* match_len) {
+    NodeDFA* dfa = ctx->regex->dfa;
+    uint64_t len = ctx->len;
+    const char* str = ctx->str;
+    for (uint64_t s = ctx->start; s <= len; ++s) {
+        uint32_t node_ix = 0;
+        if (len - s < ctx->regex->minlen) {
+            break;
+        }
+        uint64_t ix = s;
+        uint64_t accept_node = DFA_REJECT_NODE;
+        uint64_t accept_ix;
+        while (1) {
+            if (dfa[node_ix].accept) {
+                accept_node = node_ix;
+                accept_ix = ix;
+            }
+            if (dfa[node_ix].literal_node) {
+                if (len - ix < dfa[node_ix].literal.str_len) {
+                    break;
+                }
+                // for some reason, loop is faster than memcmp...
+                for (uint64_t i = 0; i < dfa[node_ix].literal.str_len; ++i) {
+                    if (dfa[node_ix].literal.str[i] != str[ix + i]) {
+                        goto next;
+                    }
+                }
+                if (dfa[node_ix].literal.node_ix == DFA_REJECT_NODE) {
+                    break;
+                }
+                ix += dfa[node_ix].literal.str_len;
+                node_ix = dfa[node_ix].literal.node_ix;
+            } else {
+                if (ix >= len) {
+                    break;
+                }
+                uint8_t c = (uint8_t)str[ix];
+                if (c < 128) {
+                    node_ix = dfa[node_ix].ascii_edges[dfa[node_ix].ascii[c]];
+                    if (node_ix == DFA_REJECT_NODE)  {
+                        break;
+                    }
+                    ++ix;
+                } else {
+                    uint8_t* bytes = (uint8_t*)str + ix;
+                    uint8_t seq_len = get_utf8_seq(bytes, len - ix);
+                    uint64_t n_ix = node_ix;
+                    node_ix = dfa[n_ix].default_edge;
+                    for (uint32_t i = 0; i < dfa[n_ix].utf8_edge_count; ++i) {
+                        uint8_t* edge = dfa[n_ix].utf8_edges[i].bytes;
+                        uint8_t l = utf8_len_table[edge[0]];
+                        if (l == seq_len && UTF8_EQ(bytes, edge, l)) {
+                            node_ix = dfa[n_ix].utf8_edges[i].node_ix;
+                            break;
+                        }
+                    }
+                    if (node_ix == DFA_REJECT_NODE) {
+                        break;
+                    }
+                    ix += seq_len;
+                }
+            }
+        }
+        next:
+        if (accept_node != DFA_REJECT_NODE) {
+            if (ctx->start == accept_ix) {
+                ctx->start = accept_ix + 1;
+            } else {
+                ctx->start = accept_ix;
+            }
+            *match = str + s;
+            *match_len = accept_ix - s;
+            return REGEX_MATCH;
+        }
     }
     return REGEX_NO_MATCH;
 }
@@ -1801,14 +2198,20 @@ RegexResult Regex_anymatch_dfa(Regex* regex, const char* str, uint64_t len) {
                 node_ix = dfa[node_ix].literal.node_ix;
             } else {
                 uint8_t c = (uint8_t)str[ix];
-                ++ix;
                 if (c < 128) {
+                    ++ix;
                     node_ix = dfa[node_ix].ascii_edges[dfa[node_ix].ascii[c]];
                 } else {
-                    node_ix = dfa[node_ix].default_edge;
-                    for (uint32_t i = 0; i < dfa[node_ix].utf8_edge_count; ++i) {
-                        if (dfa[node_ix].utf8_edges[i].c == c) {
-                            node_ix = dfa[node_ix].utf8_edges[i].node_ix;
+                    uint8_t* bytes = (uint8_t*)str + ix;
+                    uint8_t seq_len = get_utf8_seq(bytes, len - ix);
+                    ix += seq_len;
+                    uint64_t n_ix = node_ix;
+                    node_ix = dfa[n_ix].default_edge;
+                    for (uint32_t i = 0; i < dfa[n_ix].utf8_edge_count; ++i) {
+                        uint8_t* edge = dfa[n_ix].utf8_edges[i].bytes;
+                        uint8_t l = utf8_len_table[edge[0]];
+                        if (l == seq_len && UTF8_EQ(bytes, edge, l)) {
+                            node_ix = dfa[n_ix].utf8_edges[i].node_ix;
                             break;
                         }
                     }
@@ -1826,8 +2229,10 @@ RegexResult Regex_anymatch_dfa(Regex* regex, const char* str, uint64_t len) {
     return REGEX_NO_MATCH;
 }
 
-// TODO: sort edged based on length, utf8, extended RE
 RegexResult Regex_fullmatch(Regex *regex, const char *str, uint64_t len) {
+    if (regex->dfa != NULL) {
+        return Regex_fullmatch_dfa(regex, str, len);
+    }
     struct Node {
         uint64_t str_ix;
         uint32_t node_ix;
@@ -1894,77 +2299,76 @@ fail:
     return REGEX_ERROR;
 }
 
-RegexResult Regex_anymatch(Regex *regex, const char *str, uint64_t len,
-                           struct RegexMatchCtx *ctx) {
-    if (ctx->to_visit == NULL) {
-        ctx->to_visit = Mem_alloc((2 * len + 1000) * sizeof(struct Node));
-        ctx->to_visit_cap = 2 * len + 1000;
-        ctx->visited =
-            Mem_alloc((len + 1 + 1000) * regex->nfa.node_count / 8 + 1);
-        ctx->visited_cap = (len + 1 + 1000) * regex->nfa.node_count / 8 + 1;
-    } else if (2 * len > ctx->to_visit_cap) {
-        struct Node *to_visit =
-            Mem_realloc(ctx->to_visit, 2 * len * sizeof(struct Node));
-        if (to_visit == NULL) {
-            return REGEX_ERROR;
-        }
-        ctx->to_visit = to_visit;
-        ctx->to_visit_cap = 2 * len;
+RegexResult Regex_anymatch(Regex *regex, const char *str, uint64_t len) {
+    if (regex->dfa != NULL) {
+        return Regex_anymatch_dfa(regex, str, len);
     }
-    if ((len + 1) * regex->nfa.node_count / 8 + 1 > ctx->visited_cap) {
-        uint8_t *visited = Mem_realloc(
-            ctx->visited, (len + 1) * regex->nfa.node_count / 8 + 1);
-        if (visited == NULL) {
-            return REGEX_ERROR;
-        }
-        ctx->visited = visited;
-        ctx->visited_cap = (len + 1) * regex->nfa.node_count / 8 + 1;
-    }
-    memset(ctx->visited, 0, (len + 1) * regex->nfa.node_count / 8 + 1);
+    struct Node {
+        uint64_t str_ix;
+        uint32_t node_ix;
+    };
 
-    uint32_t to_visit_size = len;
+    struct Node* to_visit = Mem_alloc((2 * len) * sizeof(struct Node));
     uint32_t to_visit_cap = 2 * len;
-    if (ctx->to_visit == NULL || ctx->visited == NULL) {
+    if (to_visit == NULL) {
         return REGEX_ERROR;
     }
+    uint8_t* visited = Mem_alloc((len + 1) * regex->nfa.node_count / 8 + 1);
+    if (visited == NULL) {
+        Mem_free(to_visit);
+        return REGEX_ERROR;
+    }
+    memset(visited, 0, (len + 1) * regex->nfa.node_count / 8 + 1);
+
+    uint32_t to_visit_size = len;
     for (uint64_t ix = 0; ix < len; ++ix) {
-        ctx->to_visit[len - ix - 1].node_ix = 0;
-        ctx->to_visit[len - ix - 1].str_ix = ix;
+        to_visit[len - ix - 1].node_ix = 0;
+        to_visit[len - ix - 1].str_ix = ix;
     }
 
     NFA *nfa = &regex->nfa;
 
     while (to_visit_size > 0) {
-        struct Node node = ctx->to_visit[to_visit_size - 1];
+        struct Node node = to_visit[to_visit_size - 1];
         --to_visit_size;
 
         size_t ix = (node.str_ix + node.node_ix * (len + 1)) / 8;
         size_t bit = (node.str_ix + node.node_ix * (len + 1)) % 8;
-        if ((ctx->visited[ix] >> bit) & 1) {
+        if ((visited[ix] >> bit) & 1) {
             continue;
         }
 
         if (nfa->nodes[node.node_ix].accept) {
+            Mem_free(to_visit);
+            Mem_free(visited);
             return REGEX_MATCH;
         }
 
-        ctx->visited[ix] |= (1 << bit);
+        visited[ix] |= (1 << bit);
 
         for (uint32_t ix = 0; ix < nfa->nodes[node.node_ix].edge_count; ++ix) {
             uint32_t edge_ix = ix + nfa->nodes[node.node_ix].edge_ix;
             uint64_t str_ix = node.str_ix;
             if (matches_edge(regex, str, len, &str_ix, edge_ix)) {
-                RESERVE(&(ctx->to_visit), &to_visit_cap, to_visit_size + 1,
-                        struct Node);
-                ctx->to_visit[to_visit_size].str_ix = str_ix;
-                ctx->to_visit[to_visit_size].node_ix = nfa->edges[edge_ix].to;
+                if (!RESERVE(&to_visit, &to_visit_cap, to_visit_size + 1,
+                        struct Node)) {
+                    goto fail;
+                }
+                to_visit[to_visit_size].str_ix = str_ix;
+                to_visit[to_visit_size].node_ix = nfa->edges[edge_ix].to;
                 ++to_visit_size;
             }
         }
     }
-
-    return REGEX_NO_MATCH;
-
 fail:
-    return REGEX_ERROR;
+    Mem_free(to_visit);
+    Mem_free(visited);
+    return REGEX_NO_MATCH;
+}
+
+RegexResult Regex_allmatch(RegexAllCtx* ctx, const char** match, uint64_t* len) {
+    if (ctx->regex->dfa == NULL) {
+        return REGEX_ERROR;
+    }
+    return Regex_allmatch_dfa(ctx, match, len);
 }
