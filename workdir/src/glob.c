@@ -253,6 +253,209 @@ bool matches_glob(const wchar_t* pattern, const wchar_t* str) {
     return str[s_ix] == L'\0';
 }
 
+#define LINE_BUFFER_SIZE (32768)
+
+bool LineIter_begin(LineCtx* ctx, const wchar_t* filename) {
+    ctx->file = CreateFileW(filename, GENERIC_READ, FILE_SHARE_READ, NULL,
+                            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL |
+                            FILE_FLAG_OVERLAPPED, NULL);
+    ctx->eof = false;
+    ctx->ended_cr = false;
+    if (ctx->file == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    // + 50 to because some space will be needed when read does not end with newline
+    if (!String_create_capacity(&ctx->buffer, LINE_BUFFER_SIZE + 50)) {
+        CloseHandle(ctx->file);
+        ctx->file = INVALID_HANDLE_VALUE;
+        return false;
+    }
+    if (!String_create_capacity(&ctx->line, LINE_BUFFER_SIZE + 50)) {
+        String_free(&ctx->buffer);
+        CloseHandle(ctx->file);
+        ctx->file = INVALID_HANDLE_VALUE;
+    }
+    memset(&ctx->o, 0, sizeof(OVERLAPPED));
+    ctx->o.hEvent = CreateEventW(NULL, FALSE, FALSE, NULL);
+    if (ctx->o.hEvent == NULL) {
+        String_free(&ctx->line);
+        String_free(&ctx->buffer);
+        CloseHandle(ctx->file);
+        ctx->file = INVALID_HANDLE_VALUE;
+        return false;
+    }
+    ctx->offset = 0;
+
+    if (!ReadFile(ctx->file, ctx->buffer.buffer,
+                  LINE_BUFFER_SIZE, NULL, &ctx->o)) {
+        if (GetLastError() != ERROR_IO_PENDING) {
+            CloseHandle(ctx->o.hEvent);
+            String_free(&ctx->line);
+            String_free(&ctx->buffer);
+            CloseHandle(ctx->file);
+            ctx->file = INVALID_HANDLE_VALUE;
+            return false;
+        }
+    }
+    ctx->str_offset = 0;
+    return true;
+}
+
+// Yeild lines from file.
+// Uses overlapped I/O.
+char* LineIter_next(LineCtx* ctx, uint64_t* len) {
+    if (ctx->file == INVALID_HANDLE_VALUE) {
+        if (ctx->eof) {
+            String_free(&ctx->buffer);
+            String_free(&ctx->line);
+            ctx->eof = false;
+        }
+        // Already aborted or failed init
+        return NULL;
+    }
+
+    while (ctx->line.length == 0) {
+        DWORD read;
+        if (!GetOverlappedResult(ctx->file, &ctx->o, &read, TRUE)) {
+            if (GetLastError() == ERROR_HANDLE_EOF) {
+                goto eof;
+            }
+            goto fail;
+        }
+        uint64_t start = ctx->buffer.length;
+        ctx->offset += read;
+        ctx->o.Offset = (uint32_t)ctx->offset;
+        ctx->o.OffsetHigh = (ctx->offset >> 32);
+
+        uint64_t line_len = 0;
+        ctx->buffer.length += read;
+        uint64_t ix = ctx->buffer.length;
+        do {
+            --ix;
+            if (ctx->buffer.buffer[ix] == '\n') {
+                line_len = ix + 1;
+                break;
+            }
+            if (ctx->buffer.buffer[ix] == '\r') {
+                line_len = ix + 1;
+                break;
+            }
+        } while (ix > start);
+
+        if (line_len > 0) {
+            String tmp = ctx->line;
+            ctx->line = ctx->buffer;
+            ctx->buffer = tmp;
+
+            // Append all characters after last '\r' or '\n' to buffer
+            String_clear(&ctx->buffer);
+            if (!String_append_count(&ctx->buffer, ctx->line.buffer + line_len,
+                                ctx->line.length - line_len)) {
+                goto fail;
+            }
+            ctx->str_offset = 0;
+            if (ctx->ended_cr) {
+                // Handle the case were last read ended with '\r',
+                // and this read starts with '\n'. That is one CRLF newline.
+                if (ctx->line.buffer[0] == '\n') {
+                    if (line_len == 1) {
+                        // The '\n' was the only '\n' or '\r' in this read,
+                        // need another iteration
+                        --line_len;
+                    } else {
+                        // Skip first byte
+                        ctx->str_offset = 1;
+                    }
+                }
+                ctx->ended_cr = false;
+            }
+            ctx->line.length = line_len;
+            ctx->line.buffer[line_len] = '\0';
+        }
+        if (!String_reserve(&ctx->buffer,
+                ctx->buffer.length + LINE_BUFFER_SIZE + 1)) {
+            goto fail;
+        }
+        if (!ReadFile(ctx->file, ctx->buffer.buffer + ctx->buffer.length,
+                    LINE_BUFFER_SIZE, NULL, &ctx->o)) {
+            DWORD err = GetLastError();
+            if (err == ERROR_HANDLE_EOF) {
+                goto eof;
+            } else if (err != ERROR_IO_PENDING) {
+                goto fail;
+            }
+        }
+    }
+    char* start = ctx->line.buffer + ctx->str_offset;
+    for (uint64_t ix = ctx->str_offset; ix <= ctx->line.length; ++ix) {
+        if (ctx->line.buffer[ix] == '\r') {
+            *len = ix - ctx->str_offset;
+            if (ctx->line.buffer[ix + 1] == '\n') {
+                ++ix;
+            }
+            if (ctx->line.buffer[ix + 1] == '\0') {
+                ctx->line.length = 0;
+                ctx->str_offset = 0;
+                ctx->ended_cr = ctx->line.buffer[ix] != '\n';
+            } else {
+                ctx->str_offset = ix + 1;
+            }
+            return start;
+        }
+        if (ctx->line.buffer[ix] == '\n') {
+            *len = ix - ctx->str_offset;
+            if (ctx->line.buffer[ix + 1] == '\0') {
+                ctx->line.length = 0;
+                ctx->str_offset = 0;
+                ctx->ended_cr = false;
+            } else {
+                ctx->str_offset = ix + 1;
+            }
+            return start;
+        }
+    }
+    // Unreachable
+fail:
+    CloseHandle(ctx->file);
+    CloseHandle(ctx->o.hEvent);
+    String_free(&ctx->line);
+    String_free(&ctx->buffer);
+    ctx->file = INVALID_HANDLE_VALUE;
+    return NULL;
+eof:
+    CloseHandle(ctx->file);
+    CloseHandle(ctx->o.hEvent);
+    ctx->file = INVALID_HANDLE_VALUE;
+    if (ctx->buffer.length > 0) {
+        ctx->eof = true;
+        *len = ctx->buffer.length;
+        return ctx->buffer.buffer;
+    }
+    String_free(&ctx->buffer);
+    String_free(&ctx->line);
+    return NULL;
+}
+
+void LineIter_abort(LineCtx* ctx) {
+    if (ctx->file == INVALID_HANDLE_VALUE) {
+        if (ctx->eof) {
+            String_free(&ctx->buffer);
+            String_free(&ctx->line);
+            ctx->eof = false;
+        }
+        return;
+    }
+    // Stop I/O and wait for it to stop
+    if (CancelIo(ctx->file)) {
+        DWORD d;
+        GetOverlappedResult(ctx->file, &ctx->o, &d, TRUE);
+    }
+    CloseHandle(ctx->file);
+    CloseHandle(ctx->o.hEvent);
+    String_free(&ctx->line);
+    String_free(&ctx->buffer);
+    ctx->file = INVALID_HANDLE_VALUE;
+}
 
 bool Glob_begin(const wchar_t* pattern, GlobCtx* ctx) {
     ctx->handle = INVALID_HANDLE_VALUE;

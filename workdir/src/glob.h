@@ -53,6 +53,23 @@ typedef struct _GlobCtx {
     uint32_t last_segment;
 } GlobCtx;
 
+typedef struct _LineCtx {
+    HANDLE file;
+    bool eof;
+    bool ended_cr;
+    uint32_t str_offset;
+    uint64_t offset;
+    String buffer;
+    String line;
+    OVERLAPPED o;
+} LineCtx;
+
+bool LineIter_begin(LineCtx* ctx, const wchar_t* filename);
+
+char* LineIter_next(LineCtx* ctx, uint64_t* len);
+
+void LineIter_abort(LineCtx* ctx);
+
 bool matches_glob(const wchar_t* pattern, const wchar_t* str);
 
 bool Glob_begin(const wchar_t* pattern, GlobCtx* ctx);
