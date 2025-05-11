@@ -59,10 +59,25 @@ typedef struct _LineCtx {
     bool ended_cr;
     uint32_t str_offset;
     uint64_t offset;
-    String buffer;
+    union {
+        String buffer;
+        WString wbuffer;
+    };
     String line;
     OVERLAPPED o;
 } LineCtx;
+
+bool ConsoleLineIter_begin(LineCtx* ctx, HANDLE in);
+
+char* ConsoleLineIter_next(LineCtx* ctx, uint64_t* len);
+
+void ConsoleLineIter_abort(LineCtx* ctx);
+
+bool SyncLineIter_begin(LineCtx* ctx, HANDLE file);
+
+char* SyncLineIter_next(LineCtx* ctx, uint64_t* len);
+
+void SyncLineIter_abort(LineCtx* ctx);
 
 bool LineIter_begin(LineCtx* ctx, const wchar_t* filename);
 
