@@ -255,10 +255,240 @@ bool matches_glob(const wchar_t* pattern, const wchar_t* str) {
 
 #define LINE_BUFFER_SIZE (32768)
 
+static char* find_next_line(LineCtx* ctx, uint64_t* len) {
+    char* start = ctx->line.buffer + ctx->str_offset;
+    for (uint64_t ix = ctx->str_offset; true; ++ix) {
+        if (ctx->line.buffer[ix] == '\r') {
+            *len = ix - ctx->str_offset;
+            if (ctx->line.buffer[ix + 1] == '\n') {
+                ++ix;
+            }
+            if (ctx->line.buffer[ix + 1] == '\0') {
+                ctx->line.length = 0;
+                ctx->str_offset = 0;
+                ctx->ended_cr = ctx->line.buffer[ix] != '\n';
+            } else {
+                ctx->str_offset = ix + 1;
+            }
+            return start;
+        }
+        if (ctx->line.buffer[ix] == '\n') {
+            *len = ix - ctx->str_offset;
+            if (ctx->line.buffer[ix + 1] == '\0') {
+                ctx->line.length = 0;
+                ctx->str_offset = 0;
+                ctx->ended_cr = false;
+            } else {
+                ctx->str_offset = ix + 1;
+            }
+            return start;
+        }
+    }
+}
+
+bool ConsoleLineIter_begin(LineCtx *ctx, HANDLE in) {
+    ctx->file = in;
+    ctx->eof = false;
+    ctx->ended_cr = false;
+    ctx->str_offset = 0;
+    ctx->offset = 0;
+    if (!String_create(&ctx->line)) {
+        ctx->file = INVALID_HANDLE_VALUE;
+        SetLastError(ERROR_OUTOFMEMORY);
+        return false;
+    }
+    if (!WString_create_capacity(&ctx->wbuffer, 4096)) {
+        ctx->file = INVALID_HANDLE_VALUE;
+        String_free(&ctx->line);
+        SetLastError(ERROR_OUTOFMEMORY);
+        return false;
+    }
+    return true;
+}
+
+
+char* ConsoleLineIter_next(LineCtx* ctx, uint64_t* len) {
+    if (ctx->file == INVALID_HANDLE_VALUE) {
+        if (ctx->eof) {
+            String_free(&ctx->line);
+            ctx->eof = false;
+        }
+        return NULL;
+    }
+
+    DWORD read;
+    while (ctx->line.length == 0) {
+        if (!WString_reserve(&ctx->wbuffer, ctx->wbuffer.length + 4097)) {
+            goto fail;
+        }
+        if (!ReadConsoleW(ctx->file, ctx->wbuffer.buffer + ctx->wbuffer.length,
+                          4096, &read, NULL) || read == 0) {
+            goto eol;
+        }
+        uint64_t start = ctx->wbuffer.length;
+        ctx->wbuffer.length += read;
+        uint64_t ix = ctx->wbuffer.length;
+        uint64_t line_len = 0;
+        do {
+            --ix;
+            if (ctx->wbuffer.buffer[ix] == L'\n' ||
+                ctx->wbuffer.buffer[ix] == L'\r') {
+                line_len = ix + 1;
+                break;
+            }
+
+        } while (ix > start);
+
+        if (line_len > 0) {
+            ctx->str_offset = 0;
+            if (ctx->ended_cr) {
+                if (ctx->wbuffer.buffer[0] == L'\n') {
+                    if (line_len == 1) {
+                        continue;
+                    } else {
+                        ctx->str_offset = 1;
+                    }
+                }
+                ctx->ended_cr = false;
+            }
+            if (!String_from_utf16_bytes(&ctx->line, ctx->wbuffer.buffer,
+                                         line_len)) {
+                goto fail;
+            }
+            WString_remove(&ctx->wbuffer, 0, line_len);
+        }
+    }
+    return find_next_line(ctx, len);
+fail:
+    ctx->file = INVALID_HANDLE_VALUE;
+    String_free(&ctx->line);
+    WString_free(&ctx->wbuffer);
+    return NULL;
+eol:
+    ctx->file = INVALID_HANDLE_VALUE;
+    if (ctx->wbuffer.length > 0) {
+        if (String_from_utf16_bytes(&ctx->line, ctx->wbuffer.buffer,
+                                     ctx->wbuffer.length)) {
+            ctx->eof = true;
+            WString_free(&ctx->wbuffer);
+            *len = ctx->line.length;
+            return ctx->line.buffer;
+        }
+    }
+    String_free(&ctx->line);
+    WString_free(&ctx->wbuffer);
+    return NULL;
+}
+
+void ConsoleLineIter_abort(LineCtx *ctx) {
+    if (ctx->file == INVALID_HANDLE_VALUE) {
+        if (ctx->eof) {
+            WString_free(&ctx->wbuffer);
+            ctx->eof = false;
+        }
+        return;
+    }
+    String_free(&ctx->line);
+    WString_free(&ctx->wbuffer);
+    ctx->file = INVALID_HANDLE_VALUE;
+}
+
+bool SyncLineIter_begin(LineCtx* ctx, HANDLE file) {
+    ctx->file = file;
+    ctx->eof = false;
+    ctx->ended_cr = false;
+    ctx->str_offset = 0;
+    ctx->offset = 0;
+    if (!String_create_capacity(&ctx->line, LINE_BUFFER_SIZE + 50)) {
+        ctx->file = INVALID_HANDLE_VALUE;
+        SetLastError(ERROR_OUTOFMEMORY);
+        return false;
+    }
+    return true;
+}
+
+char* SyncLineIter_next(LineCtx* ctx, uint64_t* len) {
+    if (ctx->file == INVALID_HANDLE_VALUE) {
+        if (ctx->eof) {
+            String_free(&ctx->line);
+            ctx->eof = false;
+        }
+        return NULL;
+    }
+
+    while (ctx->offset == 0) {
+        if (!String_reserve(&ctx->line, LINE_BUFFER_SIZE + ctx->line.length)) {
+            goto fail;
+        }
+        DWORD read;
+        if (!ReadFile(ctx->file, ctx->line.buffer + ctx->line.length,
+                     LINE_BUFFER_SIZE, &read, NULL)) {
+            if (GetLastError() == ERROR_BROKEN_PIPE ||
+                GetLastError() == ERROR_HANDLE_EOF) {
+                goto eof;
+            }
+            goto fail;
+        }
+        if (read == 0) {
+            if (GetFileType(ctx->file) == FILE_TYPE_PIPE) {
+                continue;
+            }
+            goto eof;
+        }
+        uint64_t start = ctx->line.length;
+        ctx->line.length += read;
+        uint64_t ix = ctx->line.length;
+        do {
+            --ix;
+            if (ctx->line.buffer[ix] == '\n' || ctx->line.buffer[ix] == '\r') {
+                if (ctx->ended_cr) {
+                    if (ctx->line.buffer[0] == '\n') {
+                        if (ix == 0) {
+                            break;
+                        } else {
+                            ctx->str_offset = 1;
+                        }
+                    }
+                    ctx->ended_cr = false;
+                }
+                ctx->offset = 1;
+                ctx->line.buffer[ctx->line.length] = '\0';
+                break;
+            }
+        } while (ix > start);
+    }
+    char* res = find_next_line(ctx, len);
+    if (ctx->line.length == 0) {
+        ctx->offset = 0;
+    }
+    return res;
+fail:
+    String_free(&ctx->line);
+    ctx->file = INVALID_HANDLE_VALUE;
+    return NULL;
+eof:
+    ctx->file = INVALID_HANDLE_VALUE;
+    ctx->eof = true;
+    *len = ctx->line.length;
+    return ctx->line.buffer;
+}
+
+void SyncLineIter_abort(LineCtx* ctx) {
+    if (ctx->file == INVALID_HANDLE_VALUE) {
+        if (ctx->eof) {
+            String_free(&ctx->line);
+            ctx->eof = false;
+        }
+        return;
+    }
+    String_free(&ctx->line);
+}
+
 bool LineIter_begin(LineCtx* ctx, const wchar_t* filename) {
     ctx->file = CreateFileW(filename, GENERIC_READ, FILE_SHARE_READ, NULL,
                             OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL |
                             FILE_FLAG_OVERLAPPED, NULL);
+
     ctx->eof = false;
     ctx->ended_cr = false;
     if (ctx->file == INVALID_HANDLE_VALUE) {
@@ -268,32 +498,38 @@ bool LineIter_begin(LineCtx* ctx, const wchar_t* filename) {
     if (!String_create_capacity(&ctx->buffer, LINE_BUFFER_SIZE + 50)) {
         CloseHandle(ctx->file);
         ctx->file = INVALID_HANDLE_VALUE;
+        SetLastError(ERROR_OUTOFMEMORY);
         return false;
     }
     if (!String_create_capacity(&ctx->line, LINE_BUFFER_SIZE + 50)) {
         String_free(&ctx->buffer);
         CloseHandle(ctx->file);
         ctx->file = INVALID_HANDLE_VALUE;
+        SetLastError(ERROR_OUTOFMEMORY);
     }
     memset(&ctx->o, 0, sizeof(OVERLAPPED));
     ctx->o.hEvent = CreateEventW(NULL, FALSE, FALSE, NULL);
     if (ctx->o.hEvent == NULL) {
+        DWORD err = GetLastError();
         String_free(&ctx->line);
         String_free(&ctx->buffer);
         CloseHandle(ctx->file);
         ctx->file = INVALID_HANDLE_VALUE;
+        SetLastError(err);
         return false;
     }
     ctx->offset = 0;
 
     if (!ReadFile(ctx->file, ctx->buffer.buffer,
                   LINE_BUFFER_SIZE, NULL, &ctx->o)) {
-        if (GetLastError() != ERROR_IO_PENDING) {
+        DWORD err = GetLastError();
+        if (err != ERROR_IO_PENDING) {
             CloseHandle(ctx->o.hEvent);
             String_free(&ctx->line);
             String_free(&ctx->buffer);
             CloseHandle(ctx->file);
             ctx->file = INVALID_HANDLE_VALUE;
+            SetLastError(err);
             return false;
         }
     }
@@ -322,6 +558,9 @@ char* LineIter_next(LineCtx* ctx, uint64_t* len) {
             }
             goto fail;
         }
+        if (read == 0) {
+            continue;
+        }
         uint64_t start = ctx->buffer.length;
         ctx->offset += read;
         ctx->o.Offset = (uint32_t)ctx->offset;
@@ -332,11 +571,8 @@ char* LineIter_next(LineCtx* ctx, uint64_t* len) {
         uint64_t ix = ctx->buffer.length;
         do {
             --ix;
-            if (ctx->buffer.buffer[ix] == '\n') {
-                line_len = ix + 1;
-                break;
-            }
-            if (ctx->buffer.buffer[ix] == '\r') {
+            if (ctx->buffer.buffer[ix] == '\n' ||
+                ctx->buffer.buffer[ix] == '\r') {
                 line_len = ix + 1;
                 break;
             }
@@ -386,35 +622,7 @@ char* LineIter_next(LineCtx* ctx, uint64_t* len) {
             }
         }
     }
-    char* start = ctx->line.buffer + ctx->str_offset;
-    for (uint64_t ix = ctx->str_offset; ix <= ctx->line.length; ++ix) {
-        if (ctx->line.buffer[ix] == '\r') {
-            *len = ix - ctx->str_offset;
-            if (ctx->line.buffer[ix + 1] == '\n') {
-                ++ix;
-            }
-            if (ctx->line.buffer[ix + 1] == '\0') {
-                ctx->line.length = 0;
-                ctx->str_offset = 0;
-                ctx->ended_cr = ctx->line.buffer[ix] != '\n';
-            } else {
-                ctx->str_offset = ix + 1;
-            }
-            return start;
-        }
-        if (ctx->line.buffer[ix] == '\n') {
-            *len = ix - ctx->str_offset;
-            if (ctx->line.buffer[ix + 1] == '\0') {
-                ctx->line.length = 0;
-                ctx->str_offset = 0;
-                ctx->ended_cr = false;
-            } else {
-                ctx->str_offset = ix + 1;
-            }
-            return start;
-        }
-    }
-    // Unreachable
+    return find_next_line(ctx, len);
 fail:
     CloseHandle(ctx->file);
     CloseHandle(ctx->o.hEvent);
