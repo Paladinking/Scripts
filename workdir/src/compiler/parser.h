@@ -119,7 +119,7 @@ struct Expression pinned {
 struct Statement pinned {
     enum {
         STATEMENT_ASSIGN, STATEMENT_EXPRESSION,
-        STATEMENT_IF, STATEMENT_WHILE
+        STATEMENT_IF, STATEMENT_WHILE, STATEMET_INVALID
     } type;
     union {
         struct {
@@ -131,6 +131,7 @@ struct Statement pinned {
             Expression* condition;
             uint64_t statement_count;
             Statement** statements;
+            Statement* else_branch;
         } if_;
         struct {
             Expression* condition;
@@ -192,6 +193,12 @@ typedef struct FunctionTable {
     FunctionDef** data;
 } FunctionTable;
 
+// Linked list of array sizes
+typedef struct ArraySize {
+    uint64_t size;
+    struct ArraySize* next;
+} ArraySize;
+
 enum NameKind {
     NAME_VARIABLE,
     NAME_FUNCTION,
@@ -210,9 +217,17 @@ typedef struct NameData {
  
     enum NameKind kind;
     union {
+        // Used when kind == NAME_FUNCTION
         FunctionDef* func_def;
+        // Used when kind == NAME_TYPE
         TypeDef* type_def;
+        // Used when kind == NAME_VARIABLE and type is array
+        ArraySize* array_size;
     };
+    // For NAME_KEYWORD: TYPE_ID_INVALID
+    // For NAME_VARIABLE: Type of variable
+    // For NAME_TYPE: type_id of type itself (non-array type)
+    // For NAME_FUNCTION: unique type of the function
     type_id type;
 } NameData;
 
@@ -234,7 +249,10 @@ enum ParseErrorKind {
     PARSE_ERROR_INVALID_CHAR = 4,
     PARSE_ERROR_RESERVED_NAME = 5,
     PARSE_ERROR_BAD_NAME = 6,
-    PARSE_ERROR_INTERNAL = 7
+    PARSE_ERROR_INVALID_LITERAL = 7,
+    PARSE_ERROR_REDEFINITION = 8,
+    PARSE_ERROR_BAD_ARRAY_SIZE = 9,
+    PARSE_ERROR_INTERNAL = 10
 };
 
 typedef struct ParseError {
