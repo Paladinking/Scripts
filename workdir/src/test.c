@@ -6,251 +6,510 @@
 #include "glob.h"
 #include "printf.h"
 
-#define BUFFER_SIZE 4096
+#define OPTION_INVALID 0
+#define OPTION_VALID 1
+#define OPTION_LIST_NAMES 2
+#define OPTION_RECURSIVE 4
+#define OPTION_LINENUMBER 8
+#define OPTION_HELP 16
+#define OPTION_FLUSH 32
+#define OPTION_NO_FLUSH 64
 
-static inline char* last_newline(char* ptr, uint64_t len) {
-    while (len > 0) {
-        --len;
-        if (ptr[len] == '\n' || ptr[len] == '\r') {
-            return ptr + len;
+#define OPTION_IF(opt, cond, flag)                                           \
+    if (cond) {                                                              \
+        opt |= flag;                                                         \
+    }
+
+typedef char* (*next_line_fn_t)(LineCtx*, uint64_t*);
+typedef void (*abort_fn_t)(LineCtx*);
+
+const wchar_t *HELP_MESSAGE =
+    L"Usage: %s [OPTION]... PATTERN [FILE]...\n"
+    L"Search for PATTERN in each FILE.\n"
+    L"    --help              display this help message and exit\n"
+    L"-H, --with-filename     print filenames with output lines\n"
+    L"-h, --no-filename       suppress filenames on output lines\n"
+    L"-n, --line-number       print line numbers with output lines\n";
+
+uint32_t parse_options(int* argc, wchar_t** argv) {
+    if (argv == NULL || *argc == 0) {
+        return OPTION_INVALID;
+    }
+    FlagInfo flags[] = {
+        {L'n', L"line-number", NULL},
+        {L'H', L"with-filename", NULL},
+        {L'h', L"no-filename", NULL},
+        {L'\0', L"help", NULL},
+        {L'r', L"recursive", NULL}
+    };
+    const uint64_t flag_count = sizeof(flags) / sizeof(FlagInfo);
+    ErrorInfo errors;
+    if (!find_flags(argv, argc, flags, flag_count, &errors)) {
+        wchar_t *err_msg = format_error(&errors, flags, flag_count);
+        _wprintf_e(L"%s\n", err_msg);
+        _wprintf_e(L"Run '%s --help' for more information\n", argv[0]);
+        return OPTION_INVALID;
+    }
+
+    if (flags[3].count > 0) {
+        _wprintf(HELP_MESSAGE, argv[0]);
+        return OPTION_HELP;
+    }
+
+    uint32_t opts = OPTION_VALID;
+
+    if (flags[1].count > 0) {
+        if (flags[2].count > 0) {
+            if (flags[1].ord > flags[2].ord) {
+                opts |= OPTION_LIST_NAMES;
+            } 
+        } else {
+            opts |= OPTION_LIST_NAMES;
+        }
+    } else if (flags[2].count == 0) {
+        if (*argc > 3 || flags[4].count > 0) {
+            opts |= OPTION_LIST_NAMES;
         }
     }
-    return NULL;
+    OPTION_IF(opts, flags[0].count > 0, OPTION_LINENUMBER);
+    OPTION_IF(opts, flags[4].count > 0, OPTION_RECURSIVE);
+
+    return opts;
 }
 
-bool readlines(wchar_t* filename) {
-    HANDLE file = CreateFileW(filename, GENERIC_READ, FILE_SHARE_READ, NULL,
-                              OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | 
-                              FILE_FLAG_OVERLAPPED, NULL);
-    if (file == INVALID_HANDLE_VALUE) {
-        return false;
-    }
-    String b1, b2;
-    if (!String_create_capacity(&b1, BUFFER_SIZE + 50)) {
-        CloseHandle(file);
-        return false;
-    }
-    if (!String_create_capacity(&b2, BUFFER_SIZE + 50)) {
-        String_free(&b1);
-        CloseHandle(file);
-        return false;
-    }
-    bool status = false;
-    DWORD read = 0;
-    OVERLAPPED o;
-    o.Offset = 0;
-    o.OffsetHigh = 0;
-    o.hEvent = CreateEventW(NULL, FALSE, FALSE, NULL);
-    if (o.hEvent == NULL) {
-        CloseHandle(file);
-        String_free(&b1);
-        String_free(&b2);
-        return false;
-    }
-    if (!ReadFile(file, b1.buffer, BUFFER_SIZE, &read, &o) &&
-        GetLastError() != ERROR_IO_PENDING) {
-        goto end;
-    }
-    if (!GetOverlappedResultEx(file, &o, &read, INFINITE, FALSE)) {
-        if (GetLastError() == ERROR_HANDLE_EOF) {
-            status = true;
+void file_open_error(DWORD e, wchar_t* arg) {
+    if (e == ERROR_FILE_NOT_FOUND || e == ERROR_BAD_ARGUMENTS ||
+        e == ERROR_PATH_NOT_FOUND) {
+        _wprintf_e(L"Cannot access '%s': No such file or directory\n",
+            arg);
+    } else if (e == ERROR_ACCESS_DENIED) {
+        _wprintf_e(
+            L"Cannot open '%s': Permission denied\n", arg);
+    } else {
+        wchar_t buf[256];
+        if (FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM |
+                           FORMAT_MESSAGE_IGNORE_INSERTS,
+                           NULL, e, 0, buf, 256, NULL)) {
+            _wprintf_e(L"Cannot read '%s': %s", arg, buf);
+        } else {
+            _wprintf_e(L"Cannot read '%s'\n", arg);
         }
-        goto end;
     }
-    b1.length = read;
-    while (1) {
-        char* newline = last_newline(b1.buffer, b1.length);
+}
+
+typedef struct Line {
+    uint64_t lineno;
+    uint32_t len;
+    uint8_t bytes[];
+} Line;
+
+typedef struct LineBuffer {
+    uint32_t capacity;
+    uint32_t size;
+    Line* lines;
+} LineBuffer;
+
+bool LineBuffer_create(LineBuffer* b) {
+    b->capacity = 64;
+    b->size = 0;
+    b->lines = Mem_alloc(64);
+    if (b->lines == NULL) {
+        b->capacity = 0;
+        return false;
     }
+    return true;
+}
+
+void LineBuffer_free(LineBuffer* b) {
+    Mem_free(b->lines);
+    b->size = 0;
+    b->capacity = 0;
+}
+
+void LineBuffer_clear(LineBuffer* b) {
+    b->size = 0;
+}
+
+bool LineBuffer_append(LineBuffer* b, uint64_t lineno, uint32_t len, const char* line) {
+    uint64_t total_size = b->size;
+    total_size += len + sizeof(uint32_t) + sizeof(uint64_t);
+    if (total_size > b->capacity) {
+        uint64_t new_cap = ((uint64_t)b->capacity) * 2;
+        if (total_size > new_cap) {
+            new_cap = total_size;
+        }
+        if (new_cap > 0xffffffff) {
+            return false;
+        }
+        Line* newlines = Mem_realloc(b->lines, new_cap);
+        if (newlines == NULL) {
+            return false;
+        }
+        b->capacity = new_cap;
+        b->lines = newlines;
+    }
+    Line* l = (Line*)(((uint8_t*) b->lines) + b->size);
+    l->len = len;
+    l->lineno = lineno;
+    memcpy(l->bytes, line, len);
+    b->size = total_size;
+    return true;
+}
+
+Line* LineBuffer_get(LineBuffer* b, uint32_t offset, uint32_t* new_offset) {
+    if (offset >= b->size) {
+        return NULL;
+    }
+    Line* l = (Line*)(((uint8_t*) b->lines) + offset);
+    *new_offset = offset + l->len + sizeof(uint32_t) + sizeof(uint64_t);
+    return l;
+}
+
+void output_line(const char* line, uint32_t len, uint64_t lineno, uint32_t opts,
+                 const wchar_t* name, WString* utf16_buf) {
+    bool list_name = opts & OPTION_LIST_NAMES;
+    bool list_lineno = opts & OPTION_LINENUMBER;
+
+    if (WString_from_utf8_bytes(utf16_buf, line, len)) {
+        if (list_name) {
+            if (list_lineno) {
+                _wprintf(L"%s:%llu:%s\n", name, lineno,
+                         utf16_buf->buffer);
+            } else {
+                _wprintf(L"%s:%s\n", name, utf16_buf->buffer);
+            }
+        } else if (list_lineno) {
+            _wprintf(L"%llu:%s\n", lineno, utf16_buf->buffer);
+        } else {
+            _wprintf(L"%s\n", utf16_buf->buffer);
+        }
+    }
+}
 
 
-end:
-    CloseHandle(file);
-    String_free(&b1);
-    String_free(&b2);
-    CloseHandle(o.hEvent);
+bool match_file_flush(Regex* reg, LineCtx* ctx, next_line_fn_t next_line,
+                      abort_fn_t abort, LineBuffer* line_buf, WString* utf16_buf,
+                      const wchar_t* name, uint32_t opts) {
+    uint64_t len;
+    char* line;
+
+    LineBuffer_clear(line_buf);
+
+    uint64_t lineno = 0;
+    while ((line = next_line(ctx, &len)) != NULL) {
+        ++lineno;
+        const char* match;
+        uint64_t match_len;
+        RegexAllCtx regctx;
+        Regex_allmatch_init(reg, line, len, &regctx);
+        while (Regex_allmatch(&regctx, &match, 
+                    &match_len) == REGEX_MATCH) {
+            uint32_t line_len = (uint32_t) len;
+            output_line(line, line_len, lineno, opts, name, utf16_buf);
+            break;
+        }
+    }
+    return true;
+}
+
+bool match_file(Regex* reg, LineCtx* ctx, next_line_fn_t next_line,
+                abort_fn_t abort, LineBuffer* line_buf, WString* utf16_buf,
+                const wchar_t* name, uint32_t opts) {
+    uint64_t len;
+    char* line;
+
+    LineBuffer_clear(line_buf);
+
+    uint64_t lineno = 0;
+    while ((line = next_line(ctx, &len)) != NULL) {
+        ++lineno;
+        const char* match;
+        uint64_t match_len;
+        RegexAllCtx regctx;
+        Regex_allmatch_init(reg, line, len, &regctx);
+        while (Regex_allmatch(&regctx, &match, 
+                    &match_len) == REGEX_MATCH) {
+            uint32_t line_len = (uint32_t) len;
+            if (!LineBuffer_append(line_buf, lineno, len, line)) {
+                abort(ctx);
+                return false;
+            }
+            break;
+        }
+    }
+    return true;
+}
+
+static const wchar_t* STDIN_STR = L"(standard input)";
+
+bool start_iteration(LineCtx* ctx, wchar_t* arg, const wchar_t** name, next_line_fn_t* next_line,
+                     abort_fn_t* abort, bool* flush) {
+    if (arg[0] == L'-' && arg[1] == L'\0') {
+        HANDLE in = GetStdHandle(STD_INPUT_HANDLE);
+        if (GetFileType(in) == FILE_TYPE_CHAR) {
+            if (!ConsoleLineIter_begin(ctx, in)) {
+                _wprintf_e(L"Failed reading from stdin\n");
+                return false;
+            }
+            *next_line = ConsoleLineIter_next;
+            *abort = ConsoleLineIter_abort;
+            *flush = true;
+        } else {
+            if (!SyncLineIter_begin(ctx, in)) {
+                wchar_t buf[256];
+                DWORD e = GetLastError();
+                if (FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM |
+                                   FORMAT_MESSAGE_IGNORE_INSERTS,
+                                   NULL, e, 0, buf, 256, NULL)) {
+                    _wprintf_e(L"Failed reading from pipe: %s", buf);
+                } else {
+                    _wprintf_e(L"Cannot reading from pipe\n", arg);
+                }
+                return false;
+            }
+            *next_line = SyncLineIter_next;
+            *abort = SyncLineIter_abort;
+        }
+        *name = STDIN_STR;
+        return true;
+    }
+
+    if (is_directory(arg)) {
+        _wprintf_e(L"Cannot read '%s': Is a directory\n", arg);
+        return false;
+    }
+    if (!LineIter_begin(ctx, arg)) {
+        DWORD e = GetLastError();
+        file_open_error(e, arg);
+        return false;
+    }
+    *next_line = LineIter_next;
+    *abort = LineIter_abort;
+    *name = arg;
+    return true;
+}
+
+typedef enum MatchResult {
+    MATCH_OK, MATCH_FAIL, MATCH_ABORT
+} MatchResult;
+
+MatchResult iterate_file(Regex* reg, wchar_t* file, WString *utf16_buf, LineBuffer* line_buf, uint32_t opts) {
+    LineCtx ctx;
+    next_line_fn_t next_line;
+    abort_fn_t abort;
+    bool flush = (opts & OPTION_FLUSH) != 0;
+    const wchar_t* name;
+    if (!start_iteration(&ctx, file, &name, &next_line, &abort, &flush)) {
+        return MATCH_FAIL;
+    }
+    flush = true;
+    if (opts & OPTION_NO_FLUSH) {
+        flush = false;
+    }
+    if (flush) {
+        if (!match_file_flush(reg, &ctx, next_line, abort, line_buf, utf16_buf, name, opts)) {
+            return MATCH_ABORT;
+        }
+    } else {
+        if (!match_file(reg, &ctx, next_line, abort, line_buf, utf16_buf, name, opts)) {
+            return MATCH_ABORT;
+        }
+    }
+
+    bool list_name = opts & OPTION_LIST_NAMES;
+    bool list_lineno = opts & OPTION_LINENUMBER;
+
+    Line* line;
+    uint32_t offset = 0;
+    while ((line = LineBuffer_get(line_buf, offset, &offset)) != NULL) {
+        output_line((char*)line->bytes, line->len, line->lineno,
+                    opts, name, utf16_buf);
+    }
+
+    return MATCH_OK;
+}
+
+MatchResult recurse_dir(Regex* reg, wchar_t* dir, uint32_t opts) {
+    uint32_t name_offset = 0;
+    wchar_t* filename = dir;
+    if (dir == NULL) {
+        name_offset = 2;
+        filename = L".";
+    }
+    DWORD attr = GetFileAttributesW(filename);
+    if (attr == INVALID_FILE_ATTRIBUTES) {
+        file_open_error(GetLastError(), filename);
+        return MATCH_FAIL;
+    }
+    WString utf16_buf;
+    if (!WString_create(&utf16_buf)) {
+        return MATCH_ABORT;
+    }
+    LineBuffer line_buf;
+    if (!LineBuffer_create(&line_buf)) {
+        WString_free(&utf16_buf);
+        return MATCH_ABORT;
+    }
+    if (!(attr & FILE_ATTRIBUTE_DIRECTORY)) {
+        MatchResult success = iterate_file(reg, filename, &utf16_buf, &line_buf,
+                                           opts);
+        LineBuffer_free(&line_buf);
+        WString_free(&utf16_buf);
+        return success;
+    }
+
+    uint32_t stack_cap = 8;
+    WalkCtx* stack = Mem_alloc(stack_cap * sizeof(WalkCtx));
+    if (stack == NULL) {
+        WString_free(&utf16_buf);
+        return false;
+    }
+    MatchResult success = MATCH_OK;
+
+    uint32_t stack_size = 1;
+    WalkDir_begin(&stack[0], filename, true);
+    Path* path;
+    while (stack_size > 0) {
+        if (WalkDir_next(&stack[stack_size - 1], &path)) {
+            if (path->is_dir) {
+                if (stack_size == stack_cap) {
+                    stack_cap *= 2;
+                    WalkCtx* new_stack = Mem_realloc(stack, 
+                            stack_cap * sizeof(WalkCtx));
+                    if (new_stack == NULL) {
+                        _wprintf_e(L"out of memory\n");
+                        success = MATCH_ABORT;
+                        break;
+                    }
+                    stack = new_stack;
+                }
+                WalkDir_begin(&stack[stack_size], path->path.buffer, true);
+                ++stack_size;
+            } else {
+                if (!iterate_file(reg, path->path.buffer + name_offset,
+                                  &utf16_buf, &line_buf, opts)) {
+                    success = MATCH_FAIL;
+                }
+            }
+        } else {
+            --stack_size;
+        }
+    }
+    for (uint32_t ix = 0; ix < stack_size; ++ix) {
+        WalkDir_abort(&stack[ix]);
+    }
+    Mem_free(stack);
+    LineBuffer_free(&line_buf);
+    WString_free(&utf16_buf);
+    return success;
+}
+
+MatchResult recurse_files(Regex* reg, int argc, wchar_t** argv, uint32_t opts) {
+    WalkCtx ctx;
+    if (argc == 0) {
+        return recurse_dir(reg, NULL, opts);
+    }
+
+    MatchResult status = MATCH_OK;
+    for (int ix = 0; ix < argc; ++ix) {
+        MatchResult res = recurse_dir(reg, argv[ix], opts);
+        if (res == MATCH_ABORT) {
+            return MATCH_ABORT;
+        }
+        if (res != MATCH_OK) {
+            status = res;
+        }
+    }
+
     return status;
 }
 
+bool pattern_match(int argc, wchar_t** argv, uint32_t opts) {
+    if (argc < 2) {
+        if (argc > 0) {
+            _wprintf_e(L"Usage: %s [OPTION]... PATTERN [FILE]...\n", argv[0]);
+            _wprintf_e(L"Run '%s --help' for more information\n", argv[0]);
+        }
+        return false;
+    }
+
+    String s;
+    if (!String_create(&s)) {
+        _wprintf_e(L"Out of memory\n");
+        return false;
+    }
+    if (!String_from_utf16_str(&s, argv[1])) {
+        String_free(&s);
+        _wprintf_e(L"Illegal pattern '%s'\n", argv[1]);
+        return false;
+    }
+    Regex* reg = Regex_compile(s.buffer);
+    String_free(&s);
+    if (reg == NULL || reg->dfa == NULL) {
+        _wprintf_e(L"Illegal pattern '%s'\n", argv[1]);
+        return false;
+    }
+
+    if (opts & OPTION_RECURSIVE) {
+        MatchResult status = recurse_files(reg, argc - 2, argv + 2, opts);
+        Regex_free(reg);
+        return status == MATCH_OK;
+    }
+
+    WString utf16_buf;
+    if (!WString_create_capacity(&utf16_buf, 100)) {
+        Regex_free(reg);
+        _wprintf_e(L"Out of memory\n");
+        return false;
+    }
+    LineBuffer line_buf;
+    if (!LineBuffer_create(&line_buf)) {
+        Regex_free(reg);
+        WString_free(&utf16_buf);
+        _wprintf_e(L"Out of memory\n");
+        return false;
+    }
+
+    MatchResult status = MATCH_OK;
+
+    if (argc < 3) {
+        status = iterate_file(reg, L"-", &utf16_buf, &line_buf, opts);
+    }
+
+    for (int ix = 2; ix < argc; ++ix) {
+        MatchResult res = iterate_file(reg, argv[ix], &utf16_buf, &line_buf, 
+                                       opts);
+        if (res != MATCH_OK) {
+            status = res;
+            if (res == MATCH_ABORT) {
+                break;
+            }
+        }
+    }
+
+    LineBuffer_free(&line_buf);
+    WString_free(&utf16_buf);
+    Regex_free(reg);
+    return status == MATCH_OK;
+}
+
 int main() {
-    String s;
-    String_create_capacity(&s, 2 * BUFFER_SIZE + 50);
-    HANDLE file = CreateFileW(L"words3.txt", GENERIC_READ,
-                              FILE_SHARE_READ, NULL,
-                              OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL |
-                              FILE_FLAG_OVERLAPPED, NULL);
-    if (file == INVALID_HANDLE_VALUE) {
-        _printf("Failed opening file\n");
-        return 1;
-    }
-    OVERLAPPED o;
-    DWORD read = 0;
-    o.Offset = 0;
-    o.OffsetHigh = 0;
-    o.hEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
-    if (!o.hEvent) {
-        _printf("Failed creating event\n");
-        return 1;
-    }
-    if (!ReadFile(file, s.buffer, BUFFER_SIZE, &read, &o)) {
-        if (GetLastError() != ERROR_IO_PENDING) {
-            CloseHandle(o.hEvent);
-            return 1;
-        }
-    } 
-    if (!GetOverlappedResultEx(file, &o, &read, INFINITE, FALSE)) {
-        CloseHandle(o.hEvent);
-        return 1;
-    }
-    s.length = read;
+    wchar_t* args = GetCommandLineW();
+    int argc;
+    wchar_t** argv = parse_command_line(args, &argc);
 
-    while (1) {
-        if (s.capacity < s.length + BUFFER_SIZE) {
-            if (!String_reserve(&s, s.length + BUFFER_SIZE)) {
-                _printf("Out of memory\n");
-                return 1;
-            }
-            
-        }
+    uint32_t opts = parse_options(&argc, argv);
+    if (opts == OPTION_INVALID) {
+        Mem_free(argv);
+        ExitProcess(1);
+    }
+    if (opts == OPTION_HELP) {
+        Mem_free(argv);
+        ExitProcess(0);
     }
 
-    //Regex* reg = Regex_compile("point");
-    Regex* reg = Regex_compile("[0-9]\\{1,\\}.point*");
-    RegexAllCtx allctx;
-    LARGE_INTEGER start, end, freq, regtime;
-    QueryPerformanceFrequency(&freq);
-    QueryPerformanceCounter(&start);
-    regtime.QuadPart = 0;
+    bool success = pattern_match(argc, argv, opts);
+    Mem_free(argv);
 
-    uint64_t match_count;
-    Regex_allmatch_init(reg, s.buffer, s.length, &allctx);
-    const char* match;
-    uint64_t len;
-    while (Regex_allmatch_dfa(&allctx, &match, &len) == REGEX_MATCH) {
-        _printf("[%*.*s]\n", len, len, match);
-    }
-
-    QueryPerformanceCounter(&end);
-    _printf("Total time: %llu\n", (end.QuadPart - start.QuadPart) * 1000 / freq.QuadPart);
-
-    QueryPerformanceCounter(&start);
-
-    uint64_t ix = 0;
-    uint64_t count = 0;
-    struct RegexMatchCtx ctx;
-    ctx.visited = NULL;
-    ctx.to_visit = NULL;
-    while (ix < s.length) {
-        LARGE_INTEGER l1, l2;
-        //QueryPerformanceCounter(&l1);
-        char * start = s.buffer + ix;
-        char* line_end = strchr(start, '\n');
-        char* line_end2 = NULL; // strchr(start, '\r');
-        uint64_t next_ix;
-        if (line_end == NULL || line_end2 > line_end) {
-            if (line_end2 == NULL) {
-                next_ix = s.length;
-            } else {
-                next_ix = line_end2 - s.buffer + 1;
-            }
-        } else {
-            next_ix = line_end - s.buffer + 1;
-        }
-        if (line_end2 != NULL && line_end > line_end2) {
-            line_end = line_end2;
-        }
-        if (line_end == NULL) {
-            line_end = s.buffer + s.length;
-        }
-        uint64_t len = line_end - start;
-        QueryPerformanceCounter(&l1);
-        if (Regex_anymatch_dfa(reg, start, len) == REGEX_MATCH) {
-            outputa(start, next_ix - ix);
-        }
-        QueryPerformanceCounter(&l2);
-        regtime.QuadPart += l2.QuadPart - l1.QuadPart;
-        
-        //++count;
-        ix = next_ix;
-        //if (count % 1000 == 0) {
-        //    _printf("Passed: %llu\n", (ts.QuadPart) * 1000 / freq.QuadPart);
-        //    ts.QuadPart = 0;
-        //}
-    }
-
-    QueryPerformanceCounter(&end);
-    _printf("Total time: %llu\n", (end.QuadPart - start.QuadPart) * 1000 / freq.QuadPart);
-    _printf("Regex time: %llu\n", (regtime.QuadPart) * 1000 / freq.QuadPart);
-
-    return 0;
-/*
-    String s;
-
-    WString buf;
-    WString_create_capacity(&buf, 4096 * 2);
-    String_create(&s);
-
-    _printf("Enter regex: ");
-    DWORD read;
-    ReadConsoleW(GetStdHandle(STD_INPUT_HANDLE), buf.buffer, 4096 * 2, &read, NULL);
-    String_from_utf16_bytes(&s, buf.buffer, read);
-    while (s.length > 0 && (s.buffer[s.length - 1] == '\n' || s.buffer[s.length - 1] == '\r')) {
-        s.length -= 1;
-        s.buffer[s.length] = '\0';
-    }
-    Regex* e = Regex_compile(s.buffer);
-    if (e == NULL) {
-        _printf("Failed parsing regex\n");
-        return 1;
-    }
-    _printf("Compiled regex: '%s'\n", s.buffer);
-
-    struct RegexMatchCtx ctx;
-    ctx.visited = NULL;
-    ctx.to_visit = NULL;
-    while (1) {
-        ReadConsoleW(GetStdHandle(STD_INPUT_HANDLE), buf.buffer, 4096, &read, NULL);
-        String_from_utf16_bytes(&s, buf.buffer, read);
-        while (s.length > 0 && (s.buffer[s.length - 1] == '\n' || s.buffer[s.length - 1] == '\r')) {
-            s.length -= 1;
-            s.buffer[s.length] = '\0';
-        }
-        if (strcmp(s.buffer, "exit") == 0) {
-            break;
-        }
-        LARGE_INTEGER i1, i2;
-        LARGE_INTEGER freq;
-        QueryPerformanceFrequency(&freq);
-        QueryPerformanceCounter(&i1);
-        RegexResult res;
-        for(uint32_t i = 0; i < 1000000; ++i) {
-            res = Regex_fullmatch(e, s.buffer, s.length);
-        }
-        QueryPerformanceCounter(&i2);
-        _printf("Full NFA %d, Total time: %llu\n", res, (i2.QuadPart - i1.QuadPart) * 1000 / freq.QuadPart);
-
-        QueryPerformanceCounter(&i1);
-        for(uint32_t i = 0; i < 1000000; ++i) {
-            res = Regex_fullmatch_dfa(e, s.buffer, s.length);
-        }
-        QueryPerformanceCounter(&i2);
-        _printf("Full DFA %d, time: %llu\n", res, (i2.QuadPart - i1.QuadPart) * 1000 / freq.QuadPart);
-
-        QueryPerformanceCounter(&i1);
-        for(uint32_t i = 0; i < 1000000; ++i) {
-            res = Regex_anymatch(e, s.buffer, s.length, &ctx);
-        }
-        QueryPerformanceCounter(&i2);
-        _printf("Any NFA %d, time: %llu\n", res, (i2.QuadPart - i1.QuadPart) * 1000 / freq.QuadPart);
-
-        QueryPerformanceCounter(&i1);
-        for(uint32_t i = 0; i < 1000000; ++i) {
-            res = Regex_anymatch_dfa(e, s.buffer, s.length);
-        }
-        QueryPerformanceCounter(&i2);
-        _printf("Any DFA %d, time: %llu\n", res, (i2.QuadPart - i1.QuadPart) * 1000 / freq.QuadPart);
-
-        //_printf("'%s' nfa match: %u\n", s.buffer, Regex_fullmatch_dfa(e, s.buffer, s.length));
-        //_printf("'%s' anymatch: %u\n", s.buffer, Regex_anymatch(e, s.buffer, s.length));
-    }*/
-    return 0;
+    ExitProcess(success ? 0 : 1);
 }

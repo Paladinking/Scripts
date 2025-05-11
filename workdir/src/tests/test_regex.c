@@ -39,7 +39,7 @@
 
 #define END_PERF(msg) } \
     QueryPerformanceCounter(&end); \
-    _wprintf(L##msg L": %llu\n", (end.QuadPart - start.QuadPart) * 1000 / freq.QuadPart); }
+    _wprintf(L##msg L": %llu ms\n", (end.QuadPart - start.QuadPart) * 1000 / freq.QuadPart); }
 
 #define REGEX_ALLMATCH_END()                                      \
     ASSERT_TRUE(Regex_allmatch(&ctx, &m, &len) == REGEX_NO_MATCH, \
@@ -60,20 +60,21 @@ const char* TEST_LINES[] = {
     "All other lines are ignored.",
     "Lines in an environment variable file given by format 3 in paths.txt can have 5 different formats:",
     " 1. !!{VAR}",
-    "  Stop parsing file if {VAR} is defined.",
+    "  Stop parsing file if {VAR} is 100 defined.",
     " 2. **{TEXT}",
     "  {TEXT} is printed to the console.",
     " 3. {PATH}|{VAR}",
     "  {PATH} will be prepended to the environment variable {VAR}, separated by semi-colons.",
     " 4. {VALUE}>{VAR}",
     "  The environment variable {VAR} will be set to {VALUE}.",
-    "  Just >{VAR} is allowed and will delete the environment variable {VAR}.",
+    "  Just >{VAR} is allowed and will 99 delete the environment variable {VAR}.",
     " 5. {TO_SAVE}<{VAR}",
     "  The environment variable {VAR} will be set to the value in {TO_SAVE}.",
     "  This is usefull for saving and restoring environment variables.",
     "All other lines are again ignored."
 };
 const size_t TEST_LINES_VAR = 10;
+const size_t TEST_LINE_NUM = 13;
 const size_t TEST_LINE_COUNT = sizeof(TEST_LINES) / sizeof(const char*);
 
 int main() {
@@ -157,6 +158,15 @@ int main() {
         REGEX_ALLMATCH_MATCH(0, 27);
     REGEX_ALLMATCH_END();
     Regex_free(reg);
+
+    COMPILE_REGEX(reg, "\xf0\x9f\x92\xb2\xf0\x9f\x92\xb2\xf0\x9f\x92\xb2*");
+    REGEX_FULLMATCH(reg, "\xf0\x9f\x92\xb2\xf0\x9f\x92\xb2\xf0\x9f\x92\xb2");
+
+    REGEX_ALLMATCH_BEGIN(reg, "\xc0\xbbHello \xf0\x9f\x92\xb2\r\nHello world\r\n\xf0\x9f\x92\xb2\xf0\x9f\x92\xb2\xf0\x9f\x92\xb2Hello\r\n");
+        REGEX_ALLMATCH_MATCH(27, 12);
+    REGEX_ALLMATCH_END();
+
+    Regex_free(reg);
     
     _wprintf(L"All tests successfull\n");
 
@@ -169,13 +179,32 @@ int main() {
         for (uint64_t i = 0; i < TEST_LINE_COUNT; ++i) {
             Regex_allmatch_init(reg, TEST_LINES[i], strlen(TEST_LINES[i]), &ctx);
             while (Regex_allmatch(&ctx, &s, &len)) {
+                total_matches += len;
+            }
+        }
+        ASSERT_TRUE(total_matches == TEST_LINES_VAR * 3,
+                    L"Expected %d matches, got %d",
+                    total_matches, TEST_LINES_VAR * 3);
+    END_PERF("VAR time");
+    Regex_free(reg);
+
+    COMPILE_REGEX(reg, "[0-9]\\{1,\\}");
+    START_PERF(1000000);
+        RegexAllCtx ctx;
+        const char* s;
+        uint64_t len;
+        uint64_t total_matches = 0;
+        for (uint64_t i = 0; i < TEST_LINE_COUNT; ++i) {
+            Regex_allmatch_init(reg, TEST_LINES[i], strlen(TEST_LINES[i]), &ctx);
+            while (Regex_allmatch(&ctx, &s, &len)) {
                 total_matches += 1;
             }
         }
-        ASSERT_TRUE(total_matches == TEST_LINES_VAR,
+        ASSERT_TRUE(total_matches == TEST_LINE_NUM,
                     L"Expected %d matches, got %d",
-                    total_matches, TEST_LINES_VAR);
-    END_PERF("VAR time");
+                    total_matches, TEST_LINE_NUM);
+
+    END_PERF("NUM time");
     Regex_free(reg);
 
     ExitProcess(0);

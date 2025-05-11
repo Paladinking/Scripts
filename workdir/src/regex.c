@@ -2098,7 +2098,7 @@ void Regex_allmatch_init(Regex* regex, const char* str, uint64_t len, RegexAllCt
 RegexResult Regex_allmatch_dfa(RegexAllCtx* ctx, const char** match, uint64_t* match_len) {
     NodeDFA* dfa = ctx->regex->dfa;
     uint64_t len = ctx->len;
-    const char* str = ctx->str;
+    uint8_t* str = (uint8_t*)ctx->str;
     for (uint64_t s = ctx->start; s <= len; ++s) {
         uint32_t node_ix = 0;
         if (len - s < ctx->regex->minlen) {
@@ -2131,7 +2131,7 @@ RegexResult Regex_allmatch_dfa(RegexAllCtx* ctx, const char** match, uint64_t* m
                 if (ix >= len) {
                     break;
                 }
-                uint8_t c = (uint8_t)str[ix];
+                uint8_t c = str[ix];
                 if (c < 128) {
                     node_ix = dfa[node_ix].ascii_edges[dfa[node_ix].ascii[c]];
                     if (node_ix == DFA_REJECT_NODE)  {
@@ -2139,7 +2139,7 @@ RegexResult Regex_allmatch_dfa(RegexAllCtx* ctx, const char** match, uint64_t* m
                     }
                     ++ix;
                 } else {
-                    uint8_t* bytes = (uint8_t*)str + ix;
+                    uint8_t* bytes = str + ix;
                     uint8_t seq_len = get_utf8_seq(bytes, len - ix);
                     uint64_t n_ix = node_ix;
                     node_ix = dfa[n_ix].default_edge;
@@ -2165,7 +2165,7 @@ RegexResult Regex_allmatch_dfa(RegexAllCtx* ctx, const char** match, uint64_t* m
             } else {
                 ctx->start = accept_ix;
             }
-            *match = str + s;
+            *match = (char*)str + s;
             *match_len = accept_ix - s;
             return REGEX_MATCH;
         }
@@ -2175,6 +2175,7 @@ RegexResult Regex_allmatch_dfa(RegexAllCtx* ctx, const char** match, uint64_t* m
 
 RegexResult Regex_anymatch_dfa(Regex* regex, const char* str, uint64_t len) {
     NodeDFA* dfa = regex->dfa;
+    uint8_t* bytes = (uint8_t*) str;
     for (uint64_t s = 0; s < len; ++s) {
         uint32_t node_ix = 0;
         if (len - s < regex->minlen) {
@@ -2190,14 +2191,14 @@ RegexResult Regex_anymatch_dfa(Regex* regex, const char* str, uint64_t len) {
                 }
                 // for some reason, loop is faster than memcmp...
                 for (uint64_t i = 0; i < dfa[node_ix].literal.str_len; ++i) {
-                    if (dfa[node_ix].literal.str[i] != str[ix + i]) {
+                    if (dfa[node_ix].literal.str[i] != bytes[ix + i]) {
                         goto next;
                     }
                 }
                 ix += dfa[node_ix].literal.str_len;
                 node_ix = dfa[node_ix].literal.node_ix;
             } else {
-                uint8_t c = (uint8_t)str[ix];
+                uint8_t c = bytes[ix];
                 if (c < 128) {
                     ++ix;
                     node_ix = dfa[node_ix].ascii_edges[dfa[node_ix].ascii[c]];
