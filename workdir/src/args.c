@@ -9,17 +9,18 @@ BOOL parse_uintw(const wchar_t* s, uint64_t* i, uint8_t base) {
         return FALSE;
     }
     if (base != 10 && base != 8 && base != 16) {
-        if (*s == L'0' && ((*s + 1) == L'x' || (*s + 1) == L'X')) {
+        if (*s == L'0' && (*(s + 1) == L'x' || *(s + 1) == L'X')) {
             base = 16;
+            s += 2;
         } else if (*s == L'0') {
             base = 8;
+            s += 1;
         } else {
             base = 10;
         }
     }
 
     if (base == 16) { // Hex
-        s += 2;
         while (*s != L'\0') {
             wchar_t c = *s;
             if (n > 0xfffffffffffffff) {
@@ -38,7 +39,6 @@ BOOL parse_uintw(const wchar_t* s, uint64_t* i, uint8_t base) {
             ++s;
         }
     } else if (base == 8) { // Octal
-        s += 1;
         while (*s != L'\0') {
             wchar_t c = *s;
             if (n > 0x1fffffffffffffff) {
