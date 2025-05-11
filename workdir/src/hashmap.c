@@ -223,8 +223,8 @@ HashElement* HashMap_Get(HashMap* map, const ckey_t key) {
 #ifdef HASHMAP_STRINGKEY
     uint32_t len = keylen(key);
     ckey_t buf;
-    CHECKED_ALLOC(buf, (len + 1) * sizeof(ckey_t));
-    memcpy(buf, key, (len + 1) * sizeof(ckey_t));
+    CHECKED_ALLOC(buf, (len + 1) * sizeof(*key));
+    memcpy(buf, key, (len + 1) * sizeof(*key));
     HashElement he = {buf, NULL};
 #else
     HashElement he = {key, NULL};
@@ -267,12 +267,25 @@ static void HashMap_RemoveElement(HashMap* map, HashBucket* bucket, HashElement*
         next->prev_bucket_ix = element->prev_bucket_ix;
         next->prev_elem_ix = element->prev_elem_ix;
     }
+    uint32_t ix = bucket->size - 1;
+    HashElement* last = &bucket->data[ix];
+    if (bucket_ix == map->first_bucket_ix && ix == map->first_elem_ix) {
+        map->first_elem_ix = elem_ix;
+    } else {
+        map->buckets[last->prev_bucket_ix].data[last->prev_elem_ix].next_elem_ix = elem_ix;
+    }
+    if (bucket_ix == map->last_bucket_ix && ix == map->last_elem_ix) {
+        map->last_elem_ix = elem_ix;
+    } else {
+        map->buckets[last->next_bucket_ix].data[last->next_elem_ix].prev_elem_ix = elem_ix;
+    }
 
 #endif
 #ifdef HASHMAP_STRINGKEY
     HASHMAP_FREE_FN((ckey_t)element->key);
 #endif
-    memmove(element, element + 1, (bucket->size - elem_ix - 1) * sizeof(HashElement));
+    memmove(&bucket->data[elem_ix], &bucket->data[bucket->size - 1],
+            sizeof(HashElement));
     --bucket->size;
     --map->element_count;
 }
