@@ -136,6 +136,10 @@ def main():
                  includes=["src"], namespace="tests"):
         Executable("test_regex.exe", "src/tests/test_regex.c", "src/regex.c",
                    "src/printf.c", "src/dynamic_string.c", "src/args.c", ntdll)
+
+    with Context(group="compiler", includes=["src"], namespace="compiler"):
+        Executable("parser.exe", "src/compiler/parser.c", "src/printf.c", hashmap,
+                   "src/dynamic_string.c", "src/args.c", "src/arena.c", ntdll)
     
     #generate()
     build(__file__)
