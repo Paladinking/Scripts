@@ -55,6 +55,7 @@ typedef uint64_t name_id;
 #define NAME_ID_STRUCT 1
 #define NAME_ID_IF 2
 #define NAME_ID_WHILE 3
+#define NAME_ID_ELSE 4
 
 // Index into hash table
 typedef uint32_t hash_id;
@@ -119,7 +120,8 @@ struct Expression pinned {
 struct Statement pinned {
     enum {
         STATEMENT_ASSIGN, STATEMENT_EXPRESSION,
-        STATEMENT_IF, STATEMENT_WHILE, STATEMET_INVALID
+        STATEMENT_IF, STATEMENT_WHILE,
+        STATEMET_INVALID
     } type;
     union {
         struct {
@@ -142,11 +144,18 @@ struct Statement pinned {
     LineInfo line;
 };
 
+typedef struct CallArg pinned {
+    name_id name;
+    LineInfo line;
+} CallArg;
+
 typedef struct FunctionDef pinned {
-    const char* name;
+    name_id name;
     type_id return_type;
     uint64_t arg_count;
-    VariableExpr* args;
+    CallArg* args;
+    uint64_t statement_count;
+    Statement** statements;
     LineInfo line;
 } FunctionDef;
 
@@ -249,10 +258,11 @@ enum ParseErrorKind {
     PARSE_ERROR_INVALID_CHAR = 4,
     PARSE_ERROR_RESERVED_NAME = 5,
     PARSE_ERROR_BAD_NAME = 6,
-    PARSE_ERROR_INVALID_LITERAL = 7,
-    PARSE_ERROR_REDEFINITION = 8,
-    PARSE_ERROR_BAD_ARRAY_SIZE = 9,
-    PARSE_ERROR_INTERNAL = 10
+    PARSE_ERROR_BAD_TYPE = 7,
+    PARSE_ERROR_INVALID_LITERAL = 8,
+    PARSE_ERROR_REDEFINITION = 9,
+    PARSE_ERROR_BAD_ARRAY_SIZE = 10,
+    PARSE_ERROR_INTERNAL = 11
 };
 
 typedef struct ParseError {
