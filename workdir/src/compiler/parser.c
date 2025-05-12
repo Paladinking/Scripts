@@ -99,6 +99,16 @@ LineInfo current_pos(Parser* parser) {
     return i;
 }
 
+static inline bool is_identifier(uint8_t c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+             c == '_' || (c >= '0' && c <= '9');
+}
+
+static inline bool is_identifier_start(uint8_t c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c == '_');
+}
+
 name_id insert_name(Parser* parser, const uint8_t* name, uint32_t len, type_id type, enum NameKind kind) {
     hash_id h = hash(name, len);
     NameTable* names = &parser->name_table;
@@ -303,6 +313,34 @@ uint8_t expect_data(Parser* parser) {
     return parser->indata[parser->pos];
 }
 
+bool expect_char(Parser* parser, uint8_t c) {
+    skip_spaces(parser);
+    if (expect_data(parser) != c) {
+        add_error(parser, PARSE_ERROR_INVALID_CHAR, current_pos(parser));
+        return false;
+    }
+    parser->pos += 1;
+    return true;
+}
+
+bool peek_keyword(Parser* parser, name_id keyword) {
+    skip_spaces(parser);
+    const uint8_t* name = parser->name_table.data[keyword].name;
+    uint32_t name_len = parser->name_table.data[keyword].name_len;
+    if (parser->input_size - parser->pos < name_len) {
+        return false;
+    }
+    if (memcmp(name, parser->indata + parser->pos, name_len) != 0) {
+        return false;
+    }
+    if (parser->input_size - parser->pos > name_len &&
+        is_identifier(parser->indata[parser->pos + name_len])) {
+        return false;
+    }
+    parser->pos += name_len;
+    return true;
+}
+
 
 bool parse_uint(Parser* parser, uint64_t* i, uint8_t base) {
     *i = 0;
@@ -392,16 +430,6 @@ bool parse_uint(Parser* parser, uint64_t* i, uint8_t base) {
     return true;
 }
 
-static inline bool is_identifier(uint8_t c) {
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-             c == '_' || (c >= '0' && c <= '9');
-}
-
-static inline bool is_identifier_start(uint8_t c) {
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-            (c == '_');
-}
-
 const uint8_t* parse_name(Parser* parser, uint32_t* len) {
     uint64_t name_len = 0;
     const uint8_t* base = parser->indata + parser->pos;
@@ -429,7 +457,6 @@ const uint8_t* parse_name(Parser* parser, uint32_t* len) {
     *len = name_len;
     return base;
 }
-
 
 name_id parse_known_name(Parser* parser) {
     uint32_t len = 0;
@@ -702,9 +729,27 @@ bool parse_number_literal(Parser* parser, uint64_t* i, double* d, bool* is_int) 
     return true;
 }
 
+type_id parse_known_type(Parser* parser) {
+    uint32_t len = 0;
+    const uint8_t* base = parse_name(parser, &len);
+    if (base == NULL) {
+        return TYPE_ID_INVALID;
+    }
+    name_id name = find_name(parser, base, len);
+    if (name == NAME_ID_INVALID ||
+         parser->name_table.data[name].kind != NAME_TYPE) {
+        LineInfo l = {true, base - parser->indata, parser->pos};
+        add_error(parser, PARSE_ERROR_BAD_TYPE, l);
+        return TYPE_ID_INVALID;
+    }
+
+    // TOTO: Array types...
+
+    return parser->name_table.data[name].type;
+}
+
 // counts the number of arguments to a call
-uint64_t count_args(Parser* parser) {
-    uint64_t ix = parser->pos;
+uint64_t count_args(Parser* parser, uint64_t* pos) {
     uint64_t count = 1;
     uint64_t open_par = 0;
     uint64_t open_bra = 0;
@@ -719,6 +764,9 @@ uint64_t count_args(Parser* parser) {
             ++open_par;
         } else if (c == ')') {
             if (open_par == 0) {
+                if (pos != NULL) {
+                    *pos = ix;
+                }
                 return count;
             }
             --open_par;
@@ -727,6 +775,9 @@ uint64_t count_args(Parser* parser) {
             ++open_bra;
         } else if (c == ']') {
             if (open_bra == 0) {
+                if (pos != NULL) {
+                    *pos = ix;
+                }
                 return count;
             }
             --open_bra;
@@ -734,6 +785,9 @@ uint64_t count_args(Parser* parser) {
             ++open_cur;
         } else if (c == '}') {
             if (open_cur == 0) {
+                if (pos != NULL) {
+                    *pos = ix;
+                }
                 return count;
             }
             --open_cur;
@@ -749,6 +803,9 @@ uint64_t count_args(Parser* parser) {
         } else if (c == ',' && open_par == 0 && open_bra == 0 && open_cur == 0) {
             ++count;
         }
+    }
+    if (pos != NULL) {
+        *pos = parser->input_size;
     }
     return count;
 }
@@ -810,7 +867,7 @@ start:
         Expression* n = Arena_alloc_type(&parser->arena, Expression);
         skip_spaces(parser);
         parser->pos += 1;
-        uint64_t count = count_args(parser);
+        uint64_t count = count_args(parser, NULL);
         if (count == 0) {
             *n = *e;
             e->type = EXPRESSION_CALL;
@@ -1209,22 +1266,59 @@ Statement** parse_statements(Parser* parser, uint64_t* count) {
             stack_size -= top_count;
             parser->pos += 1;
             end_scope(parser);
+            skip_spaces(parser);
             if (stack_size > 0) {
                 uint64_t last_top_count = 0;
                 Statement* top = stack[stack_size - 1].statement;
                 if (top->type == STATEMENT_IF) {
+                    while (top->if_.else_branch != NULL) {
+                        top = top->if_.else_branch;
+                    }
                     top->if_.statements = list;
                     last_top_count = top->if_.statement_count;
                     top->if_.statement_count = top_count;
+                    top->line.end = parser->pos;
+                    top_count = last_top_count;
+                    skip_spaces(parser);
+                    uint64_t else_pos = parser->pos;
+                    if (peek_keyword(parser, NAME_ID_ELSE)) {
+                        Expression* cond = NULL;
+                        if (peek_keyword(parser, NAME_ID_IF)) {
+                            if (!expect_char(parser, '(')) {
+                                skip_statement(parser);
+                                continue;
+                            }
+                            cond = parse_expression(parser);
+                            if (cond->type == EXPRESSION_INVALID ||
+                                !expect_char(parser, ')')) {
+                                skip_statement(parser);
+                                continue;
+                            }
+                        }
+                        if (!expect_char(parser, '{')) {
+                            skip_statement(parser);
+                            continue;
+                        }
+                        Statement* s = Arena_alloc_type(&parser->arena, Statement);
+                        s->type = STATEMENT_IF;
+                        s->if_.condition = cond;
+                        s->if_.statement_count = top_count;
+                        s->if_.else_branch = NULL;
+                        s->line.start = else_pos;
+                        top->if_.else_branch = s;
+                        top_count = 0;
+                        begin_scope(parser);
+                        continue;
+                    }
                 } else if (top->type == STATEMENT_WHILE) {
                     top->while_.statements = list;
                     last_top_count = top->while_.statement_count;
                     top->while_.statement_count = top_count;
+                    top->line.end = parser->pos;
+                    top_count = last_top_count;
                 } else {
                     fatal_error(parser, PARSE_ERROR_INTERNAL, current_pos(parser));
                 }
-                top->line.end = parser->pos;
-                top_count = last_top_count;
             } else {
                 *count = top_count;
                 Mem_free(stack);
@@ -1243,35 +1337,19 @@ Statement** parse_statements(Parser* parser, uint64_t* count) {
             NameTable* names = &parser->name_table;
             if (names->data[name].kind == NAME_KEYWORD) {
                 Statement* s; 
-                skip_spaces(parser);
-                if (expect_data(parser) != '(') {
-                    add_error(parser, PARSE_ERROR_INVALID_CHAR,
-                    current_pos(parser));
+                if (!expect_char(parser, '(')) {
                     skip_statement(parser);
                     continue;
                 }
-                parser->pos += 1;
                 Expression* e = parse_expression(parser);
                 if (e->type == EXPRESSION_INVALID) {
                     skip_statement(parser);
                     continue;
                 }
-                skip_spaces(parser);
-                if (expect_data(parser) != ')') {
-                    add_error(parser, PARSE_ERROR_INVALID_CHAR,
-                    current_pos(parser));
+                if (!expect_char(parser, ')') || !expect_char(parser, '{')) {
                     skip_statement(parser);
                     continue;
                 }
-                parser->pos += 1;
-                skip_spaces(parser);
-                if (expect_data(parser) != '{') {
-                    add_error(parser, PARSE_ERROR_INVALID_CHAR,
-                    current_pos(parser));
-                    skip_statement(parser);
-                    continue;
-                }
-                parser->pos += 1;
 
                 if (name == NAME_ID_WHILE) {
                     s = Arena_alloc_type(&parser->arena, Statement);
@@ -1283,6 +1361,7 @@ Statement** parse_statements(Parser* parser, uint64_t* count) {
                     s->type = STATEMENT_IF;
                     s->if_.statement_count = top_count + 1;
                     s->if_.condition = e;
+                    s->if_.else_branch = NULL;
                 } else {
                     parser->pos = pos;
                     add_error(parser, PARSE_ERROR_BAD_NAME, current_pos(parser));
@@ -1315,14 +1394,10 @@ Statement** parse_statements(Parser* parser, uint64_t* count) {
                         skip_statement(parser);
                         continue;
                     }
-                    skip_spaces(parser);
-                    c = expect_data(parser);
-                    if (c != ']') {
-                        add_error(parser, PARSE_ERROR_INVALID_CHAR, current_pos(parser));
+                    if (!expect_char(parser, ']')) {
                         skip_statement(parser);
                         continue;
                     }
-                    parser->pos += 1;
                     t = array_of(parser, t);
                     skip_spaces(parser);
                     c = expect_data(parser);
@@ -1357,12 +1432,10 @@ Statement** parse_statements(Parser* parser, uint64_t* count) {
                         skip_statement(parser);
                         continue;
                     }
-                    skip_spaces(parser);
-                    if (expect_data(parser) != ';') {
+                    if (!expect_char(parser, ';')) {
                         skip_statement(parser);
                         continue;
                     }
-                    parser->pos += 1;
                     Statement* s = Arena_alloc_type(&parser->arena, Statement);
                     s->type = STATEMENT_ASSIGN;
                     Expression* lhs = Arena_alloc_type(&parser->arena, Expression);
@@ -1432,6 +1505,106 @@ Statement** parse_statements(Parser* parser, uint64_t* count) {
     }
 }
 
+// 'fn' is already consumed
+bool scan_function(Parser* parser) {
+    uint64_t pos = parser->pos - 2;
+    skip_spaces(parser);
+    uint32_t len;
+    const uint8_t* name = parse_name(parser, &len);
+    if (name == NULL) {
+        return false;
+    }
+    if (!expect_char(parser, '(')) {
+        return false;
+    }
+
+    uint64_t skip;
+    uint64_t arg_count = count_args(parser, &skip);
+    parser->pos = skip;
+    if (!expect_char(parser, ')') || !expect_char(parser, '-') || 
+        expect_data(parser) != '>') {
+        return false;
+    }
+
+    skip_statement(parser);
+
+    FunctionDef* func = Arena_alloc_type(&parser->arena, FunctionDef);
+    func->arg_count = arg_count;
+    func->return_type = TYPE_ID_INVALID;
+    func->line.start = pos;
+    func->line.end = parser->pos;
+
+    name_id id = insert_function_name(parser, name, len, func);
+    if (id == NAME_ID_INVALID) {
+        LineInfo l = {true, pos, parser->pos};
+        add_error(parser, PARSE_ERROR_BAD_NAME, l);
+        return false;
+    }
+
+    func->name = id;
+    return true;
+}
+
+
+bool parse_function(Parser* parser) {
+    skip_spaces(parser);
+    name_id name = parse_known_name(parser);
+    if (name == NAME_ID_INVALID) {
+        return false;
+    }
+    if (parser->name_table.data[name].kind != NAME_FUNCTION) {
+        add_error(parser, PARSE_ERROR_BAD_NAME, current_pos(parser));
+        return false;
+    }
+
+    FunctionDef* f = parser->name_table.data[name].func_def;
+
+    CallArg* args = Arena_alloc_count(&parser->arena, CallArg, f->arg_count);
+    if (!expect_char(parser, '(')) {
+        return false;
+    }
+    f->args = args;
+    begin_scope(parser);
+    for (uint64_t ix = 0; ix < f->arg_count; ++ix) {
+        uint8_t end = ix == f->arg_count - 1 ? ')' : ',';
+        skip_spaces(parser);
+        uint64_t p = parser->pos;
+        type_id var_type = parse_known_type(parser);
+
+        uint32_t len;
+        skip_spaces(parser);
+        const uint8_t* var_name = parse_name(parser, &len);
+        if (var_type == TYPE_ID_INVALID || var_name == NULL) {
+            while (expect_data(parser) != end && expect_data(parser) != '{') {
+                parser->pos += 1;
+            }
+            if (expect_data(parser) != '{') {
+                parser->pos += 1;
+            }
+            args[ix].name = NAME_ID_INVALID;
+            args[ix].line.real = false;
+            continue;
+        }
+        name_id var_id = insert_variable_name(parser, var_name, len, var_type, p);
+        args[ix].name = var_id;
+        args[ix].line.start = p;
+        args[ix].line.end = parser->pos;
+        expect_char(parser, end);
+    }
+    if (!expect_char(parser, '{')) {
+        end_scope(parser);
+        return false;
+    }
+
+    uint64_t statement_count;
+    Statement** statements = parse_statements(parser, &statement_count);
+    f->statements = statements;
+    f->statement_count = statement_count;
+
+    return true;
+}
+
+
 bool Parser_create(Parser* parser) {
     if (!Arena_create(&parser->arena, 0x7fffffff, parser_out_of_memory,
                       parser)) {
@@ -1494,6 +1667,7 @@ bool Parser_create(Parser* parser) {
     insert_keyword(parser, "struct", NAME_ID_STRUCT);
     insert_keyword(parser, "if", NAME_ID_IF);
     insert_keyword(parser, "while", NAME_ID_WHILE);
+    insert_keyword(parser, "else", NAME_ID_ELSE);
 
     parser_add_builtin(parser, TYPE_ID_UINT64, TYPEDEF_UINT64, "uint64");
     parser_add_builtin(parser, TYPE_ID_INT64, TYPEDEF_INT64, "int64");
@@ -1772,13 +1946,22 @@ void fmt_statement(Statement* statement, Parser* parser, WString* dest) {
         WString_append(dest, L'\n');
         return;
     case STATEMENT_IF:
-        WString_extend(dest, L"if ");
-        fmt_expression(statement->if_.condition, parser, dest);
-        WString_extend(dest, L" {\n");
+        if (statement->if_.condition) {
+            WString_extend(dest, L"if ");
+            fmt_expression(statement->if_.condition, parser, dest);
+            WString_append(dest, L' ');
+        }
+        WString_extend(dest, L"{\n");
         for (uint64_t ix = 0; ix < statement->if_.statement_count; ++ix) {
             fmt_statement(statement->if_.statements[ix], parser, dest);
         }
-        WString_extend(dest, L"}\n");
+        WString_extend(dest, L"}");
+        if (statement->if_.else_branch != NULL) {
+            WString_extend(dest, L" else ");
+            fmt_statement(statement->if_.else_branch, parser, dest);
+        } else {
+            WString_append(dest, '\n');
+        }
         return;
     case STATEMENT_WHILE:
         WString_extend(dest, L"while ");
@@ -1950,7 +2133,9 @@ int main() {
     dump_errors(&parser);
 
     uint64_t count;
-    data = "uint64 a = 10; uint64 b = 2 * 2; a + b; if (a > b) { float64 x = 10; }}";
+    data = "uint64 a = 10; uint64 b = 2 * 2; a + b; if (a > b) { float64 x = 10; }"
+           "else if (b > a) { float64 x = 11; while (x > 0) { x = x - 1; } } else { a = 5; }"
+           "uint64[10] array; array[0] = 123; }";
     parser.indata = (uint8_t*)data;
     parser.input_size = strlen(data);
     parser.pos = 0;
