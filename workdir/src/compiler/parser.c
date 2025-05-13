@@ -1546,22 +1546,22 @@ bool scan_function(Parser* parser) {
 }
 
 
-bool parse_function(Parser* parser) {
+FunctionDef* parse_function(Parser* parser) {
     skip_spaces(parser);
     name_id name = parse_known_name(parser);
     if (name == NAME_ID_INVALID) {
-        return false;
+        return NULL;
     }
     if (parser->name_table.data[name].kind != NAME_FUNCTION) {
         add_error(parser, PARSE_ERROR_BAD_NAME, current_pos(parser));
-        return false;
+        return NULL;
     }
 
     FunctionDef* f = parser->name_table.data[name].func_def;
 
     CallArg* args = Arena_alloc_count(&parser->arena, CallArg, f->arg_count);
     if (!expect_char(parser, '(')) {
-        return false;
+        return NULL;
     }
     f->args = args;
     begin_scope(parser);
@@ -1593,7 +1593,7 @@ bool parse_function(Parser* parser) {
     }
     if (!expect_char(parser, '{')) {
         end_scope(parser);
-        return false;
+        return NULL;
     }
 
     uint64_t statement_count;
@@ -1601,7 +1601,30 @@ bool parse_function(Parser* parser) {
     f->statements = statements;
     f->statement_count = statement_count;
 
-    return true;
+    return f;
+}
+
+
+bool parse_program(Parser* parser) {
+    while (1) {
+        skip_spaces(parser);
+        if (eof(parser)) {
+            break;
+        }
+
+        uint64_t pos = parser->pos;
+        name_id id = parse_known_name(parser);
+        if (id == NAME_ID_INVALID) {
+            skip_statement(parser);
+            continue;
+        } else if (id != NAME_ID_FN) {
+            LineInfo l = {true, pos, parser->pos};
+            add_error(parser, PARSE_ERROR_BAD_NAME, l);
+            skip_statement(parser);
+            continue;
+        }
+        scan_function(parser);
+    }
 }
 
 
