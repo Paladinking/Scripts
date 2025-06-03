@@ -467,7 +467,6 @@ void DynamicMatch_invalidate(DynamicMatch* ptr) {
     WString buf;
     WString_create_capacity(&buf, 20);
 
-
     for (int j = 0; j < ptr->node_count; ++j) {
         wchar_t* hash_postfix = ptr->nodes[j].parent->hash_postfix;
         for (unsigned ix = 0; ix < ptr->match_count; ++ix) {

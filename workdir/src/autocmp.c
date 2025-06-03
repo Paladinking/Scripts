@@ -116,13 +116,43 @@ bool gDo_rsearch = true;
 bool gHas_history = false;
 wchar_t history_file_name[1025];
 
+wchar_t* last_cmd = NULL;
+DWORD last_cmd_len = 0;
+DWORD last_cmd_cap = 0;
+
 void add_history(wchar_t* buf, DWORD len) {
     if (!gDo_history || !gHas_history || len == 0) {
         return;
     }
-    if (buf[len - 1] != L'\n' && buf[len - 1] != L'\r') {
+    if (buf[len - 1] != L'\n' && buf[len - 1] != L'\r' || buf[0] == L'@') {
         return;
     }
+    if (last_cmd == NULL) {
+        last_cmd = Mem_alloc(len * sizeof(wchar_t));
+        if (last_cmd != NULL) {
+            memcpy(last_cmd, buf, len * sizeof(wchar_t));
+            last_cmd_len = len;
+            last_cmd_cap = len;
+        }
+    } else {
+        if (last_cmd_len == len &&
+            memcmp(last_cmd, buf, len * sizeof(wchar_t)) == 0) {
+            return;
+        }
+        if (len > last_cmd_cap) {
+            Mem_free(last_cmd);
+            last_cmd = Mem_alloc(len * sizeof(wchar_t));
+            if (last_cmd != NULL) {
+                last_cmd_len = len;
+                last_cmd_cap = len;
+                memcpy(last_cmd, buf, len * sizeof(wchar_t));
+            }
+        } else {
+            memcpy(last_cmd, buf, len * sizeof(wchar_t));
+            last_cmd_len = len;
+        }
+    }
+
     HANDLE file = CreateFileW(history_file_name, GENERIC_WRITE,
                               0, NULL, OPEN_ALWAYS, 
                               FILE_ATTRIBUTE_NORMAL, NULL);
@@ -183,7 +213,7 @@ wchar_t** read_history(DWORD* count, WString_noinit* in) {
         }
         size_t len = wcslen(in->buffer + ix);
         if (len > 0) {
-            res[arg] = in->buffer + ix;
+            res[line_count - arg - 1] = in->buffer + ix;
             ix = ix + len;
             ++arg;
         }
@@ -192,6 +222,9 @@ wchar_t** read_history(DWORD* count, WString_noinit* in) {
     if (arg == 0) {
         WString_free(in);
         return NULL;
+    }
+    if (arg < line_count) {
+        memmove(res, res + line_count - arg, arg * sizeof(wchar_t*));
     }
     return res;
 }
@@ -786,7 +819,7 @@ bool load_json() {
         }
         bool* hi = JsonObject_get_bool(opt_obj, "history");
         if (hi != NULL) {
-            gDo_history = *hi;;
+            gDo_history = *hi;
         }
         bool* su = JsonObject_get_bool(opt_obj, "substitute");
         if (su != NULL) {
@@ -822,19 +855,6 @@ __declspec(dllexport) DWORD entry() {
         gHas_history = true;
         _wprintf(L"History file: %s\n", history_file_name);
     }
-
-//    String res;
-//    String_create(&res);
-//    unsigned long errorcode;
-//    if (subprocess_run(L"doskey.exe /HISTORY", &res, 1000, &errorcode, 0)) {
-//        WString s;
-//        WString_create(&s);
-//        if (WString_from_utf8_bytes(&s, res.buffer, res.length)) {
-//            add_history(s.buffer, s.length);
-//        }
-//        WString_free(&s);
-//    }
-//    String_free(&res);
 
     WString_create(&workdir);
     WString_create(&pathext);
