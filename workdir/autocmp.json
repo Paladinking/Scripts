@@ -10,6 +10,12 @@
             "checkout": {
                 "&branches": {
                     "&FILELIKE": null
+                },
+                "&FILELIKE": {
+                    "&FILELIKE": null
+                },
+                "&DEFAULT": {
+                    "&FILELIKE": null
                 }
             },
             "branch": null,
@@ -27,6 +33,19 @@
                 "&FILE": null
             },
             "reset": {
+                "&FILE": null,
+                "&branches": null
+            },
+            "stash": {
+                "push": {
+                    "&FILE": null
+                },
+                "pop": {},
+                "list": {},
+                "show": {},
+                "apply": {}
+            },
+            "log": {
                 "&FILE": null,
                 "&branches": null
             }
@@ -71,7 +90,7 @@
         "&branches": {
             "cmd": "git for-each-ref --format=%(refname:short) refs/heads",
             "separator": "\n",
-            "invalidation": "chdir"
+            "invalidation": "always"
         },
         "&envirs": {
             "cmd": "envir list -q",
