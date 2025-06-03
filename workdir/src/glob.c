@@ -37,7 +37,7 @@ bool read_utf16_file(WString_noinit* str, const wchar_t* filename) {
     }
     str->buffer = (wchar_t*) buf;
     str->length = read / sizeof(wchar_t);
-    str->buffer[str->length] = '\0';
+    str->buffer[str->length] = L'\0';
     CloseHandle(file);
     return true;
 

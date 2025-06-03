@@ -5,6 +5,20 @@
 #include "unicode_width.h"
 #include <stdint.h>
 
+uint32_t wstr_width(const wchar_t* s) {
+    uint32_t width = 0;
+    for (uint32_t ix = 0; s[ix] != L'\0';) {
+        if (IS_HIGH_SURROGATE(s[ix]) && IS_LOW_SURROGATE(s[ix  +1])) {
+            width += UNICODE_PAIR_WIDTH(s[ix], s[ix + 1]);
+            ix += 2;
+        } else {
+            width += UNICODE_WIDTH(s[ix]);
+            ix += 1;
+        }
+    }
+    return width;
+}
+
 BOOL step_left(int *cur, int *col, CliListNode *n) {
     if (*col <= 0) {
         return FALSE;
@@ -768,13 +782,12 @@ wchar_t* wcsstr_i(wchar_t* str, wchar_t* search) {
     return NULL;
 }
 
-wchar_t* search_next(wchar_t* searchbuf, wchar_t** entries, DWORD entry_count, int64_t* ix, bool forwards) {
+wchar_t* search_next(wchar_t* searchbuf, wchar_t** entries, DWORD entry_count, int64_t* ix, bool forwards, wchar_t* last) {
     if (searchbuf[0] == L'\0') {
         return NULL;
     }
     if (forwards) {
         int64_t i = *ix < 0 ? 0 : *ix + 1;
-        wchar_t *last = *ix < 0 ? NULL : entries[*ix];
         for (; i < entry_count; ++i) {
             if (wcsstr_i(entries[i], searchbuf)) {
                 *ix = i;
@@ -784,7 +797,6 @@ wchar_t* search_next(wchar_t* searchbuf, wchar_t** entries, DWORD entry_count, i
         return last;
     } else {
         int64_t i = *ix >= entry_count ? entry_count - 1 : *ix - 1;
-        wchar_t *last = *ix >= entry_count ? NULL : entries[*ix];
         for (; i >= 0; --i) {
             if (wcsstr_i(entries[i], searchbuf)) {
                 *ix = i;
@@ -853,7 +865,19 @@ bool Cli_Search(wchar_t* buffer, DWORD* len, DWORD capacity, wchar_t** entries, 
 
     bool status = true;
 
+    CONSOLE_SCREEN_BUFFER_INFO last_cInfo;
+    if (!GetConsoleScreenBufferInfo(out, &last_cInfo)) {
+        goto cleanup;
+    }
+
     _wprintf(L"\x1b[2K\r(search)'':%s", active_entry);
+
+    uint32_t cols = wstr_width(active_entry) + 11;
+    uint32_t rows = 1;
+    while (cols > last_cInfo.dwSize.X) {
+        cols -= last_cInfo.dwSize.X;
+        ++rows;
+    }
 
     wchar_t surrogate = L'\0';
 
@@ -870,6 +894,7 @@ bool Cli_Search(wchar_t* buffer, DWORD* len, DWORD capacity, wchar_t** entries, 
             status = false;
             break;
         }
+
         if (record.EventType != KEY_EVENT) {
             continue;
         }
@@ -885,7 +910,7 @@ bool Cli_Search(wchar_t* buffer, DWORD* len, DWORD capacity, wchar_t** entries, 
         }
         if (ctrl_pressed) {
             if (keycode == L'C') {
-                *len = 0;
+                active_entry = NULL;
                 break;
             } else if (keycode == L'R') {
                 keycode = VK_UP; // Ctrl-R behaves as up key
@@ -908,9 +933,9 @@ bool Cli_Search(wchar_t* buffer, DWORD* len, DWORD capacity, wchar_t** entries, 
             WString_pop(&search_buffer, 1);
             active_entry = search_strings(search_buffer.buffer, entries, entry_count, &ix);
         } else if (keycode == VK_UP) {
-            active_entry = search_next(search_buffer.buffer, entries, entry_count, &ix, true);
+            active_entry = search_next(search_buffer.buffer, entries, entry_count, &ix, true, active_entry);
         } else if (keycode == VK_DOWN) {
-            active_entry = search_next(search_buffer.buffer, entries, entry_count, &ix, false);
+            active_entry = search_next(search_buffer.buffer, entries, entry_count, &ix, false, active_entry);
         } else if (keycode == VK_ESCAPE || keycode == VK_LEFT ||
             keycode == VK_RIGHT || keycode == VK_RETURN || c == '\t') {
             break;
@@ -935,8 +960,19 @@ bool Cli_Search(wchar_t* buffer, DWORD* len, DWORD capacity, wchar_t** entries, 
         if (active_entry == NULL) {
             active_entry = L"";
         };
+        for (int32_t i = 0; i < rows - 1; ++i) {
+            _wprintf(L"\x1b[2K\x1b[1A");
+        }
         _wprintf(L"\x1b[2K\r(search)'%s':%s", search_buffer.buffer, active_entry);
-
+        cols = wstr_width(search_buffer.buffer) + wstr_width(active_entry) + 11;
+        rows = 1;
+        while (cols > cInfo.dwSize.X) {
+            cols -= cInfo.dwSize.X;
+            ++rows;
+        }
+    }
+    for (int32_t i = 0; i < rows - 1; ++i) {
+        _wprintf(L"\x1b[2K\x1b[1A");
     }
     _wprintf(L"\x1b[2K\r");
 
