@@ -2,7 +2,7 @@
 #include "cli.h"
 #include "mem.h"
 #include "printf.h"
-#include "unicode_width.h"
+#include "unicode/unicode_utils.h"
 #include <stdint.h>
 
 uint32_t wstr_width(const wchar_t* s) {

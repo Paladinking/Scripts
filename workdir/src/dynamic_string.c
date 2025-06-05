@@ -214,6 +214,10 @@ bool String_reserve(String* s, size_t count) {
 }
 
 bool String_from_utf16_bytes(String *dest, const wchar_t *s, size_t count) {
+    if (count == 0) {
+        String_clear(dest);
+        return true;
+    }
     UINT code_point = 65001;
     DWORD size = WideCharToMultiByte(code_point, 0, s, count, NULL, 0, NULL, NULL);
     if (!String_reserve(dest, size)) {
@@ -440,6 +444,10 @@ bool WString_reserve(WString* s, size_t count) {
 }
 
 bool WString_from_con_bytes(WString* dest, const char* s, size_t count, UINT code_point) {
+    if (count == 0) {
+        WString_clear(dest);
+        return true;
+    }
     DWORD size = MultiByteToWideChar(code_point, 0, s, count, NULL, 0);
     if (!WString_reserve(dest, size)) {
         return false;
@@ -459,7 +467,30 @@ bool WString_from_con_str(WString* dest, const char* s, UINT code_point) {
     return WString_from_con_bytes(dest, s, len, code_point);
 }
 
+bool WString_append_utf8_bytes(WString* s, const char* str, size_t count) {
+    if (count == 0) {
+        return true;
+    }
+    UINT code_point = 65001;
+    DWORD size = MultiByteToWideChar(code_point, 0, str, count, NULL, 0);
+    if (!WString_reserve(s, size + s->length)) {
+        return false;
+    }
+    size = MultiByteToWideChar(code_point, 0, str, count, s->buffer + s->length, size);
+    if (size == 0) {
+        return false;
+    }
+    s->length += size;
+    s->buffer[s->length] = L'\0';
+
+    return true;
+}
+
 bool WString_from_utf8_bytes(WString* dest, const char* s, size_t count) {
+    if (count == 0) {
+        WString_clear(dest);
+        return true;
+    }
     UINT code_point = 65001;
     DWORD size = MultiByteToWideChar(code_point, 0, s, count, NULL, 0);
     if (!WString_reserve(dest, size)) {

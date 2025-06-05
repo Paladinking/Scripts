@@ -38,26 +38,31 @@ typedef struct RegexMatch {
 typedef struct RegexAllCtx {
     uint64_t start;
     Regex* regex;
-    const char* str;
+    const uint8_t* str;
     uint64_t len;
+
+    // Fields used for case insensitive match
+    uint64_t buffer_len;
+    uint64_t buffer_cap;
+    uint8_t* buffer;
 } RegexAllCtx;
 
 Regex* Regex_compile(const char* pattern);
 
+Regex* Regex_compile_with(const char* pattern, bool casefold);
+
 void Regex_free(Regex* regex);
 
-RegexResult Regex_fullmatch_dfa(Regex* regex, const char* str, uint64_t len);
-
 RegexResult Regex_fullmatch(Regex* regex, const char* str, uint64_t len);
-
-RegexResult Regex_anymatch_dfa(Regex* regex, const char* str, uint64_t len);
 
 RegexResult Regex_anymatch(Regex* regex, const char* str, uint64_t len);
 
 void Regex_allmatch_init(Regex* regex, const char* str, uint64_t len, RegexAllCtx* ctx);
-
-RegexResult Regex_allmatch_dfa(RegexAllCtx* ctx, const char** match, uint64_t* len);
+// Set ctx->buffer to Mem_alloc:d buffer before calling, and set ctx->buffer_cap.
+void Regex_allmatch_init_nocase(Regex* regex, const char* str, uint64_t len, RegexAllCtx* ctx);
 
 RegexResult Regex_allmatch(RegexAllCtx* ctx, const char** match, uint64_t* len);
+
+RegexResult Regex_allmatch_nocase(RegexAllCtx* ctx, const char** match, uint64_t* len);
 
 #endif
