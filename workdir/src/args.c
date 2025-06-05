@@ -272,6 +272,7 @@ BOOL find_flags(wchar_t** argv, int* argc, FlagInfo* flags, uint32_t flag_count,
                             }
                             --(*argc);
                             if (!parse_argument(argv[ix], flags[j].value, j, err)) {
+                                err->long_flag = TRUE;
                                 return FALSE;
                             }
                         } else {

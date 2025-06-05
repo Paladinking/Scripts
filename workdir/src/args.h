@@ -25,12 +25,12 @@ typedef struct EnumValue {
 } EnumValue;
 
 typedef struct FlagValue {
-    unsigned type;
-    EnumValue * enum_values;
-    unsigned enum_count;
-    char has_value;
-    union {
-        LPWSTR str; // Output
+    unsigned type; // Input
+    EnumValue * enum_values; // Input
+    unsigned enum_count; // Input
+    char has_value; // Output
+    union { // Output
+        LPWSTR str;
         uint64_t uint;
         int64_t sint;
         double real;
@@ -45,7 +45,7 @@ typedef struct FlagInfo {
     uint32_t shared; // Internal
 
     uint32_t count; // Output
-    uint32_t ord;
+    uint32_t ord; // Output
 } FlagInfo;
 
 typedef struct ErrorInfo {
