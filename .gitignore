@@ -13,9 +13,12 @@ workdir/bin
 autocmp.json
 workdir/build
 workdir/buildg
+workdir/bin-gcc
+workdir/build-gcc
 workdir/old
 workdir/script/translations
 workdir/.cache
 workdir/__pycache__
 workdir/compile_commands.json
 workdir/comp_cache.json
+workdir/helpers
