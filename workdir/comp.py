@@ -58,6 +58,7 @@ def main():
     kernelbasesymbols = ["PathMatchSpecW"]
 
     arg_src = ["src/args.c", "src/mem.c", "src/dynamic_string.c", "src/printf.c"]
+    unicode = ["src/unicode/case_folding.c", "src/unicode/tables.c", "src/unicode/unicode_width.c"]
     ntdll = ImportLib("ntutils.lib", "ntdll.dll", ntsymbols)
     kernelbase = ImportLib("kernelbase.lib", "kernelbase.dll", kernelbasesymbols)
 
@@ -69,14 +70,14 @@ def main():
     Executable("envir.exe", "src/envir.c", "src/path_utils.c", *arg_src, ntdll)
 
     Executable("path-edit.exe", "src/path-edit.c", "src/cli.c", 
-               "src/unicode_width.c", *arg_src, ntdll)
+               "src/unicode/unicode_width.c", *arg_src, ntdll)
     Executable("path-select.exe", "src/path-select.c", "src/path_utils.c",
                *arg_src, ntdll, kernelbase)
     Executable("inject.exe", "src/inject.c", *arg_src, 
                "src/glob.c", ntdll)
     Executable("list-dir.exe", "src/list-dir.c", "src/args.c", "src/printf.c",
                "src/perm.c", "src/glob.c", "src/dynamic_string.c", "src/mem.c",
-               "src/unicode_width.c", ntdll, 
+               "src/unicode/unicode_width.c", ntdll, 
                extra_link_flags="Advapi32.lib" if backend().msvc else "-ladvapi32")
     
     whashmap = Object("whashmap.obj", "src/hashmap.c", 
@@ -88,10 +89,14 @@ def main():
     Executable("autocmp.dll", "src/autocmp.c", *arg_src, "src/match_node.c",
                "src/subprocess.c", whashmap, lhashmap, "src/json.c", 
                "src/cli.c", "src/glob.c", "src/path_utils.c", ntdll,
-               "src/unicode_width.c",
+               "src/unicode/unicode_width.c",
                link_flags=DLLFLAGS, dll=True)
-    Executable("test.exe", "src/test.c", "src/glob.c", "src/regex.c", *arg_src, ntdll)
+
+    Executable("test.exe", "src/test.c", "src/glob.c", "src/regex.c", *unicode, *arg_src, ntdll)
     Executable("symbol-dump.exe", "src/symbol-dump.c", "src/coff.c", *arg_src, ntdll)
+
+    Executable("casefold.exe", "src/casefold.c", *unicode, *arg_src, ntdll)
+
     scrape = Executable("symbol-scrape.exe", "src/symbol-scrape.c", "src/path_utils.c",
                "src/glob.c", "src/coff.c", whashmap, hashmap, *arg_src, ntdll)
 
