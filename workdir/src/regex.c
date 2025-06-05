@@ -2,100 +2,8 @@
 #include "args.h"
 #include "assert.h"
 #include "dynamic_string.h"
+#include "unicode/unicode_utils.h"
 #include <stdlib.h>
-
-const static uint8_t utf8_len_table[256] = {
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2,
-    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3,
-    3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 1, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1
-};
-
-const static uint8_t utf8_valid_table[] = {
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
-    0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
-    0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
-    0xa0, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
-    0x80, 0x9f, 0x80, 0x80, 0x90, 0x80, 0x80, 0x80, 0x8f, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-};
-
-// get how many bytes should be considered one sequence,
-// the sequence might be invalid.
-// If the sequence is invalid, includes byte 0 and up to
-// 3 bytes that cannot start a sequence
-static uint8_t get_utf8_seq(const uint8_t* bytes, uint64_t len) {
-    if (len < 2) {
-        return len;
-    }
-    if (bytes[0] <= 127) {
-        return 1;
-    }
-    uint8_t v = utf8_valid_table[bytes[0] - 128];
-    uint8_t l = utf8_len_table[bytes[0]];
-    if (v == 0) { // Illegal byte 0
-        if (bytes[1] >= 0x80 && bytes[1] <= 0xBF) {
-            if (len > 2 && bytes[2] >= 0x80 && bytes[2] <= 0xBF) {
-                if (len > 3 && bytes[3] >= 0x80 && bytes[3] <= 0xBF) {
-                    return 4;
-                }
-                return 3;
-            }
-            return 2;
-        }
-        return 1;
-    }
-
-    if (l > len) { // Not enough bytes for full sequence
-        if (bytes[1] >= 0x80 && bytes[1] <= 0xBF) {
-            if (len > 2 && bytes[2] >= 0x80 && bytes[1] <= 0xBF) {
-                return 3;
-            }
-            return 2;
-        }
-        return 1;
-    }
-
-    if (((v & 1) && (bytes[1] < 0x80 || bytes[1] > v)) ||
-         (!(v & 1) && (bytes[1] < v || bytes[1] > 0xBF))) { // Illegal byte 1
-        // Still include all bytes that cannot start a sequence
-        if (bytes[1] >= 0x80 && bytes[1] <= 0xBF) {
-            if (len > 2 && bytes[2] >= 0x80 && bytes[2] <= 0xBF) {
-                if (len > 3 && bytes[3] >= 0x80 && bytes[3] <= 0xBF) {
-                    return 4;
-                }
-                return 3;
-            }
-            return 2;
-        }
-        return 1;
-    }
-    if (l > 2) {
-        if (bytes[2] < 0x80 || bytes[2] > 0xBF) { // Illegal byte 2
-            return 2;
-        }
-        if (l > 3) {
-            if (bytes[3] < 0x80 || bytes[3] > 0xBF) { // Illegal byte 3
-                return 3;
-            }
-            return 4;
-        }
-        return 3;
-    }
-    return 2;
-}
 
 // Validate a single utf8 charpoint
 static bool validate_utf8_seq(const uint8_t* bytes, uint64_t len) {
@@ -134,76 +42,119 @@ static bool validate_utf8_seq(const uint8_t* bytes, uint64_t len) {
                              ((l) < 3 || ((s1)[2] == (s2)[2] && \
                               ((l) < 4 || (s1)[3] == (s2)[3]))))))
 
-// WRONG on error, should not compare with 0x7F
-static uint_fast8_t utf8_to_utf32(const uint8_t* utf8, uint64_t len, uint32_t* utf32) {
-    if (*utf8 <= 0x7F) {
-        *utf32 = *utf8;
-        return 1;
-    }
-    *utf32 = 0;
-
-    uint8_t l = utf8_len_table[*utf8];
-    uint8_t v = utf8_valid_table[*utf8 - 128];
-    if (v == 0) {
-        return 1;
-    }
-    if (len < l) {
-        return len;
-    }
-    if (l == 1) {
-        *utf32 = *utf8;
-        return l;
-    }
-    if (v & 1) {
-        if (utf8[1] < 0x80 || utf8[1] > v) {
-            if (l > 2 && utf8[2] > 0x7F) {
-                if (l > 3 && utf8[3] > 0x7F) {
-                    return 4;
-                }
-                return 3;
-            }
-            return 2;
-        }
+// NOTE: does not validate
+static uint_fast8_t utf32_to_utf8(uint32_t c, uint8_t* utf8) {
+    static const uint8_t firstByteMark[5] = { 0x00, 0x00, 0xC0, 0xE0, 0xF0 };
+    uint_fast8_t len;
+    if (c < 0x80) {
+        len = 1;
+    } else if (c < 0x800) {
+        len = 2;
+    } else if (c < 0x10000) {
+        len = 3;
     } else {
-        if (utf8[1] < v || utf8[1] > 0xBF) {
-            if (l > 2 && utf8[2] > 0x7F) {
-                if (l > 3 && utf8[3] > 0x7F) {
+        len = 4;
+    }
+    uint8_t* dest = utf8 + len;
+    switch (len) {
+    case 4:
+        *(--dest) = ((c | 0x80) & 0xBF);
+        c >>= 6;
+    case 3:
+        *(--dest) = ((c | 0x80) & 0xBF);
+        c >>= 6;
+    case 2:
+        *(--dest) = ((c | 0x80) & 0xBF);
+        c >>= 6;
+    case 1:
+        *(--dest) = (c | firstByteMark[len]);
+    }
+    return len;
+}
+
+static uint_fast8_t utf8_to_utf32(const uint8_t* utf8, uint64_t len, uint32_t* utf32) {
+    if (len < 1) {
+        *utf32 = 0xFFFD;
+        return 0;
+    }
+    if (utf8[0] <= 127) {
+        *utf32 = utf8[0];
+        return 1;
+    }
+    uint8_t v = utf8_valid_table[utf8[0] - 128];
+    uint8_t l = utf8_len_table[utf8[0]];
+    if (v == 0) { // Illegal byte 0
+        *utf32 = 0xFFFD;
+        if (!CAN_START_SEQ(utf8[1])) {
+            if (len > 2 && !CAN_START_SEQ(utf8[2])) {
+                if (len > 3 && !CAN_START_SEQ(utf8[3])) {
                     return 4;
                 }
                 return 3;
             }
             return 2;
         }
+        return 1;
     }
 
-    if (l == 2) {
-        *utf32 = ((uint32_t)utf8[1] & 0b111111) |
-                 (((uint32_t)utf8[0] & 0b11111) << 6);
+    if (l > len) { // Not enough bytes for full sequence
+        if (!CAN_START_SEQ(utf8[1])) {
+            if (len > 2 && !CAN_START_SEQ(utf8[2])) {
+                return 3;
+            }
+            return 2;
+        }
+        return 1;
+    }
 
-        return 2;
-    } else if (l == 3) {
-        if (utf8[2] < 0x80 || utf8[2] > 0xBF) {
+    if (((v & 1) && (utf8[1] < 0x80 || utf8[1] > v)) ||
+         (!(v & 1) && (utf8[1] < v || utf8[1] > 0xBF))) { // Illegal byte 1
+        // Still include all bytes that cannot start a sequence
+        *utf32 = 0xFFFD;
+        if (!CAN_START_SEQ(utf8[1])) {
+            if (len > 2 && !CAN_START_SEQ(utf8[2])) {
+                if (len > 3 && !CAN_START_SEQ(utf8[3])) {
+                    return 4;
+                }
+                return 3;
+            }
+            return 2;
+        }
+        return 1;
+    }
+    if (l > 2) {
+        if (utf8[2] < 0x80 || utf8[2] > 0xBF) { // Illegal byte 2
+            *utf32 = 0xFFFD;
+            if (CAN_START_SEQ(utf8[2])) {
+                return 2;
+            }
+            if (l > 3 && !CAN_START_SEQ(utf8[3])) {
+                return 4;
+            }
             return 3;
+        }
+        if (l > 3) {
+            if (utf8[3] < 0x80 || utf8[3] > 0xBF) { // Illegal byte 3
+                *utf32 = 0xFFFD;
+                if (CAN_START_SEQ(utf8[3])) {
+                    return 3;
+                }
+                return 4;
+            }
+            *utf32 = (((uint32_t)utf8[3]) & 0b111111) |
+                     (((uint32_t)utf8[2] & 0b111111) << 6) |
+                     (((uint32_t)utf8[1] & 0b111111) << 12) |
+                     (((uint32_t)utf8[0] & 0b111) << 18);
+            return 4;
         }
         *utf32 = (((uint32_t)utf8[2]) & 0b111111) |
                  (((uint32_t)utf8[1] & 0b111111) << 6) |
                  (((uint32_t)utf8[0] & 0b1111) << 12);
         return 3;
     } else {
-        if (utf8[2] < 0x80 || utf8[2] > 0xBF) {
-            if (utf8[3] > 0x7F) {
-                return 4;
-            }
-            return 3;
-        }
-        if (utf8[3] < 0x80 || utf8[3] > 0xBF) {
-            return 4;
-        }
-        *utf32 = (((uint32_t)utf8[3]) & 0b111111) |
-                 (((uint32_t)utf8[2] & 0b111111) << 6) |
-                 (((uint32_t)utf8[1] & 0b111111) << 12) |
-                 (((uint32_t)utf8[0] & 0b111) << 18);
-        return 4;
+        *utf32 = ((uint32_t)utf8[1] & 0b111111) |
+                 (((uint32_t)utf8[0] & 0b11111) << 6);
+        return 2;
     }
 }
 
@@ -1935,11 +1886,37 @@ RegexResult nfa_to_dfa(NFA *nfa, char *chars, NodeDFA **dfa,
     return REGEX_MATCH;
 }
 
+Regex* Regex_compile(const char* pattern) {
+    return Regex_compile_with(pattern, false);
+}
+
 // Basic posix
-Regex *Regex_compile(const char *pattern) {
+Regex* Regex_compile_with(const char* pattern, bool casefold) {
     ParseCtx ctx;
 
-    RegexResult res = ast_parse(&ctx, pattern);
+    RegexResult res;
+    if (casefold) {
+        uint8_t utf8[4];
+        String buf;
+        uint64_t len = strlen(pattern);
+        if (len >= 0xFFFFFFFF || !String_create_capacity(&buf, len)) {
+            return NULL;
+        }
+        const uint8_t* bytes = (const uint8_t*)pattern;
+        for (uint64_t ix = 0; ix < len;) {
+            uint32_t l = get_utf8_seq(bytes + ix, len - ix);
+            l = unicode_case_fold_utf8(bytes + ix, l, utf8);
+            ix += l;
+            if (!String_append_count(&buf, (const char*)utf8, l)) {
+                String_free(&buf);
+                return NULL;
+            }
+        }
+        res = ast_parse(&ctx, buf.buffer);
+        String_free(&buf);
+    } else {
+        res = ast_parse(&ctx, pattern);
+    }
     if (res != REGEX_MATCH) {
         return NULL;
     }
@@ -1999,6 +1976,7 @@ void Regex_free(Regex *regex) {
             Mem_free(regex->dfa[i].ascii_edges);
         }
         Mem_free(regex->dfa);
+        regex->dfa = NULL;
     }
     Mem_free(regex);
 }
@@ -2090,15 +2068,73 @@ RegexResult Regex_fullmatch_dfa(Regex* regex, const char* str, uint64_t len) {
 
 void Regex_allmatch_init(Regex* regex, const char* str, uint64_t len, RegexAllCtx* ctx) {
     ctx->regex = regex;
-    ctx->str = str;
+    ctx->str = (const uint8_t*)str;
     ctx->len = len;
     ctx->start = 0;
+}
+
+void Regex_allmatch_init_nocase(Regex* regex, const char* str, uint64_t len, RegexAllCtx* ctx) {
+    Regex_allmatch_init(regex, str, len, ctx);
+    const uint8_t* bytes = (const uint8_t*)str;
+    uint64_t i = 0;
+    for (uint64_t ix = 0; ix < len;) {
+        uint32_t l = get_utf8_seq(bytes + ix, len - ix);
+        while (i + 4 > ctx->buffer_cap) {
+            ctx->buffer_cap *= 2;
+            uint8_t* new_buf = Mem_realloc(ctx->buffer, ctx->buffer_cap);
+            if (new_buf == NULL) {
+                Mem_free(ctx->buffer);
+                ctx->buffer = NULL;
+                ctx->buffer_cap = 0;
+                return;
+            }
+            ctx->buffer = new_buf;
+        }
+        i += unicode_case_fold_utf8(bytes + ix, l, ctx->buffer + i);
+        ix += l;
+    }
+    ctx->buffer_len = i;
+}
+
+RegexResult Regex_allmatch_nocase(RegexAllCtx *ctx, const char **match, uint64_t *len) {
+    if (ctx->buffer == NULL) {
+        return REGEX_ERROR;
+    }
+    uint64_t l = ctx->len;
+    const uint8_t* s = ctx->str;
+    ctx->str = ctx->buffer;
+    ctx->len = ctx->buffer_len;
+    RegexResult res = Regex_allmatch(ctx, match, len);
+    ctx->str = s;
+    ctx->len = l;
+    if (res != REGEX_MATCH) {
+        return res;
+    }
+    uint64_t offset = ((uint8_t*)*match) - ctx->buffer;
+    uint64_t i = 0;
+    uint64_t ix = 0;
+    while (i < offset) {
+        l = get_utf8_seq(ctx->str, ctx->len - ix);
+        uint8_t utf8[4];
+        i += unicode_case_fold_utf8(ctx->str + ix, l, utf8);
+        ix += l;
+    }
+    const uint8_t* dst = ctx->str + ix;
+    *match = (const char*) dst;
+    while (i < offset + *len) {
+        l = get_utf8_seq(ctx->str, ctx->len - ix);
+        uint8_t utf8[4];
+        i += unicode_case_fold_utf8(ctx->str + ix, l, utf8);
+        ix += l;
+    }
+    *len = ix - (dst - ctx->str);
+    return REGEX_MATCH;
 }
 
 RegexResult Regex_allmatch_dfa(RegexAllCtx* ctx, const char** match, uint64_t* match_len) {
     NodeDFA* dfa = ctx->regex->dfa;
     uint64_t len = ctx->len;
-    uint8_t* str = (uint8_t*)ctx->str;
+    const uint8_t* str = ctx->str;
     for (uint64_t s = ctx->start; s <= len; ++s) {
         uint32_t node_ix = 0;
         if (len - s < ctx->regex->minlen) {
@@ -2139,7 +2175,7 @@ RegexResult Regex_allmatch_dfa(RegexAllCtx* ctx, const char** match, uint64_t* m
                     }
                     ++ix;
                 } else {
-                    uint8_t* bytes = str + ix;
+                    const uint8_t* bytes = str + ix;
                     uint8_t seq_len = get_utf8_seq(bytes, len - ix);
                     uint64_t n_ix = node_ix;
                     node_ix = dfa[n_ix].default_edge;
@@ -2372,4 +2408,8 @@ RegexResult Regex_allmatch(RegexAllCtx* ctx, const char** match, uint64_t* len) 
         return REGEX_ERROR;
     }
     return Regex_allmatch_dfa(ctx, match, len);
+}
+
+RegexResult Regex_nomatch(RegexAllCtx *ctx, const char **match, uint64_t *len) {
+
 }

@@ -127,6 +127,8 @@ bool WString_from_con_bytes(WString* dest, const char* s, size_t count, unsigned
 
 bool WString_from_con_str(WString* dest, const char* s, unsigned code_point);
 
+bool WString_append_utf8_bytes(WString* s, const char* sstr, size_t count);
+
 bool WString_from_utf8_bytes(WString* dest, const char* s, size_t count);
 
 bool WString_from_utf8_str(WString* dest, const char* s);

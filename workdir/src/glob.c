@@ -258,12 +258,15 @@ bool matches_glob(const wchar_t* pattern, const wchar_t* str) {
 static char* find_next_line(LineCtx* ctx, uint64_t* len) {
     char* start = ctx->line.buffer + ctx->str_offset;
     for (uint64_t ix = ctx->str_offset; true; ++ix) {
+        if (ctx->line.buffer[ix] == '\0') {
+            ctx->binary = true;
+        }
         if (ctx->line.buffer[ix] == '\r') {
             *len = ix - ctx->str_offset;
             if (ctx->line.buffer[ix + 1] == '\n') {
                 ++ix;
             }
-            if (ctx->line.buffer[ix + 1] == '\0') {
+            if (ix + 1 == ctx->line.length) {
                 ctx->line.length = 0;
                 ctx->str_offset = 0;
                 ctx->ended_cr = ctx->line.buffer[ix] != '\n';
@@ -274,7 +277,7 @@ static char* find_next_line(LineCtx* ctx, uint64_t* len) {
         }
         if (ctx->line.buffer[ix] == '\n') {
             *len = ix - ctx->str_offset;
-            if (ctx->line.buffer[ix + 1] == '\0') {
+            if (ix + 1 == ctx->line.length) {
                 ctx->line.length = 0;
                 ctx->str_offset = 0;
                 ctx->ended_cr = false;
@@ -292,6 +295,7 @@ bool ConsoleLineIter_begin(LineCtx *ctx, HANDLE in) {
     ctx->ended_cr = false;
     ctx->str_offset = 0;
     ctx->offset = 0;
+    ctx->binary = false;
     if (!String_create(&ctx->line)) {
         ctx->file = INVALID_HANDLE_VALUE;
         SetLastError(ERROR_OUTOFMEMORY);
@@ -370,6 +374,7 @@ eol:
         if (String_from_utf16_bytes(&ctx->line, ctx->wbuffer.buffer,
                                      ctx->wbuffer.length)) {
             ctx->eof = true;
+            ctx->binary = memchr(ctx->line.buffer, ctx->line.length, 0) != NULL;
             WString_free(&ctx->wbuffer);
             *len = ctx->line.length;
             return ctx->line.buffer;
@@ -399,6 +404,7 @@ bool SyncLineIter_begin(LineCtx* ctx, HANDLE file) {
     ctx->ended_cr = false;
     ctx->str_offset = 0;
     ctx->offset = 0;
+    ctx->binary = false;
     if (!String_create_capacity(&ctx->line, LINE_BUFFER_SIZE + 50)) {
         ctx->file = INVALID_HANDLE_VALUE;
         SetLastError(ERROR_OUTOFMEMORY);
@@ -470,6 +476,7 @@ eof:
     ctx->file = INVALID_HANDLE_VALUE;
     ctx->eof = true;
     *len = ctx->line.length;
+    ctx->binary = memchr(ctx->line.buffer, ctx->line.length, 0) != NULL;
     return ctx->line.buffer;
 }
 
@@ -491,6 +498,7 @@ bool LineIter_begin(LineCtx* ctx, const wchar_t* filename) {
 
     ctx->eof = false;
     ctx->ended_cr = false;
+    ctx->binary = false;
     if (ctx->file == INVALID_HANDLE_VALUE) {
         return false;
     }
@@ -637,6 +645,7 @@ eof:
     if (ctx->buffer.length > 0) {
         ctx->eof = true;
         *len = ctx->buffer.length;
+        ctx->binary = memchr(ctx->buffer.buffer, ctx->buffer.length, 0) != NULL;
         return ctx->buffer.buffer;
     }
     String_free(&ctx->buffer);

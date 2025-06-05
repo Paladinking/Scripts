@@ -2,7 +2,7 @@
 #include "glob.h"
 #include "perm.h"
 #include "printf.h"
-#include "unicode_width.h"
+#include "unicode/unicode_utils.h"
 #include <stdbool.h>
 #include <stdint.h>
 

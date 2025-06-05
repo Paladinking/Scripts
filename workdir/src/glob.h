@@ -57,6 +57,7 @@ typedef struct _LineCtx {
     HANDLE file;
     bool eof;
     bool ended_cr;
+    bool binary;
     uint32_t str_offset;
     uint64_t offset;
     union {
