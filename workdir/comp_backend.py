@@ -399,6 +399,8 @@ def find_headers(obj: Obj) -> List[str]:
             cache = data[BACKEND.name][obj.name]
             assert 'stamp' in cache and isinstance(cache['stamp'], float)
             assert 'headers' in cache and isinstance(cache['headers'], list)
+        if get_args().fast:
+            return cache['headers']
         t = os.path.getmtime(obj.source)
         for header in cache['headers']:
             assert isinstance(header, str)
@@ -454,8 +456,7 @@ def makefile(dest: TextIO = sys.stdout) -> None:
     for obj in OBJECTS.values():
         p = pathlib.Path(obj.source).resolve()
         if not p.is_file():
-            print(f"File '{p}' does not exist", file=sys.stderr)
-            return
+            raise RuntimeError(f"File '{p}' does not exist")
 
     for group, targets in TARGET_GROUPS.items():
         print(f"{group}:", end="", file=dest)
@@ -538,6 +539,8 @@ def get_parser() -> 'argparse.ArgumentParser':
                             default=None, help="Specify the backend to use.")
         parser.add_argument("--target", "-t", help="Specify target to build", action="store", 
                             default="all")
+        parser.add_argument("--fast", "-f", help="Speed up by not validating header cache", 
+                            action="store_true", default=False)
     return parser
 
 
