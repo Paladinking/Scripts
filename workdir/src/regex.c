@@ -2114,7 +2114,7 @@ RegexResult Regex_allmatch_nocase(RegexAllCtx *ctx, const char **match, uint64_t
     uint64_t i = 0;
     uint64_t ix = 0;
     while (i < offset) {
-        l = get_utf8_seq(ctx->str, ctx->len - ix);
+        l = get_utf8_seq(ctx->str + ix, ctx->len - ix);
         uint8_t utf8[4];
         i += unicode_case_fold_utf8(ctx->str + ix, l, utf8);
         ix += l;
@@ -2122,7 +2122,7 @@ RegexResult Regex_allmatch_nocase(RegexAllCtx *ctx, const char **match, uint64_t
     const uint8_t* dst = ctx->str + ix;
     *match = (const char*) dst;
     while (i < offset + *len) {
-        l = get_utf8_seq(ctx->str, ctx->len - ix);
+        l = get_utf8_seq(ctx->str + ix, ctx->len - ix);
         uint8_t utf8[4];
         i += unicode_case_fold_utf8(ctx->str + ix, l, utf8);
         ix += l;

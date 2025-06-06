@@ -16,10 +16,13 @@
 #define OPTION_IGNORE_CASE 64
 #define OPTION_BINARY_TEXT 128
 #define OPTION_BINARY_NOMATCH 256
+#define OPTION_WHOLELINE 512
+
+#define OPTION_MATCH_MASK (OPTION_INVERSE | OPTION_IGNORE_CASE | OPTION_WHOLELINE)
 
 // TODO: Use multiple threads
-// TODO: -i, -x, -s, -m, -b, -L, -l, -c, --color, --exclude-dir, --include, --max-depth
-// Maybe: -z, --version, -U, --exclude-from, --line-buffered, --label
+// TODO: -b, -L, -l, -c, --color, --exclude-dir, --include, --max-depth
+// Maybe: -s, -z, --version, -U, --exclude-from, --line-buffered, --label
 
 #define OPTION_IF(opt, cond, flag)                                           \
     if (cond) {                                                              \
@@ -45,15 +48,18 @@ const wchar_t *HELP_MESSAGE =
     L"-i, --ignore-case          ignore case distinctions\n"
     L"-I                         ignore binary files, equivalent to as\n"
     L"                           --binary-files=without-match\n"
+    L"-m, --max-count=N          stop after N matched lines\n"
     L"-n, --line-number          print line numbers with output lines\n"
     L"-r, --recursive            recurse into any directories\n"
-    L"-v, --invert-match         select non-matching lines\n\n"
+    L"-v, --invert-match         select non-matching lines\n"
+    L"-x, --line-regexp          only match full lines\n\n"
     L"Context control:\n"
     L"-A, --after-context=N      print N lines of trailing context\n"
     L"-B, --before-context=N     print N lines of leading context\n"
     L"-C, --context=N            print N lines of leading and trailing context\n";
 
-uint32_t parse_options(int* argc, wchar_t** argv, uint32_t* before, uint32_t* after) {
+uint32_t parse_options(int* argc, wchar_t** argv, uint32_t* before, uint32_t* after,
+                       uint64_t* max_count) {
     if (argv == NULL || *argc == 0) {
         return OPTION_INVALID;
     }
@@ -67,6 +73,7 @@ uint32_t parse_options(int* argc, wchar_t** argv, uint32_t* before, uint32_t* af
     FlagValue before_ctx = {FLAG_REQUIRED_VALUE | FLAG_UINT};
     FlagValue after_ctx = {FLAG_REQUIRED_VALUE | FLAG_UINT};
     FlagValue full_ctx = {FLAG_REQUIRED_VALUE | FLAG_UINT};
+    FlagValue max = {FLAG_REQUIRED_VALUE | FLAG_UINT};
 
     FlagInfo flags[] = {
         {L'n', L"line-number", NULL},           // 0
@@ -81,7 +88,9 @@ uint32_t parse_options(int* argc, wchar_t** argv, uint32_t* before, uint32_t* af
         {L'A', L"after-context", &after_ctx},   // 9
         {L'B', L"before-context", &before_ctx}, // 10
         {L'C', L"context", &full_ctx},          // 11
-        {L'i', L"ignore-case", NULL}            // 12
+        {L'i', L"ignore-case", NULL},           // 12
+        {L'x', L"line-regexp", NULL},           // 13
+        {L'm', L"max-count", &max}              // 14
     };
     const uint64_t flag_count = sizeof(flags) / sizeof(FlagInfo);
     ErrorInfo errors;
@@ -125,6 +134,12 @@ uint32_t parse_options(int* argc, wchar_t** argv, uint32_t* before, uint32_t* af
     *before = before_val;
     *after = after_val;
 
+    if (flags[14].count > 0) {
+        *max_count = max.uint;
+    } else {
+        *max_count = 0xffffffffffffffff;
+    }
+
     if (flags[7].ord > flags[6].ord && flags[7].ord > flags[5].ord) {
         if (bin_val.uint == 1) {
             opts |= OPTION_BINARY_TEXT;
@@ -154,6 +169,7 @@ uint32_t parse_options(int* argc, wchar_t** argv, uint32_t* before, uint32_t* af
     OPTION_IF(opts, flags[4].count > 0, OPTION_RECURSIVE);
     OPTION_IF(opts, flags[8].count > 0, OPTION_INVERSE);
     OPTION_IF(opts, flags[12].count > 0, OPTION_IGNORE_CASE);
+    OPTION_IF(opts, flags[13].count > 0, OPTION_WHOLELINE);
 
     return opts;
 }
@@ -305,41 +321,46 @@ void output_line(const char* line, uint32_t len, uint64_t lineno, uint32_t opts,
     }
 }
 
-RegexResult Regex_allmatch_nocase_not(RegexAllCtx* ctx, const char **match, uint64_t* len) {
+RegexResult Regex_fullmatch_ctx(RegexAllCtx* ctx, const char**match, uint64_t* len) {
     if (ctx->str == NULL) {
         return REGEX_NO_MATCH;
     }
+    RegexResult res = Regex_fullmatch(ctx->regex, (const char*)ctx->str,
+                                      ctx->len);
+    *match = (const char*)ctx->str;
+    *len = ctx->len;
+    ctx->str = NULL;
+    return res;
+}
+
+RegexResult Regex_fullmatch_nocase(RegexAllCtx* ctx, const char **match, uint64_t* len) {
     RegexResult res = Regex_allmatch_nocase(ctx, match, len);
-    if (res == REGEX_NO_MATCH) {
-        // Empty match for '--color'
-        *len = 0;
-        *match = (const char*)ctx->str;
-        ctx->str = NULL;
-        return REGEX_MATCH;
-    } else if (res == REGEX_MATCH) {
-        return REGEX_NO_MATCH;
-    }
-    return res;
-
-}
-
-// Match function that matches once if no match exists.
-RegexResult Regex_allmatch_not(RegexAllCtx *ctx, const char **match, uint64_t *len) {
-    if (ctx->str == NULL) {
-        return REGEX_NO_MATCH;
-    }
-    RegexResult res = Regex_allmatch(ctx, match, len);
-    if (res == REGEX_NO_MATCH) {
-        // Empty match for '--color'
-        *len = 0;
-        *match = (const char*)ctx->str;
-        ctx->str = NULL;
-        return REGEX_MATCH;
-    } else if (res == REGEX_MATCH) {
+    if (res == REGEX_MATCH && *len != ctx->len) {
         return REGEX_NO_MATCH;
     }
     return res;
 }
+
+#define REGEX_MATCH_NOT(fn) RegexResult fn##_not(RegexAllCtx* ctx, \
+      const char **match, uint64_t* len) { \
+    if (ctx->str == NULL) {                \
+        return REGEX_NO_MATCH;             \
+    }                                      \
+    RegexResult res = fn(ctx, match, len); \
+    if (res == REGEX_NO_MATCH) {           \
+        *len = 0;                          \
+        *match = (const char*)ctx->str;    \
+        return REGEX_MATCH;                \
+    } else if (res == REGEX_MATCH) {       \
+        return REGEX_NO_MATCH;             \
+    }                                      \
+    return res; \
+}
+
+REGEX_MATCH_NOT(Regex_allmatch_nocase)
+REGEX_MATCH_NOT(Regex_allmatch)
+REGEX_MATCH_NOT(Regex_fullmatch_nocase)
+REGEX_MATCH_NOT(Regex_fullmatch_ctx)
 
 bool match_file_context(RegexAllCtx* regctx, LineCtx* ctx,
                         next_line_fn_t next_line, abort_fn_t abort,
@@ -482,8 +503,42 @@ typedef enum MatchResult {
     MATCH_OK, MATCH_FAIL, MATCH_ABORT
 } MatchResult;
 
+void get_match_funcs(match_init_fn_t* init, match_fn_t* match, uint32_t opts) {
+    if (opts & OPTION_IGNORE_CASE) {
+        *init = Regex_allmatch_init_nocase;
+    } else {
+        *init = Regex_allmatch_init;
+    }
+    switch (opts & OPTION_MATCH_MASK) {
+    case (OPTION_IGNORE_CASE):
+        *match = Regex_allmatch_nocase;
+        break;
+    case (OPTION_IGNORE_CASE | OPTION_WHOLELINE):
+        *match = Regex_fullmatch_nocase;
+        break;
+    case (OPTION_IGNORE_CASE | OPTION_INVERSE):
+        *match = Regex_allmatch_nocase_not;
+        break;
+    case (OPTION_IGNORE_CASE | OPTION_INVERSE | OPTION_WHOLELINE):
+        *match = Regex_fullmatch_nocase_not;
+        break;
+    case (OPTION_WHOLELINE):
+        *match = Regex_fullmatch_ctx;
+        break;
+    case (OPTION_WHOLELINE | OPTION_INVERSE):
+        *match = Regex_fullmatch_ctx_not;
+        break;
+    case (OPTION_INVERSE):
+        *match = Regex_allmatch_not;
+        break;
+    default:
+        *match = Regex_allmatch;
+        break;
+    }
+}
+
 MatchResult iterate_file(Regex* reg, wchar_t* file, WString *utf16_buf, LineBuffer* line_buf, uint32_t opts,
-                         LineContext* line_context) {
+                         LineContext* line_context, uint64_t* max_count) {
     LineCtx ctx;
     next_line_fn_t next_line;
     abort_fn_t abort;
@@ -491,8 +546,10 @@ MatchResult iterate_file(Regex* reg, wchar_t* file, WString *utf16_buf, LineBuff
     if (!start_iteration(&ctx, file, &name, &next_line, &abort)) {
         return MATCH_FAIL;
     }
-    match_fn_t reg_match = Regex_allmatch;
-    match_init_fn_t reg_init = Regex_allmatch_init;
+    match_fn_t reg_match;
+    match_init_fn_t reg_init;
+    get_match_funcs(&reg_init, &reg_match, opts);
+
     RegexAllCtx regctx;
     regctx.regex = reg;
     if (opts & OPTION_IGNORE_CASE) {
@@ -502,16 +559,7 @@ MatchResult iterate_file(Regex* reg, wchar_t* file, WString *utf16_buf, LineBuff
             return MATCH_ABORT;
         }
         regctx.buffer_cap = 128;
-        reg_init = Regex_allmatch_init_nocase;
-        if (opts & OPTION_INVERSE) {
-            reg_match = Regex_allmatch_nocase_not;
-        } else {
-            reg_match = Regex_allmatch_nocase;
-        }
-    } else if (opts & OPTION_INVERSE) {
-        reg_match = Regex_allmatch_not;
     }
-
 
     if (line_context != NULL) {
         if (!match_file_context(&regctx, &ctx, next_line, abort, reg_init,
@@ -546,6 +594,10 @@ MatchResult iterate_file(Regex* reg, wchar_t* file, WString *utf16_buf, LineBuff
     static uint64_t lineno = 0;
     if (line_context != NULL) {
         while ((line = LineBuffer_get(line_buf, offset, &offset)) != NULL) {
+            if (*max_count == 0) {
+                return MATCH_OK;
+            }
+            *max_count -= 1;
             if (line->lineno != lineno && lineno) {
                 outputw(L"--\n", 3);
             }
@@ -559,6 +611,10 @@ MatchResult iterate_file(Regex* reg, wchar_t* file, WString *utf16_buf, LineBuff
     lineno = 0xffffffffffffffff;
 
     while ((line = LineBuffer_get(line_buf, offset, &offset)) != NULL) {
+        if (*max_count == 0) {
+            return MATCH_OK;
+        }
+        *max_count -= 1;
         wchar_t sep = L"-:"[line->match];
         output_line((char*)line->bytes, line->len, line->lineno,
                     opts, name, utf16_buf, sep);
@@ -568,7 +624,7 @@ MatchResult iterate_file(Regex* reg, wchar_t* file, WString *utf16_buf, LineBuff
 }
 
 MatchResult recurse_dir(Regex* reg, wchar_t* dir, uint32_t opts,
-                        uint32_t before, uint32_t after) {
+                        uint32_t before, uint32_t after, uint64_t* max_count) {
     uint32_t name_offset = 0;
     wchar_t* filename = dir;
     if (dir == NULL) {
@@ -601,7 +657,7 @@ MatchResult recurse_dir(Regex* reg, wchar_t* dir, uint32_t opts,
 
     if (!(attr & FILE_ATTRIBUTE_DIRECTORY)) {
         MatchResult success = iterate_file(reg, filename, &utf16_buf, &line_buf,
-                                           opts, context);
+                                           opts, context, max_count);
         LineContext_free(context);
         LineBuffer_free(&line_buf);
         WString_free(&utf16_buf);
@@ -639,8 +695,12 @@ MatchResult recurse_dir(Regex* reg, wchar_t* dir, uint32_t opts,
                 ++stack_size;
             } else {
                 if (!iterate_file(reg, path->path.buffer + name_offset,
-                                  &utf16_buf, &line_buf, opts, context)) {
+                                  &utf16_buf, &line_buf, opts, context,
+                                  max_count)) {
                     success = MATCH_FAIL;
+                }
+                if (*max_count == 0) {
+                    break;
                 }
             }
         } else {
@@ -658,15 +718,14 @@ MatchResult recurse_dir(Regex* reg, wchar_t* dir, uint32_t opts,
 }
 
 MatchResult recurse_files(Regex* reg, int argc, wchar_t** argv, uint32_t opts,
-                          uint32_t before, uint32_t after) {
-    WalkCtx ctx;
+                          uint32_t before, uint32_t after, uint64_t max_count) {
     if (argc == 0) {
-        return recurse_dir(reg, NULL, opts, before, after);
+        return recurse_dir(reg, NULL, opts, before, after, &max_count);
     }
 
     MatchResult status = MATCH_OK;
     for (int ix = 0; ix < argc; ++ix) {
-        MatchResult res = recurse_dir(reg, argv[ix], opts, before, after);
+        MatchResult res = recurse_dir(reg, argv[ix], opts, before, after, &max_count);
         if (res == MATCH_ABORT) {
             return MATCH_ABORT;
         }
@@ -678,7 +737,7 @@ MatchResult recurse_files(Regex* reg, int argc, wchar_t** argv, uint32_t opts,
     return status;
 }
 
-bool pattern_match(int argc, wchar_t** argv, uint32_t opts, uint32_t before, uint32_t after) {
+bool pattern_match(int argc, wchar_t** argv, uint32_t opts, uint32_t before, uint32_t after, uint64_t max_count) {
     if (argc < 2) {
         if (argc > 0) {
             _wprintf_e(L"Usage: %s [OPTION]... PATTERN [FILE]...\n", argv[0]);
@@ -705,8 +764,14 @@ bool pattern_match(int argc, wchar_t** argv, uint32_t opts, uint32_t before, uin
         return false;
     }
 
+    if (max_count == 0) {
+        Regex_free(reg);
+        return MATCH_OK;
+    }
+
     if (opts & OPTION_RECURSIVE) {
-        MatchResult status = recurse_files(reg, argc - 2, argv + 2, opts, before, after);
+        MatchResult status = recurse_files(reg, argc - 2, argv + 2,
+                                           opts, before, after, max_count);
         Regex_free(reg);
         return status == MATCH_OK;
     }
@@ -741,17 +806,20 @@ bool pattern_match(int argc, wchar_t** argv, uint32_t opts, uint32_t before, uin
     MatchResult status = MATCH_OK;
 
     if (argc < 3) {
-        status = iterate_file(reg, L"-", &utf16_buf, &line_buf, opts, line_ctx);
+        status = iterate_file(reg, L"-", &utf16_buf, &line_buf, opts, line_ctx, &max_count);
     }
 
     for (int ix = 2; ix < argc; ++ix) {
         MatchResult res = iterate_file(reg, argv[ix], &utf16_buf, &line_buf, 
-                                       opts, line_ctx);
+                                       opts, line_ctx, &max_count);
         if (res != MATCH_OK) {
             status = res;
             if (res == MATCH_ABORT) {
                 break;
             }
+        }
+        if (max_count == 0) {
+            break;
         }
     }
 
@@ -768,7 +836,8 @@ int main() {
     wchar_t** argv = parse_command_line(args, &argc);
 
     uint32_t before, after;
-    uint32_t opts = parse_options(&argc, argv, &before, &after);
+    uint64_t max_count;
+    uint32_t opts = parse_options(&argc, argv, &before, &after, &max_count);
     if (opts == OPTION_INVALID) {
         Mem_free(argv);
         ExitProcess(1);
@@ -778,7 +847,7 @@ int main() {
         ExitProcess(0);
     }
 
-    bool success = pattern_match(argc, argv, opts, before, after);
+    bool success = pattern_match(argc, argv, opts, before, after, max_count);
     Mem_free(argv);
 
     ExitProcess(success ? 0 : 1);
