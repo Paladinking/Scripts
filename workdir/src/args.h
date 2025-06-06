@@ -30,7 +30,7 @@ typedef struct FlagValue {
     unsigned enum_count; // Input
     char has_value; // Output
     union { // Output
-        LPWSTR str;
+        wchar_t* str;
         uint64_t uint;
         int64_t sint;
         double real;
@@ -52,7 +52,7 @@ typedef struct ErrorInfo {
     uint32_t type;
     uint32_t ix;
     BOOL long_flag;
-    LPWSTR value;
+    wchar_t* value;
 } ErrorInfo;
 
 
