@@ -235,6 +235,10 @@ BOOL find_flags(wchar_t** argv, int* argc, FlagInfo* flags, uint32_t flag_count,
         }
         if (argv[ix][1] == L'-') {
             if (argv[ix][2] == L'\0') {
+                for (int j = ix + 1; j < *argc; ++j) {
+                    argv[j - 1] = argv[j];
+                }
+                --(*argc);
                 return TRUE;
             }
             unsigned char found = 0;
@@ -451,7 +455,7 @@ wchar_t* format_error(ErrorInfo* err, FlagInfo* flags, uint32_t flag_count) {
                23 * sizeof(wchar_t));
         return str; 
     } else if (err->type == FLAG_INVALID_VALUE) {
-        uint32_t len = 18 + 7 + 2 + flag_len;
+        uint32_t len = 18 + 7 + 2 + flag_len + val_len;
         str = Mem_alloc(len * sizeof(wchar_t));
         if (str == NULL) {
             return NULL;
@@ -470,7 +474,7 @@ wchar_t* format_error(ErrorInfo* err, FlagInfo* flags, uint32_t flag_count) {
         memcpy(str + 25 + val_len + flag_len, L"'", 2 * sizeof(wchar_t));
         return str;
     } else if (err->type == FLAG_AMBIGUOS_VALUE) {
-        uint32_t len = 20 + 7 + 2 + flag_len;
+        uint32_t len = 20 + 7 + 2 + flag_len + val_len;
         str = Mem_alloc(len * sizeof(wchar_t));
         if (str == NULL) {
             return NULL;
