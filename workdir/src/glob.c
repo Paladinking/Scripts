@@ -374,7 +374,7 @@ eol:
         if (String_from_utf16_bytes(&ctx->line, ctx->wbuffer.buffer,
                                      ctx->wbuffer.length)) {
             ctx->eof = true;
-            ctx->binary = memchr(ctx->line.buffer, ctx->line.length, 0) != NULL;
+            ctx->binary = ctx->binary || memchr(ctx->line.buffer, ctx->line.length, 0) != NULL;
             WString_free(&ctx->wbuffer);
             *len = ctx->line.length;
             return ctx->line.buffer;
@@ -476,7 +476,7 @@ eof:
     ctx->file = INVALID_HANDLE_VALUE;
     ctx->eof = true;
     *len = ctx->line.length;
-    ctx->binary = memchr(ctx->line.buffer, ctx->line.length, 0) != NULL;
+    ctx->binary = ctx->binary || memchr(ctx->line.buffer, ctx->line.length, 0) != NULL;
     return ctx->line.buffer;
 }
 
@@ -645,7 +645,8 @@ eof:
     if (ctx->buffer.length > 0) {
         ctx->eof = true;
         *len = ctx->buffer.length;
-        ctx->binary = memchr(ctx->buffer.buffer, ctx->buffer.length, 0) != NULL;
+        ctx->binary = ctx->binary ||
+         memchr(ctx->buffer.buffer, ctx->buffer.length, 0) != NULL;
         return ctx->buffer.buffer;
     }
     String_free(&ctx->buffer);
