@@ -6,7 +6,7 @@ Condition* Condition_create() {
     if (cond == NULL) {
         return NULL;
     }
-    InitializeCriticalSection(&cond->mutex);
+    InitializeSRWLock(&cond->mutex);
     InitializeConditionVariable(&cond->cond);
 
     return cond;
@@ -22,18 +22,17 @@ void Condition_notify_all(Condition* cond) {
 }
 
 void Condition_aquire(Condition* cond) {
-    EnterCriticalSection(&cond->mutex);
+    AcquireSRWLockExclusive(&cond->mutex);
 }
 
 void Condition_release(Condition* cond) {
-    LeaveCriticalSection(&cond->mutex);
+    ReleaseSRWLockExclusive(&cond->mutex);
 }
 
 bool Condition_wait(Condition* cond, uint32_t timeout) {
-    return SleepConditionVariableCS(&cond->cond, &cond->mutex, timeout);
+    return SleepConditionVariableSRW(&cond->cond, &cond->mutex, timeout, 0);
 }
 
 void Condition_free(Condition* cond) {
-    DeleteCriticalSection(&cond->mutex);
     Mem_free(cond);
 }

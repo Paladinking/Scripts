@@ -2131,7 +2131,7 @@ RegexResult Regex_allmatch_nocase(RegexAllCtx *ctx, const char **match, uint64_t
     return REGEX_MATCH;
 }
 
-RegexResult Regex_allmatch_dfa(RegexAllCtx* ctx, const char** match, uint64_t* match_len) {
+RegexResult Regex_allmatch(RegexAllCtx* ctx, const char** match, uint64_t* match_len) {
     NodeDFA* dfa = ctx->regex->dfa;
     uint64_t len = ctx->len;
     const uint8_t* str = ctx->str;
@@ -2401,15 +2401,4 @@ fail:
     Mem_free(to_visit);
     Mem_free(visited);
     return REGEX_NO_MATCH;
-}
-
-RegexResult Regex_allmatch(RegexAllCtx* ctx, const char** match, uint64_t* len) {
-    if (ctx->regex->dfa == NULL) {
-        return REGEX_ERROR;
-    }
-    return Regex_allmatch_dfa(ctx, match, len);
-}
-
-RegexResult Regex_nomatch(RegexAllCtx *ctx, const char **match, uint64_t *len) {
-
 }

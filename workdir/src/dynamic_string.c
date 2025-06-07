@@ -81,12 +81,12 @@ void String_clear(String *s) {
 
 bool String_create(String *s) {
     s->length = 0;
-    s->buffer = Mem_alloc(4);
+    s->buffer = Mem_alloc(MEM_ALIGNMENT);
     if (s->buffer == NULL) {
         s->capacity = 0;
         return false;
     }
-    s->capacity = 4;
+    s->capacity = MEM_ALIGNMENT;
     s->buffer[0] = '\0';
     return true;
 }
@@ -96,7 +96,7 @@ bool String_create_capacity(String_noinit* s, string_size_t cap) {
         return false;
     }
     s->length = 0;
-    s->capacity = 4;
+    s->capacity = MEM_ALIGNMENT;
     while (s->capacity < cap) {
         s->capacity *= 2;
     }
@@ -311,12 +311,12 @@ void WString_clear(WString *s) {
 
 bool WString_create(WString *s) {
     s->length = 0;
-    s->buffer = Mem_alloc(4 * sizeof(wchar_t));
+    s->buffer = Mem_alloc(MEM_ALIGNMENT);
     if (s->buffer == NULL) {
         s->capacity = 0;
         return false;
     }
-    s->capacity = 4;
+    s->capacity = MEM_ALIGNMENT / sizeof(wchar_t);
     s->buffer[0] = '\0';
     return true;
 }
@@ -326,7 +326,7 @@ bool WString_create_capacity(WString_noinit* s, string_size_t cap) {
         return false;
     }
     s->length = 0;
-    s->capacity = 4;
+    s->capacity = MEM_ALIGNMENT / sizeof(wchar_t);
     while (s->capacity < cap) {
         s->capacity *= 2;
     }

@@ -1,6 +1,17 @@
 #include "glob.h"
 #include "args.h"
 
+
+#ifdef NEXTLINE_FAST
+#include <immintrin.h>
+char* find_next_line_fast(LineCtx* ctx, uint64_t* len);
+#define find_next_line find_next_line_fast
+#else
+char* find_next_line(LineCtx* ctx, uint64_t* len);
+#endif
+
+#define LINE_BUFFER_SIZE (32768)
+
 bool read_utf16_file(WString_noinit* str, const wchar_t* filename) {
     HANDLE file = CreateFileW(filename, GENERIC_READ,
                               FILE_SHARE_READ, NULL,
@@ -253,9 +264,65 @@ bool matches_glob(const wchar_t* pattern, const wchar_t* str) {
     return str[s_ix] == L'\0';
 }
 
-#define LINE_BUFFER_SIZE (32768)
 
-static char* find_next_line(LineCtx* ctx, uint64_t* len) {
+#ifdef NEXTLINE_FAST
+
+char* find_next_line_fast(LineCtx* ctx, uint64_t* len) {
+    char* start = ctx->line.buffer + ctx->str_offset;
+    char* ptr = start;
+    __m128i m1 = _mm_set1_epi8('\n');
+    __m128i m2 = _mm_set1_epi8('\r');
+    __m128i z = _mm_setzero_si128();
+    uint32_t zm = 0;
+    while (1) {
+        if (zm) {
+            ctx->binary = true;
+        }
+        __m128i m = _mm_loadu_si128((__m128i*)ptr);
+        __m128i cmp1 = _mm_cmpeq_epi8(m, m1);
+        __m128i cmp2 = _mm_cmpeq_epi8(m, m2);
+
+        zm = _mm_movemask_epi8(_mm_cmpeq_epi8(m, z));
+
+        uint32_t mask = _mm_movemask_epi8(_mm_or_si128(cmp1, cmp2));
+
+        if (mask == 0) {
+            ptr += 16;
+            continue;
+        }
+
+        uint32_t ix = _tzcnt_u32(mask);
+        if (zm) {
+            zm = _tzcnt_u32(zm);
+            if (zm < ix) {
+                ctx->binary = true;
+            }
+        }
+
+        ix += ptr - start;
+        *len = ix;
+        ix += ctx->str_offset;
+        if (ctx->line.buffer[ix] == '\r') {
+            if (ctx->line.buffer[ix + 1] == '\n') {
+                ++ix;
+            }
+        }
+        if (ix + 1 == ctx->line.length) {
+            ctx->line.length = 0;
+            ctx->str_offset = 0;
+            ctx->ended_cr = ctx->line.buffer[ix] == '\r';
+        } else {
+            ctx->str_offset = ix + 1;
+        }
+        return start;
+    }
+}
+
+#define find_next_line find_next_line_fast
+
+#else
+
+char* find_next_line(LineCtx* ctx, uint64_t* len) {
     char* start = ctx->line.buffer + ctx->str_offset;
     for (uint64_t ix = ctx->str_offset; true; ++ix) {
         if (ctx->line.buffer[ix] == '\0') {
@@ -288,6 +355,8 @@ static char* find_next_line(LineCtx* ctx, uint64_t* len) {
         }
     }
 }
+#endif
+
 
 bool ConsoleLineIter_begin(LineCtx *ctx, HANDLE in) {
     ctx->file = in;
@@ -359,6 +428,11 @@ char* ConsoleLineIter_next(LineCtx* ctx, uint64_t* len) {
                                          line_len)) {
                 goto fail;
             }
+#ifdef NEXTLINE_FAST // Make space for vector registers
+            if (!String_reserve(&ctx->line, ctx->line.length + 16)) {
+                goto fail;
+            }
+#endif
             WString_remove(&ctx->wbuffer, 0, line_len);
         }
     }
@@ -423,7 +497,7 @@ char* SyncLineIter_next(LineCtx* ctx, uint64_t* len) {
     }
 
     while (ctx->offset == 0) {
-        if (!String_reserve(&ctx->line, LINE_BUFFER_SIZE + ctx->line.length)) {
+        if (!String_reserve(&ctx->line, LINE_BUFFER_SIZE + ctx->line.length + 16)) {
             goto fail;
         }
         DWORD read;
@@ -457,14 +531,16 @@ char* SyncLineIter_next(LineCtx* ctx, uint64_t* len) {
                     }
                     ctx->ended_cr = false;
                 }
-                ctx->offset = 1;
-                ctx->line.buffer[ctx->line.length] = '\0';
+                ctx->offset = ctx->line.length - ix;
+                ctx->line.length = ix + 1;
                 break;
             }
         } while (ix > start);
     }
     char* res = find_next_line(ctx, len);
     if (ctx->line.length == 0) {
+        ctx->line.length = ctx->offset - 1;
+        memmove(ctx->line.buffer, res + *len + 1, ctx->line.length);
         ctx->offset = 0;
     }
     return res;
@@ -489,6 +565,7 @@ void SyncLineIter_abort(LineCtx* ctx) {
         return;
     }
     String_free(&ctx->line);
+    ctx->file = INVALID_HANDLE_VALUE;
 }
 
 bool LineIter_begin(LineCtx* ctx, const wchar_t* filename) {
@@ -545,6 +622,7 @@ bool LineIter_begin(LineCtx* ctx, const wchar_t* filename) {
     return true;
 }
 
+
 // Yeild lines from file.
 // Uses overlapped I/O.
 char* LineIter_next(LineCtx* ctx, uint64_t* len) {
@@ -569,14 +647,14 @@ char* LineIter_next(LineCtx* ctx, uint64_t* len) {
         if (read == 0) {
             continue;
         }
-        uint64_t start = ctx->buffer.length;
+        int64_t start = ctx->buffer.length;
         ctx->offset += read;
         ctx->o.Offset = (uint32_t)ctx->offset;
         ctx->o.OffsetHigh = (ctx->offset >> 32);
 
         uint64_t line_len = 0;
         ctx->buffer.length += read;
-        uint64_t ix = ctx->buffer.length;
+        int64_t ix = ctx->buffer.length;
         do {
             --ix;
             if (ctx->buffer.buffer[ix] == '\n' ||
@@ -585,6 +663,7 @@ char* LineIter_next(LineCtx* ctx, uint64_t* len) {
                 break;
             }
         } while (ix > start);
+    found:
 
         if (line_len > 0) {
             String tmp = ctx->line;
@@ -617,7 +696,7 @@ char* LineIter_next(LineCtx* ctx, uint64_t* len) {
             ctx->line.buffer[line_len] = '\0';
         }
         if (!String_reserve(&ctx->buffer,
-                ctx->buffer.length + LINE_BUFFER_SIZE + 1)) {
+                ctx->buffer.length + LINE_BUFFER_SIZE + 33)) {
             goto fail;
         }
         if (!ReadFile(ctx->file, ctx->buffer.buffer + ctx->buffer.length,
@@ -653,6 +732,7 @@ eof:
     String_free(&ctx->line);
     return NULL;
 }
+
 
 void LineIter_abort(LineCtx* ctx) {
     if (ctx->file == INVALID_HANDLE_VALUE) {
