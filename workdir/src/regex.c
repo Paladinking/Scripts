@@ -2120,64 +2120,6 @@ void Regex_allmatch_init(Regex* regex, const char* str, uint64_t len, RegexAllCt
     ctx->start = 0;
 }
 
-void Regex_allmatch_init_nocase(Regex* regex, const char* str, uint64_t len, RegexAllCtx* ctx) {
-    Regex_allmatch_init(regex, str, len, ctx);
-    const uint8_t* bytes = (const uint8_t*)str;
-    uint64_t i = 0;
-    for (uint64_t ix = 0; ix < len;) {
-        uint32_t l = get_utf8_seq(bytes + ix, len - ix);
-        while (i + 4 > ctx->buffer_cap) {
-            ctx->buffer_cap *= 2;
-            uint8_t* new_buf = Mem_realloc(ctx->buffer, ctx->buffer_cap);
-            if (new_buf == NULL) {
-                Mem_free(ctx->buffer);
-                ctx->buffer = NULL;
-                ctx->buffer_cap = 0;
-                return;
-            }
-            ctx->buffer = new_buf;
-        }
-        i += unicode_case_fold_utf8(bytes + ix, l, ctx->buffer + i);
-        ix += l;
-    }
-    ctx->buffer_len = i;
-}
-
-RegexResult Regex_allmatch_nocase(RegexAllCtx *ctx, const char **match, uint64_t *len) {
-    if (ctx->buffer == NULL) {
-        return REGEX_ERROR;
-    }
-    uint64_t l = ctx->len;
-    const uint8_t* s = ctx->str;
-    ctx->str = ctx->buffer;
-    ctx->len = ctx->buffer_len;
-    RegexResult res = Regex_allmatch(ctx, match, len);
-    ctx->str = s;
-    ctx->len = l;
-    if (res != REGEX_MATCH) {
-        return res;
-    }
-    uint64_t offset = ((uint8_t*)*match) - ctx->buffer;
-    uint64_t i = 0;
-    uint64_t ix = 0;
-    while (i < offset) {
-        l = get_utf8_seq(ctx->str + ix, ctx->len - ix);
-        uint8_t utf8[4];
-        i += unicode_case_fold_utf8(ctx->str + ix, l, utf8);
-        ix += l;
-    }
-    const uint8_t* dst = ctx->str + ix;
-    *match = (const char*) dst;
-    while (i < offset + *len) {
-        l = get_utf8_seq(ctx->str + ix, ctx->len - ix);
-        uint8_t utf8[4];
-        i += unicode_case_fold_utf8(ctx->str + ix, l, utf8);
-        ix += l;
-    }
-    *len = ix - (dst - ctx->str);
-    return REGEX_MATCH;
-}
-
 RegexResult Regex_allmatch(RegexAllCtx* ctx, const char** match, uint64_t* match_len) {
     NodeDFA* dfa = ctx->regex->dfa;
     uint64_t len = ctx->len;

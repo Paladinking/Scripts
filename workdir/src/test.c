@@ -20,7 +20,7 @@
 #define OPTION_BINARY_NOMATCH 256
 #define OPTION_WHOLELINE 512
 
-#define OPTION_MATCH_MASK (OPTION_INVERSE | OPTION_IGNORE_CASE | OPTION_WHOLELINE)
+#define OPTION_MATCH_MASK (OPTION_INVERSE | OPTION_WHOLELINE)
 
 // TODO: console stdin
 // TODO: -b, -L, -l, -c, --color, --exclude-dir, --include, --max-depth
@@ -587,14 +587,6 @@ RegexResult Regex_fullmatch_ctx(RegexAllCtx* ctx, const char**match, uint64_t* l
     return res;
 }
 
-RegexResult Regex_fullmatch_nocase(RegexAllCtx* ctx, const char **match, uint64_t* len) {
-    RegexResult res = Regex_allmatch_nocase(ctx, match, len);
-    if (res == REGEX_MATCH && *len != ctx->len) {
-        return REGEX_NO_MATCH;
-    }
-    return res;
-}
-
 #define REGEX_MATCH_NOT(fn) RegexResult fn##_not(RegexAllCtx* ctx, \
       const char **match, uint64_t* len) { \
     if (ctx->str == NULL) {                \
@@ -611,9 +603,7 @@ RegexResult Regex_fullmatch_nocase(RegexAllCtx* ctx, const char **match, uint64_
     return res; \
 }
 
-REGEX_MATCH_NOT(Regex_allmatch_nocase)
 REGEX_MATCH_NOT(Regex_allmatch)
-REGEX_MATCH_NOT(Regex_fullmatch_nocase)
 REGEX_MATCH_NOT(Regex_fullmatch_ctx)
 
 bool match_file_context(RegexAllCtx* regctx, LineCtx* ctx,
@@ -762,32 +752,16 @@ typedef enum MatchResult {
 } MatchResult;
 
 void get_match_funcs(match_init_fn_t* init, match_fn_t* match, uint32_t opts) {
-    if (opts & OPTION_IGNORE_CASE) {
-        *init = Regex_allmatch_init;
-    } else {
-        *init = Regex_allmatch_init;
-    }
+    *init = Regex_allmatch_init;
     switch (opts & OPTION_MATCH_MASK) {
-    case (OPTION_IGNORE_CASE):
-        *match = Regex_allmatch;
-        break;
-    case (OPTION_IGNORE_CASE | OPTION_WHOLELINE):
-        *match = Regex_fullmatch_ctx;
-        break;
-    case (OPTION_IGNORE_CASE | OPTION_INVERSE):
-        *match = Regex_allmatch_not;
-        break;
-    case (OPTION_IGNORE_CASE | OPTION_INVERSE | OPTION_WHOLELINE):
-        *match = Regex_fullmatch_ctx_not;
-        break;
     case (OPTION_WHOLELINE):
         *match = Regex_fullmatch_ctx;
         break;
-    case (OPTION_WHOLELINE | OPTION_INVERSE):
-        *match = Regex_fullmatch_ctx_not;
-        break;
     case (OPTION_INVERSE):
         *match = Regex_allmatch_not;
+        break;
+    case (OPTION_WHOLELINE | OPTION_INVERSE):
+        *match = Regex_fullmatch_ctx_not;
         break;
     default:
         *match = Regex_allmatch;
