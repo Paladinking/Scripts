@@ -5,16 +5,16 @@ CLFLAGS="/GS- /GL /O1 /favor:AMD64 /nologo"
 LINKFLAGS="kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main"
 DLLFLAGS="kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:DLLMain"
 
-#CLFLAGS = "/favor:AMD64 /nologo /GS-"
-#LINKFLAGS = "kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /entry:main /DEBUG"
-#DLLFLAGS = "kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /entry:DLLMain /DEBUG"
+CLFLAGS = "/favor:AMD64 /nologo /GL /O1 /GS- /arch:AVX2"
+LINKFLAGS = "kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main /DEBUG"
+DLLFLAGS = "kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:DLLMain /DEBUG"
 
 BUILD_DIR = "build"
 BIN_DIR = "bin"
 
 
-CLFLAGS_DBG = "-g -Og"
-LINKFLAGS_DBG = "-g -Og"
+CLFLAGS_DBG = "-g -Og -march=native"
+LINKFLAGS_DBG = "-g -Og -march=native"
 
 BUILD_DIR_DBG = "build-gcc"
 BIN_DIR_DBG = "bin-gcc"
@@ -55,11 +55,14 @@ def main():
                  "wcscmp", "strcmp", "_fltused", "wcschr", "wcsrchr", 
                  "strtol", "wcsncmp", "memcmp", "tolower", "strncmp",
                  "strnlen", "wcsstr", "_snprintf", "memchr", "qsort"]
+    tablesymbos = ["RtlInitializeGenericTable", "RtlInsertElementGenericTable",
+                   "RtlDeleteElementGenericTable", "RtlLookupElementGenericTable"]
     kernelbasesymbols = ["PathMatchSpecW"]
 
     arg_src = ["src/args.c", "src/mem.c", "src/dynamic_string.c", "src/printf.c"]
     unicode = ["src/unicode/case_folding.c", "src/unicode/tables.c", "src/unicode/unicode_width.c"]
     ntdll = ImportLib("ntutils.lib", "ntdll.dll", ntsymbols)
+    table = ImportLib("table.lib", "ntdll.dll", tablesymbos)
     kernelbase = ImportLib("kernelbase.lib", "kernelbase.dll", kernelbasesymbols)
 
     Executable("pathc.exe", "src/pathc.c", "src/path_utils.c", *arg_src, ntdll)
@@ -92,7 +95,62 @@ def main():
                "src/unicode/unicode_width.c",
                link_flags=DLLFLAGS, dll=True)
 
-    Executable("test.exe", "src/test.c", "src/glob.c", "src/regex.c", *unicode, *arg_src, ntdll)
+    if backend().name == "msvc":
+        """test_obj = Object("test.obj", "src/test.c", defines=["PENTER"], namespace="o2",
+                          cmp_flags=CLFLAGS.replace("/O1", "/O2"))
+        reg_obj = Object("regex.obj", "src/regex.c", namespace="o2",
+                         cmp_flags=CLFLAGS.replace("/O1", "/O2"))
+        glob_obj = Object("glob.obj", "src/glob.c", extra_cmp_flags="/GH /Gh", namespace="o2",
+                          defines=["PENTER"], cmp_flags=CLFLAGS.replace("/O1", "/O2"))
+        glob_obj2 = Object("glob2.obj", "src/glob.c", namespace="o2", defines=["NOPENTER"],
+                           cmp_flags=CLFLAGS.replace("/O1", "/O2"))
+        Executable("test_o2.exe", test_obj, glob_obj, glob_obj2, reg_obj, *unicode, *arg_src, ntdll, table,
+                   extra_link_flags="build\\penterlib.lib", cmp_flags=CLFLAGS.replace("/O1", "/O2"),
+                   namespace="o2", group="grep")
+
+        test_obj = Object("test.obj", "src/test.c", defines=["PENTER"], namespace="o1",
+                          cmp_flags=CLFLAGS.replace("/O2", "/O1"))
+        reg_obj = Object("regex.obj", "src/regex.c", namespace="o1",
+                         cmp_flags=CLFLAGS.replace("/O2", "/O1"))
+        glob_obj = Object("glob.obj", "src/glob.c", extra_cmp_flags="/GH /Gh", namespace="o1",
+                          defines=["PENTER"], cmp_flags=CLFLAGS.replace("/O2", "/O1"))
+        glob_obj2 = Object("glob2.obj", "src/glob.c", namespace="o1", defines=["NOPENTER"],
+                           cmp_flags=CLFLAGS.replace("/O2", "/O1"))
+        Executable("test_o1.exe", test_obj, glob_obj, glob_obj2, reg_obj, *unicode, *arg_src, ntdll, table,
+                   extra_link_flags="build\\penterlib.lib", cmp_flags=CLFLAGS.replace("/O2", "/O1"),
+                   namespace="o1", group="grep")"""
+
+        test_obj = Object("test.obj", "src/test.c", namespace="o1_mm",
+                          cmp_flags=CLFLAGS.replace("/O2", "/O1"))
+        reg_obj = Object("regex.obj", "src/regex.c", namespace="o1_mm",
+                         cmp_flags=CLFLAGS.replace("/O2", "/O1"))
+        glob_obj = Object("glob.obj", "src/glob.c", namespace="o1_mm",
+                          defines=["NEXTLINE_FAST"], cmp_flags=CLFLAGS.replace("/O2", "/O1"))
+        Executable("test_o1_mm.exe", test_obj, glob_obj, reg_obj, *unicode, *arg_src, ntdll, table,
+                   "src/mutex.c",
+                   cmp_flags=CLFLAGS.replace("/O2", "/O1"),
+                   namespace="o1_mm", group="grep")
+
+        test_obj = Object("test.obj", "src/test.c", namespace="o2_mm",
+                          cmp_flags=CLFLAGS.replace("/O1", "/O2"))
+        reg_obj = Object("regex.obj", "src/regex.c", namespace="o2_mm",
+                         cmp_flags=CLFLAGS.replace("/O1", "/O2"))
+        glob_obj = Object("glob.obj", "src/glob.c", namespace="o2_mm",
+                          defines=["NEXTLINE_FAST"], cmp_flags=CLFLAGS.replace("/O1", "/O2"))
+        Executable("test_o2_mm.exe", test_obj, glob_obj, reg_obj, *unicode, *arg_src, ntdll, table,
+                   "src/mutex.c",
+                   cmp_flags=CLFLAGS.replace("/O1", "/O2"), namespace="o2_mm", group="grep")
+
+
+    else:
+        test_obj = Object("test.obj", "src/test.c")
+        reg_obj = Object("regex.obj", "src/regex.c")
+        glob_obj = Object("glob.obj", "src/glob.c")
+        Executable("test.exe", "src/mutex.c", test_obj, glob_obj, reg_obj, *unicode, *arg_src, ntdll, table)
+
+    Executable("test2.exe", *arg_src, "src/test2.c", "src/glob.c", "src/dynamic_string.c", u64hashmap,  ntdll,
+               defines=["NEXTLINE_FAST"], namespace="test2")
+
     Executable("symbol-dump.exe", "src/symbol-dump.c", "src/coff.c", *arg_src, ntdll)
 
     Executable("casefold.exe", "src/casefold.c", *unicode, *arg_src, ntdll)
@@ -139,7 +197,7 @@ def main():
 
     with Context(group="tests", directory=f"{bin_dir()}/tests",
                  includes=["src"], namespace="tests"):
-        Executable("test_regex.exe", "src/tests/test_regex.c", "src/regex.c",
+        Executable("test_regex.exe", "src/tests/test_regex.c", "src/regex.c", *unicode,
                    "src/printf.c", "src/dynamic_string.c", "src/args.c", ntdll)
 
     with Context(group="compiler", includes=["src"], namespace="compiler"):

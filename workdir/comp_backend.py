@@ -261,7 +261,7 @@ class Msvc(BackendBase):
 def Object(name: str, source: str, cmp_flags: Optional[str]=None, namespace: str="",
            depends: List[Union[str, Product]]=[],
            defines: List[Union[str, Tuple[str, str]]]=[],
-           includes: List[str]=[],
+           includes: List[str]=[], extra_cmp_flags: Optional[str]=None,
            context: Optional[Context]=g_context) -> Obj:
     if context is None:
         context = g_context
@@ -272,6 +272,8 @@ def Object(name: str, source: str, cmp_flags: Optional[str]=None, namespace: str
         includes = includes + context.includes
         if not namespace:
             namespace = context.namespace
+    if extra_cmp_flags is not None:
+        cmp_flags += " " + extra_cmp_flags
     for define in defines:
         if isinstance(define, tuple):
             key, val = define
