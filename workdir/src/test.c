@@ -1,10 +1,12 @@
 #define WIN32_LEAN_AND_MEAN
 #define _NO_CRT_STDIO_INLINE
 #include <windows.h>
+#include <assert.h>
 #include "args.h"
 #include "regex.h"
 #include "glob.h"
 #include "printf.h"
+#include "mutex.h"
 
 #define OPTION_INVALID 0
 #define OPTION_VALID 1
@@ -299,6 +301,29 @@ Line* LineBuffer_get(LineBuffer* b, uint32_t offset, uint32_t* new_offset) {
     return l;
 }
 
+void LineBuffer_take(LineBuffer* a, LineBuffer* b) {
+    LineBuffer tmp = *a;
+    *a = *b;
+    *b = tmp;
+}
+
+bool LineBuffer_copy(LineBuffer* a, LineBuffer* b) {
+    if (a->capacity < b->size) {
+        Line* new_lines = Mem_alloc(b->size);
+        if (new_lines == NULL) {
+            return false;
+        }
+        Mem_free(a->lines);
+        a->size = b->size;
+        a->capacity = b->size;
+        a->lines = new_lines;
+    } else {
+        a->size = b->size;
+    }
+    memcpy(a->lines, b->lines, a->size);
+    return true;
+}
+
 // TODO: This converts to utf16 and then back into utf8 if stdout is a file
 void output_line(const char* line, uint32_t len, uint64_t lineno, uint32_t opts,
                  const wchar_t* name, WString* utf16_buf, wchar_t sep) {
@@ -320,6 +345,186 @@ void output_line(const char* line, uint32_t len, uint64_t lineno, uint32_t opts,
         outputw(utf16_buf->buffer, utf16_buf->length + 1);
     }
 }
+
+Condition* output_cond;
+
+typedef struct OutputSlot {
+    LineBuffer buffer;
+    bool free;
+    bool binary;
+    bool failed;
+    WString name;
+} OutputSlot;
+
+#define OUTPUT_SLOTS 16
+
+OutputSlot output_queue[OUTPUT_SLOTS];
+
+uint64_t current_ix;
+bool output_abort; // true if threads should abort early
+bool output_done; // true when all threads except the output_thread are done.
+
+void submit_failure(uint64_t ix, WString* name) {
+    WString_free(name);
+    Condition_aquire(output_cond);
+    if (output_abort) {
+        Condition_release(output_cond);
+        return;
+    }
+    while (ix - current_ix > OUTPUT_SLOTS ||
+           !output_queue[ix - current_ix].free) {
+        Condition_wait(output_cond, INFINITE);
+        if (output_abort) {
+            Condition_release(output_cond);
+            return;
+        }
+    }
+
+    OutputSlot* slot = output_queue + ix - current_ix;
+    slot->free = false;
+    slot->failed = true;
+
+    Condition_notify_all(output_cond);
+
+    Condition_release(output_cond);
+}
+
+bool submit_linebuffer(LineBuffer* buffer, uint64_t ix, WString* name, bool binary) {
+    Condition_aquire(output_cond);
+
+    if (output_abort) {
+        Condition_release(output_cond);
+        WString_free(name);
+        return false;
+    }
+
+    while (ix - current_ix > OUTPUT_SLOTS ||
+           !output_queue[ix - current_ix].free) {
+        Condition_wait(output_cond, INFINITE);
+        if (output_abort) {
+            Condition_release(output_cond);
+            WString_free(name);
+            return false;
+        }
+    }
+
+    OutputSlot* slot = output_queue + ix - current_ix;
+
+    slot->free = false;
+    if (!LineBuffer_copy(&slot->buffer, buffer)) {
+        Condition_release(output_cond);
+        WString_free(name);
+        return false;
+    }
+    slot->name = *name;
+    slot->binary = binary;
+
+    Condition_notify_all(output_cond);
+
+    Condition_release(output_cond);
+
+    return true;
+}
+
+bool output_thread(uint32_t opts, uint64_t max_count, bool output_context) {
+    LineBuffer slot;
+    if (!LineBuffer_create(&slot)) {
+        return false;
+    }
+
+    WString utf16_buf;
+    if (!WString_create(&utf16_buf)) {
+        LineBuffer_free(&slot);
+        return false;
+    }
+
+    while (1) {
+        Condition_aquire(output_cond);
+
+        while (output_queue[0].free && !output_abort && !output_done) {
+            Condition_wait(output_cond, INFINITE);
+        }
+
+        if (output_abort) {
+            Condition_release(output_cond);
+            LineBuffer_free(&slot);
+            WString_free(&utf16_buf);
+            return false;
+        }
+        if (output_queue[0].free) {
+            Condition_release(output_cond);
+            LineBuffer_free(&slot);
+            WString_free(&utf16_buf);
+            return true;
+        }
+
+        LineBuffer_take(&slot, &output_queue[0].buffer);
+        WString name = output_queue[0].name;
+        bool binary = output_queue[0].binary;
+        bool failed = output_queue[0].failed;
+
+        ++current_ix;
+        LineBuffer first = output_queue[0].buffer;
+        memmove(output_queue, output_queue + 1, (OUTPUT_SLOTS - 1)* sizeof(OutputSlot));
+        output_queue[OUTPUT_SLOTS - 1].buffer = first;
+        output_queue[OUTPUT_SLOTS - 1].free = true;
+        Condition_notify_all(output_cond);
+
+        Condition_release(output_cond);
+
+        if (slot.lines == NULL || failed) {
+            continue;
+        }
+
+        static uint64_t lineno = 0;
+        Line* line;
+        uint32_t offset = 0;
+
+        if (binary && !(opts & OPTION_BINARY_TEXT)) {
+            if (!(opts & OPTION_BINARY_NOMATCH)) {
+                if (LineBuffer_get(&slot, offset, &offset) != NULL) {
+                    _wprintf(L"Binary file %s matches\n", name.buffer);
+                }
+            }
+        } else if (output_context) {
+            while ((line = LineBuffer_get(&slot, offset, &offset)) != NULL) {
+                if (max_count == 0) {
+                    break;
+                }
+                max_count -= 1;
+                if (line->lineno != lineno && lineno) {
+                    outputw(L"--\n", 3);
+                }
+                lineno = line->lineno + 1;
+                wchar_t sep = L"-:"[line->match];
+                output_line((char*)line->bytes, line->len, line->lineno,
+                            opts, name.buffer, &utf16_buf, sep);
+            }
+            lineno = 0xffffffffffffffff;
+        } else {
+            while ((line = LineBuffer_get(&slot, offset, &offset)) != NULL) {
+                if (max_count == 0) {
+                    break;
+                }
+                max_count -= 1;
+                wchar_t sep = L"-:"[line->match];
+                output_line((char*)line->bytes, line->len, line->lineno,
+                            opts, name.buffer, &utf16_buf, sep);
+            }
+        }
+        WString_free(&name);
+        if (max_count == 0) {
+            WString_free(&utf16_buf);
+            LineBuffer_free(&slot);
+            Condition_aquire(output_cond);
+            output_abort = true;
+            Condition_notify_all(output_cond);
+            Condition_release(output_cond);
+            return true;
+        }
+    }
+}
+
 
 RegexResult Regex_fullmatch_ctx(RegexAllCtx* ctx, const char**match, uint64_t* len) {
     if (ctx->str == NULL) {
@@ -365,7 +570,7 @@ REGEX_MATCH_NOT(Regex_fullmatch_ctx)
 bool match_file_context(RegexAllCtx* regctx, LineCtx* ctx,
                         next_line_fn_t next_line, abort_fn_t abort,
                         match_init_fn_t reg_init, match_fn_t reg_match,
-                        LineBuffer* line_buf, const wchar_t* name,
+                        LineBuffer* line_buf,
                         uint32_t opts, LineContext* context) {
     uint64_t len;
     char* line;
@@ -427,7 +632,7 @@ bool match_file_context(RegexAllCtx* regctx, LineCtx* ctx,
 bool match_file(RegexAllCtx* regctx, LineCtx* ctx, next_line_fn_t next_line, 
                 abort_fn_t abort, match_init_fn_t reg_init,
                 match_fn_t reg_match, LineBuffer* line_buf,
-                const wchar_t* name, uint32_t opts) {
+                uint32_t opts) {
     uint64_t len;
     char* line;
 
@@ -488,6 +693,7 @@ bool start_iteration(LineCtx* ctx, wchar_t* arg, const wchar_t** name, next_line
         _wprintf_e(L"Cannot read '%s': Is a directory\n", arg);
         return false;
     }
+
     if (!LineIter_begin(ctx, arg)) {
         DWORD e = GetLastError();
         file_open_error(e, arg);
@@ -537,6 +743,320 @@ void get_match_funcs(match_init_fn_t* init, match_fn_t* match, uint32_t opts) {
     }
 }
 
+MatchResult iterate_file_async(Regex *reg, WString* name, LineBuffer* line_buf, uint32_t opts,
+                               LineContext* line_context, uint64_t ix) {
+    LineCtx ctx;
+    next_line_fn_t next_line;
+    abort_fn_t abort;
+    const wchar_t* filename;
+    if (!start_iteration(&ctx, name->buffer, &filename, &next_line, &abort)) {
+        submit_failure(ix, name);
+        return MATCH_FAIL;
+    }
+    if (name->buffer != filename) {
+        WString_clear(name);
+        if (!WString_extend(name, filename)) {
+            WString_free(name);
+            return MATCH_ABORT;
+        }
+    }
+
+    match_fn_t reg_match;
+    match_init_fn_t reg_init;
+    get_match_funcs(&reg_init, &reg_match, opts);
+
+    RegexAllCtx regctx;
+    regctx.regex = reg;
+    if (opts & OPTION_IGNORE_CASE) {
+        regctx.buffer = Mem_alloc(128);
+        if (regctx.buffer == NULL) {
+            abort(&ctx);
+            WString_free(name);
+            return MATCH_ABORT;
+        }
+        regctx.buffer_cap = 128;
+    }
+
+    if (line_context != NULL) {
+        if (!match_file_context(&regctx, &ctx, next_line, abort, reg_init,
+                        reg_match, line_buf, opts, line_context)) {
+            return MATCH_ABORT;
+        }
+    } else {
+        if (!match_file(&regctx, &ctx, next_line, abort, reg_init, reg_match, line_buf, opts)) {
+            return MATCH_ABORT;
+        }
+    }
+
+    if (opts & OPTION_IGNORE_CASE) {
+        Mem_free(regctx.buffer);
+    }
+
+    if (!submit_linebuffer(line_buf, ix, name, ctx.binary)) {
+        return MATCH_ABORT;
+    }
+
+    return MATCH_OK;
+} 
+
+#define MAX_THREADS 8
+
+typedef struct ThreadData {
+    Regex* reg;                //
+    uint32_t opts;             // 
+    uint32_t before;           //
+    uint32_t after;            // Only thread after creation
+    LineBuffer line_buf;       //
+    LineContext* line_context; //
+
+    uint64_t ix;        // 
+    WString name;       //
+    MatchResult status; // Take thead_cond to read / write
+    bool complete;      //
+
+    bool created;  // Only main thread
+    HANDLE handle; //
+} ThreadData;
+
+ThreadData thread_data[MAX_THREADS];
+Condition* thread_cond;
+
+enum {
+    THREADS_RUNNING, THREADS_ABORT, THREADS_COMPLETE
+} threads_status;
+
+DWORD thread_entry(void* param) {
+    ThreadData* data = param;
+
+    Regex* reg = data->reg;
+    uint32_t opts = data->opts;
+    Condition_aquire(thread_cond);
+    uint64_t ix = data->ix;
+    WString name = data->name;
+    Condition_release(thread_cond);
+
+    while (1) {
+        MatchResult res = iterate_file_async(reg, &name, &data->line_buf, opts, data->line_context, ix);
+
+        Condition_aquire(thread_cond);
+        data->status = res;
+        data->complete = true;
+        Condition_notify_all(thread_cond);
+
+        while (threads_status == THREADS_RUNNING && data->complete) {
+            Condition_wait(thread_cond, INFINITE);
+        }
+        if (threads_status == THREADS_ABORT ||
+            (threads_status == THREADS_COMPLETE && data->complete)) {
+            Condition_release(thread_cond);
+            return 0;
+        }
+
+        ix = data->ix;
+        name = data->name;
+
+        Condition_release(thread_cond);
+    }
+}
+
+typedef struct OutputParams {
+    uint32_t opts;
+    bool context;
+    uint64_t max_count;
+} OutputParams;
+
+
+DWORD output_thread_entry(void *param) {
+    OutputParams* o = param;
+    uint32_t opts = o->opts;
+    bool context = o->context;
+    uint64_t max_count = o->max_count;
+    Mem_free(o);
+
+    Condition_aquire(output_cond);
+
+    for (uint32_t i = 0; i < OUTPUT_SLOTS; ++i) {
+        if (!LineBuffer_create(&output_queue[i].buffer)) {
+            for (uint32_t j = 0; j < i; ++j) {
+                LineBuffer_free(&output_queue[j].buffer);
+            }
+            output_abort = true;
+            Condition_notify_all(output_cond);
+            Condition_release(output_cond);
+            return 1;
+        }
+        output_queue[i].free = true;
+        output_queue[i].failed = false;
+    }
+
+    Condition_notify_all(output_cond);
+    Condition_release(output_cond);
+
+    bool res = output_thread(opts, max_count, context);
+    Condition_aquire(output_cond);
+    if (!res && !output_abort) {
+        output_abort = true;
+        Condition_notify_all(output_cond);
+    }
+    for (uint32_t i = 0; i < OUTPUT_SLOTS; ++i) {
+        LineBuffer_free(&output_queue[i].buffer);
+    }
+
+    Condition_release(output_cond);
+    return res ? 0 : 1;
+}
+
+
+HANDLE setup_threads(Regex* reg, uint32_t opts, uint32_t before, 
+                     uint32_t after, uint64_t max_count) {
+    output_cond = Condition_create();
+    output_done = false;
+
+    if (output_cond == NULL) {
+        return INVALID_HANDLE_VALUE;
+    }
+
+    thread_cond = Condition_create();
+    threads_status = THREADS_RUNNING;
+    if (thread_cond == NULL) {
+        Condition_free(output_cond);
+        return INVALID_HANDLE_VALUE;
+    }
+
+    for (uint32_t i = 0; i < OUTPUT_SLOTS; ++i) {
+        output_queue[i].free = false;
+    }
+
+    OutputParams* out_param = Mem_alloc(sizeof(OutputParams));
+    if (out_param == NULL) {
+        Condition_free(output_cond);
+        Condition_free(thread_cond);
+        return INVALID_HANDLE_VALUE;
+    }
+    out_param->context = before > 0 || after > 0;
+    out_param->max_count = max_count;
+    out_param->opts = opts;
+
+    for (uint32_t ix = 0; ix < MAX_THREADS; ++ix) {
+        thread_data[ix].reg = reg;
+        thread_data[ix].created = false;
+        thread_data[ix].opts = opts;
+        thread_data[ix].before = before;
+        thread_data[ix].after = after;
+        thread_data[ix].complete = false;
+        thread_data[ix].status = MATCH_OK;
+    }
+
+    HANDLE out_thread = CreateThread(NULL, 0, output_thread_entry, out_param, 0, 0);
+    if (out_thread == NULL || out_thread == INVALID_HANDLE_VALUE) {
+        Mem_free(out_param);
+        Condition_free(output_cond);
+        Condition_free(thread_cond);
+        return INVALID_HANDLE_VALUE;
+    }
+
+    return out_thread;
+}
+
+MatchResult schedule_thread(uint64_t id, WString* name) {
+    static uint32_t created_threads = 0;
+    for (uint32_t ix = created_threads; ix < MAX_THREADS; ++ix) {
+        if (!thread_data[ix].created) {
+            if (!LineBuffer_create(&thread_data[ix].line_buf)) {
+                WString_free(name);
+                return MATCH_ABORT;
+            }
+            if (thread_data[ix].before > 0 || thread_data[ix].after > 0) {
+                thread_data[ix].line_context = LineContext_create(thread_data[ix].before, thread_data[ix].after);
+                if (thread_data[ix].line_context == NULL) {
+                    LineBuffer_free(&thread_data[ix].line_buf);
+                    WString_free(name);
+                    return MATCH_ABORT;
+                }
+            }
+            thread_data[ix].ix = id;
+            thread_data[ix].name = *name;
+            thread_data[ix].handle = CreateThread(NULL, 0, thread_entry, &thread_data[ix], 0, 0);
+            if (thread_data[ix].handle == NULL || thread_data[ix].handle == INVALID_HANDLE_VALUE) {
+                LineBuffer_free(&thread_data[ix].line_buf);
+                LineContext_free(thread_data[ix].line_context);
+                if (created_threads == 0) {
+                    WString_free(name);
+                    return MATCH_ABORT;
+                }
+                break;
+            }
+            ++created_threads;
+            thread_data[ix].created = true;
+            return MATCH_OK;
+        }
+    }
+
+    Condition_aquire(thread_cond);
+    MatchResult res;
+    while (1) {
+        for (uint32_t i = 0; i < created_threads; ++i) {
+            if (thread_data[i].complete) {
+                thread_data[i].name = *name;
+                thread_data[i].ix = id;
+                thread_data[i].complete = false;
+                res = thread_data[i].status;
+                Condition_notify_all(thread_cond);
+                Condition_release(thread_cond);
+                return res;
+            }
+        }
+        Condition_wait(thread_cond, INFINITE);
+    }
+}
+
+MatchResult wait_for_threads(MatchResult res, HANDLE out_thread) {
+    Condition_aquire(thread_cond);
+    if (res == MATCH_ABORT) {
+        threads_status = THREADS_ABORT;
+    } else {
+        threads_status = THREADS_COMPLETE;
+    }
+    Condition_notify_all(thread_cond);
+    Condition_release(thread_cond);
+    for (uint32_t ix = 0; ix < MAX_THREADS; ++ix) {
+        if (!thread_data[ix].created) {
+            break;
+        }
+        WaitForSingleObject(thread_data[ix].handle, INFINITE);
+        CloseHandle(thread_data[ix].handle);
+        LineBuffer_free(&thread_data[ix].line_buf);
+        LineContext_free(thread_data[ix].line_context);
+        if (thread_data[ix].status != MATCH_OK) {
+            if (res != MATCH_ABORT) {
+                res = thread_data[ix].status;
+                if (res == MATCH_ABORT) {
+                    Condition_aquire(output_cond);
+                    output_abort = true;
+                    Condition_notify_all(output_cond);
+                    Condition_release(output_cond);
+                }
+            }
+        }
+    }
+    Condition_free(thread_cond);
+
+    Condition_aquire(output_cond);
+    if (!output_abort) {
+        output_done = true;
+        Condition_notify_all(output_cond);
+    } else {
+        res = MATCH_ABORT;
+    }
+    Condition_release(output_cond);
+    WaitForSingleObject(out_thread, INFINITE);
+    CloseHandle(out_thread);
+
+    Condition_free(output_cond);
+
+    return res;
+}
+
 MatchResult iterate_file(Regex* reg, wchar_t* file, WString *utf16_buf, LineBuffer* line_buf, uint32_t opts,
                          LineContext* line_context, uint64_t* max_count) {
     LineCtx ctx;
@@ -563,11 +1083,11 @@ MatchResult iterate_file(Regex* reg, wchar_t* file, WString *utf16_buf, LineBuff
 
     if (line_context != NULL) {
         if (!match_file_context(&regctx, &ctx, next_line, abort, reg_init,
-                        reg_match, line_buf, name, opts, line_context)) {
+                        reg_match, line_buf, opts, line_context)) {
             return MATCH_ABORT;
         }
     } else {
-        if (!match_file(&regctx, &ctx, next_line, abort, reg_init, reg_match, line_buf, name, opts)) {
+        if (!match_file(&regctx, &ctx, next_line, abort, reg_init, reg_match, line_buf, opts)) {
             return MATCH_ABORT;
         }
     }
@@ -576,8 +1096,6 @@ MatchResult iterate_file(Regex* reg, wchar_t* file, WString *utf16_buf, LineBuff
         Mem_free(regctx.buffer);
     }
 
-    bool list_name = opts & OPTION_LIST_NAMES;
-    bool list_lineno = opts & OPTION_LINENUMBER;
     Line* line;
     uint32_t offset = 0;
 
@@ -606,9 +1124,9 @@ MatchResult iterate_file(Regex* reg, wchar_t* file, WString *utf16_buf, LineBuff
             output_line((char*)line->bytes, line->len, line->lineno,
                         opts, name, utf16_buf, sep);
         }
+        lineno = 0xffffffffffffffff;
         return MATCH_OK;
     }
-    lineno = 0xffffffffffffffff;
 
     while ((line = LineBuffer_get(line_buf, offset, &offset)) != NULL) {
         if (*max_count == 0) {
@@ -624,7 +1142,7 @@ MatchResult iterate_file(Regex* reg, wchar_t* file, WString *utf16_buf, LineBuff
 }
 
 MatchResult recurse_dir(Regex* reg, wchar_t* dir, uint32_t opts,
-                        uint32_t before, uint32_t after, uint64_t* max_count) {
+                        uint32_t before, uint32_t after, uint64_t *ix) {
     uint32_t name_offset = 0;
     wchar_t* filename = dir;
     if (dir == NULL) {
@@ -636,40 +1154,21 @@ MatchResult recurse_dir(Regex* reg, wchar_t* dir, uint32_t opts,
         file_open_error(GetLastError(), filename);
         return MATCH_FAIL;
     }
-    WString utf16_buf;
-    if (!WString_create(&utf16_buf)) {
-        return MATCH_ABORT;
-    }
-    LineBuffer line_buf;
-    if (!LineBuffer_create(&line_buf)) {
-        WString_free(&utf16_buf);
-        return MATCH_ABORT;
-    }
-    LineContext* context = NULL;
-    if (before > 0 || after > 0) {
-        context = LineContext_create(before, after);
-        if (context == NULL) {
-            LineBuffer_free(&line_buf);
-            WString_free(&utf16_buf);
-            return MATCH_ABORT;
-        }
-    }
 
     if (!(attr & FILE_ATTRIBUTE_DIRECTORY)) {
-        MatchResult success = iterate_file(reg, filename, &utf16_buf, &line_buf,
-                                           opts, context, max_count);
-        LineContext_free(context);
-        LineBuffer_free(&line_buf);
-        WString_free(&utf16_buf);
+        WString name;
+        if (!WString_create_capacity(&name, wcslen(filename))) {
+            return MATCH_ABORT;
+        }
+        WString_extend(&name, filename);
+        MatchResult success = schedule_thread(*ix, &name);
+        ++(*ix);
         return success;
     }
 
     uint32_t stack_cap = 8;
     WalkCtx* stack = Mem_alloc(stack_cap * sizeof(WalkCtx));
     if (stack == NULL) {
-        LineContext_free(context);
-        LineBuffer_free(&line_buf);
-        WString_free(&utf16_buf);
         return MATCH_ABORT;
     }
     MatchResult success = MATCH_OK;
@@ -685,7 +1184,7 @@ MatchResult recurse_dir(Regex* reg, wchar_t* dir, uint32_t opts,
                     WalkCtx* new_stack = Mem_realloc(stack, 
                             stack_cap * sizeof(WalkCtx));
                     if (new_stack == NULL) {
-                        _wprintf_e(L"out of memory\n");
+                        _wprintf_e(L"Out of memory\n");
                         success = MATCH_ABORT;
                         break;
                     }
@@ -694,13 +1193,27 @@ MatchResult recurse_dir(Regex* reg, wchar_t* dir, uint32_t opts,
                 WalkDir_begin(&stack[stack_size], path->path.buffer, true);
                 ++stack_size;
             } else {
-                if (!iterate_file(reg, path->path.buffer + name_offset,
-                                  &utf16_buf, &line_buf, opts, context,
-                                  max_count)) {
-                    success = MATCH_FAIL;
-                }
-                if (*max_count == 0) {
+                Condition_aquire(output_cond);
+                if (output_abort) {
+                    success = MATCH_ABORT;
                     break;
+                }
+                Condition_release(output_cond);
+
+                WString name;
+                if (!WString_create_capacity(&name, wcslen(path->path.buffer + name_offset))) {
+                    success = MATCH_ABORT;
+                    break;
+                }
+                HeapSize(GetProcessHeap(), 0, stack);
+                WString_extend(&name, path->path.buffer + name_offset);
+                MatchResult r = schedule_thread(*ix, &name);
+                ++(*ix);
+                if (r == MATCH_ABORT) {
+                    success = MATCH_ABORT;
+                    break;
+                } else if (r == MATCH_FAIL) {
+                    success = MATCH_FAIL;
                 }
             }
         } else {
@@ -710,29 +1223,53 @@ MatchResult recurse_dir(Regex* reg, wchar_t* dir, uint32_t opts,
     for (uint32_t ix = 0; ix < stack_size; ++ix) {
         WalkDir_abort(&stack[ix]);
     }
-    LineContext_free(context);
     Mem_free(stack);
-    LineBuffer_free(&line_buf);
-    WString_free(&utf16_buf);
     return success;
 }
 
 MatchResult recurse_files(Regex* reg, int argc, wchar_t** argv, uint32_t opts,
                           uint32_t before, uint32_t after, uint64_t max_count) {
+
+    HANDLE out_thread = setup_threads(reg, opts, before, after, max_count);
+    if (out_thread == INVALID_HANDLE_VALUE) {
+        return MATCH_ABORT;
+    }
+    
+    uint64_t id = 0;
+
     if (argc == 0) {
-        return recurse_dir(reg, NULL, opts, before, after, &max_count);
+        MatchResult res = recurse_dir(reg, NULL, opts, before, after, &id);
+        if (res == MATCH_ABORT) {
+            Condition_aquire(output_cond);
+            output_abort = true;
+            Condition_notify_all(output_cond);
+            Condition_release(output_cond);
+        }
+        res = wait_for_threads(res, out_thread);
+        return res;
     }
 
     MatchResult status = MATCH_OK;
     for (int ix = 0; ix < argc; ++ix) {
-        MatchResult res = recurse_dir(reg, argv[ix], opts, before, after, &max_count);
-        if (res == MATCH_ABORT) {
-            return MATCH_ABORT;
+        MatchResult res = recurse_dir(reg, argv[ix], opts, before, after, &id);
+        Condition_aquire(output_cond);
+        if (output_abort) {
+            res = MATCH_ABORT;
+            Condition_release(output_cond);
+            break;
+        } else if (res == MATCH_ABORT) {
+            output_abort = true;
+            Condition_notify_all(output_cond);
+            Condition_release(output_cond);
+            break;
         }
+        Condition_release(output_cond);
         if (res != MATCH_OK) {
             status = res;
         }
     }
+
+    status = wait_for_threads(status, out_thread);
 
     return status;
 }
@@ -830,6 +1367,10 @@ bool pattern_match(int argc, wchar_t** argv, uint32_t opts, uint32_t before, uin
     return status == MATCH_OK;
 }
 
+#ifdef PENTER
+extern void Trace_display();
+#endif
+
 int main() {
     wchar_t* args = GetCommandLineW();
     int argc;
@@ -850,5 +1391,8 @@ int main() {
     bool success = pattern_match(argc, argv, opts, before, after, max_count);
     Mem_free(argv);
 
+#ifdef PENTER
+    Trace_display();
+#endif
     ExitProcess(success ? 0 : 1);
 }

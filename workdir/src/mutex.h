@@ -8,7 +8,7 @@
 
 typedef struct Condition {
     CONDITION_VARIABLE cond;
-    CRITICAL_SECTION mutex;
+    SRWLOCK mutex;
 } Condition;
 
 Condition* Condition_create();

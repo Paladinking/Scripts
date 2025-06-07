@@ -49,7 +49,6 @@ int _printf_h(HANDLE dest, const char *fmt, ...) {
         _vsnprintf(buf, count, fmt, args);
         outputa_h(dest, buf, count);
     } else {
-        HANDLE heap = GetProcessHeap();
         char *buf = (char *)Mem_alloc(count);
         if (buf == NULL) {
             return -1;
