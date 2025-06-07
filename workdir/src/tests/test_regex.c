@@ -14,6 +14,12 @@
     ASSERT_TRUE(dest->dfa != NULL, L"Dfa failed to compile for '" L##regex L"'"); \
 } while (0)
 
+
+#define COMPILE_REGEX_NOCASE(dest, regex) do {dest = Regex_compile_with(regex, true); \
+    ASSERT_TRUE(dest, L"Failed compiling regex '" L## regex L"'") \
+    ASSERT_TRUE(dest->dfa != NULL, L"Dfa failed to compile for '" L##regex L"'"); \
+} while (0)
+
 #define REGEX_FULLMATCH(reg, s) \
     ASSERT_TRUE(Regex_fullmatch(reg, s, strlen(s)) == REGEX_MATCH, \
                 L"Expected fullmatch '" L##s L"'")
@@ -28,9 +34,9 @@
 #define REGEX_ALLMATCH_MATCH(offset, l)                            \
     ASSERT_TRUE(Regex_allmatch(&ctx, &m, &len) == REGEX_MATCH,     \
                 L"Expected match at %d, length %d", offset, l);    \
-    ASSERT_TRUE(m - ctx.str == offset && l == len,                 \
+    ASSERT_TRUE(m - (const char*)ctx.str == offset && l == len,                 \
                 L"Wrong match, expected offset %d, length %d"      \
-                L", got offset %d, length %d", offset, l, m - ctx.str, len);
+                L", got offset %d, length %d", offset, l, m - (const char*)ctx.str, len);
 
 #define START_PERF(loop_count) { LARGE_INTEGER freq, start, end; \
     QueryPerformanceFrequency(&freq); \
@@ -43,7 +49,7 @@
 
 #define REGEX_ALLMATCH_END()                                      \
     ASSERT_TRUE(Regex_allmatch(&ctx, &m, &len) == REGEX_NO_MATCH, \
-                L"Expected no match, matched offset %d, length %d", m - ctx.str, len); }
+                L"Expected no match, matched offset %d, length %d", m - (const char*)ctx.str, len); }
 
 const char* TEST_LINES[] = {
     "Usage: path-add.exe [NAME]...",
@@ -165,8 +171,56 @@ int main() {
     REGEX_ALLMATCH_BEGIN(reg, "\xc0\xbbHello \xf0\x9f\x92\xb2\r\nHello world\r\n\xf0\x9f\x92\xb2\xf0\x9f\x92\xb2\xf0\x9f\x92\xb2Hello\r\n");
         REGEX_ALLMATCH_MATCH(27, 12);
     REGEX_ALLMATCH_END();
-
     Regex_free(reg);
+
+    COMPILE_REGEX_NOCASE(reg, "This Is AA Test TEST tEsT Ttestest TEst");
+    REGEX_FULLMATCH(reg, "THIS IS AA TEST TEST TEST TTESTEST TEST");
+    REGEX_FULLMATCH(reg, "this is aa test test test ttestest test");
+    REGEX_NOFULLMATCH(reg, "this is a test");
+    Regex_free(reg);
+
+    COMPILE_REGEX_NOCASE(reg, "tEsT");
+    REGEX_ALLMATCH_BEGIN(reg, "This Is AA Test TEST tEsT Ttestest TEst");
+        REGEX_ALLMATCH_MATCH(11, 4);
+        REGEX_ALLMATCH_MATCH(16, 4);
+        REGEX_ALLMATCH_MATCH(21, 4);
+        REGEX_ALLMATCH_MATCH(27, 4);
+        REGEX_ALLMATCH_MATCH(35, 4);
+    REGEX_ALLMATCH_END();
+    Regex_free(reg);
+
+    COMPILE_REGEX_NOCASE(reg, "t\\(EsT\\)*");
+    REGEX_ALLMATCH_BEGIN(reg, "This Is AA Test TEST tEsT Ttestest TEst");
+        REGEX_ALLMATCH_MATCH(0, 1);
+        REGEX_ALLMATCH_MATCH(11, 4);
+        REGEX_ALLMATCH_MATCH(16, 4);
+        REGEX_ALLMATCH_MATCH(21, 4);
+        REGEX_ALLMATCH_MATCH(26, 1);
+        REGEX_ALLMATCH_MATCH(27, 7);
+        REGEX_ALLMATCH_MATCH(35, 4);
+    REGEX_ALLMATCH_END();
+    Regex_free(reg);
+
+
+    COMPILE_REGEX_NOCASE(reg, "-\xc3\x85-");
+    REGEX_FULLMATCH(reg, "-\xe2\x84\xab-");
+    REGEX_FULLMATCH(reg, "-\xc3\xa5-");
+    REGEX_FULLMATCH(reg, "-\xc3\x85-");
+    REGEX_NOFULLMATCH(reg, "-a-");
+    REGEX_ALLMATCH_BEGIN(reg, "-\xe2\x84\xab- -\xe2\x84\xab- -\xc3\xa5-");
+        REGEX_ALLMATCH_MATCH(0, 5);
+        REGEX_ALLMATCH_MATCH(6, 5);
+        REGEX_ALLMATCH_MATCH(12, 4);
+    REGEX_ALLMATCH_END();
+    Regex_free(reg);
+
+    COMPILE_REGEX_NOCASE(reg, "-\xe2\x84\xab*-");
+    REGEX_FULLMATCH(reg, "-\xe2\x84\xab-");
+    REGEX_FULLMATCH(reg, "-\xc3\xa5-");
+    REGEX_FULLMATCH(reg, "-\xc3\x85-");
+    REGEX_FULLMATCH(reg, "-\xc3\x85\xc3\xa5\xc3\xa5\xe2\x84\xab-");
+    Regex_free(reg);
+
     
     _wprintf(L"All tests successfull\n");
 

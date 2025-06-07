@@ -1,7 +1,7 @@
 #define WIN32_LEAN_AND_MEAN
 #define _NO_CRT_STDIO_INLINE
 #include <windows.h>
-#include <assert.h>
+#include <stdio.h>
 #include "args.h"
 #include "regex.h"
 #include "glob.h"
@@ -22,7 +22,7 @@
 
 #define OPTION_MATCH_MASK (OPTION_INVERSE | OPTION_IGNORE_CASE | OPTION_WHOLELINE)
 
-// TODO: Use multiple threads
+// TODO: console stdin
 // TODO: -b, -L, -l, -c, --color, --exclude-dir, --include, --max-depth
 // Maybe: -s, -z, --version, -U, --exclude-from, --line-buffered, --label
 
@@ -325,25 +325,74 @@ bool LineBuffer_copy(LineBuffer* a, LineBuffer* b) {
 }
 
 // TODO: This converts to utf16 and then back into utf8 if stdout is a file
-void output_line(const char* line, uint32_t len, uint64_t lineno, uint32_t opts,
+bool output_line(const char* line, uint32_t len, uint64_t lineno, uint32_t opts,
                  const wchar_t* name, WString* utf16_buf, wchar_t sep) {
     bool list_name = opts & OPTION_LIST_NAMES;
     bool list_lineno = opts & OPTION_LINENUMBER;
-    WString_clear(utf16_buf);
-    if (list_name) {
-        if (list_lineno) {
-            WString_format_append(utf16_buf, L"%s%c%llu%c", name, sep, lineno, sep);
-        } else {
-            WString_format_append(utf16_buf, L"%s%c", name, sep);
-        }
-    } else if (list_lineno) {
-        WString_format_append(utf16_buf, L"%llu%c", lineno, sep);
-    }
+    HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
 
-    if (WString_append_utf8_bytes(utf16_buf, line, len)) {
-        utf16_buf->buffer[utf16_buf->length] = '\n';
-        outputw(utf16_buf->buffer, utf16_buf->length + 1);
+    bool success = true;
+    if (GetFileType(out) == FILE_TYPE_CHAR) {
+        WString_clear(utf16_buf);
+        if (list_name) {
+            if (list_lineno) {
+                success = WString_format_append(utf16_buf, L"%s%c%llu%c", name, sep, lineno, sep);
+            } else {
+                success = WString_format_append(utf16_buf, L"%s%c", name, sep);
+            }
+        } else if (list_lineno) {
+            success = WString_format_append(utf16_buf, L"%llu%c", lineno, sep);
+        }
+
+        if (success && WString_append_utf8_bytes(utf16_buf, line, len)) {
+            utf16_buf->buffer[utf16_buf->length] = '\n';
+            if (!WriteConsoleW(out, utf16_buf->buffer, utf16_buf->length + 1, NULL, NULL)) {
+                success = false;
+            }
+        } else {
+            success = false;
+        }
+    } else {
+        String s;
+        s.buffer = (char*)utf16_buf->buffer;
+        s.capacity = utf16_buf->capacity * sizeof(wchar_t);
+        s.length = 0;
+
+        if (list_name) {
+            if (list_lineno) {
+                success = String_from_utf16_bytes(&s, name, wcslen(name));
+                char nbuf[25];
+                int len = _snprintf_s(nbuf, 25, 25, "%c%llu%c", sep, lineno, sep);
+                success = success && String_append_count(&s, nbuf, len);
+            } else {
+                success = String_from_utf16_bytes(&s, name, wcslen(name));
+                success = success && String_append(&s, sep);
+            }
+        } else {
+            char nbuf[25];
+            int len = _snprintf_s(nbuf, 25, 25, "%llu%c", lineno, sep);
+            success = String_append_count(&s, nbuf, len);
+        }
+        if (success && String_append_count(&s, line, len)) {
+            s.buffer[s.length] = '\n';
+            DWORD w;
+            uint32_t written = 0;
+            while (written <= s.length) {
+                if (!WriteFile(out, s.buffer + written, s.length - written + 1, &w, NULL)) {
+                    success = false;
+                    break;
+                }
+                written += w;
+            }
+        } else {
+            success = false;
+        }
+
+        utf16_buf->buffer = (wchar_t*)s.buffer;
+        utf16_buf->capacity = s.capacity / sizeof(wchar_t);
+        utf16_buf->length = 0;
     }
+    return success;
 }
 
 Condition* output_cond;
@@ -587,17 +636,19 @@ bool match_file_context(RegexAllCtx* regctx, LineCtx* ctx,
         uint64_t match_len;
         reg_init(regctx->regex, line, len, regctx);
         if (reg_match(regctx, &match, &match_len) == REGEX_MATCH) {
-            uint64_t before_lno = lineno - before_count;
-            before_ix = (before_count * (before_ix + context->before - 1)) % context->before;
-            while (before_count > 0) {
-                String* s = &context->before_lines[before_ix];
-                before_ix = (before_ix + 1) % context->before;
-                if (!LineBuffer_append(line_buf, before_lno, s->length, s->buffer, 0)) {
-                    abort(ctx);
-                    return false;
+            if (before_count > 0) {
+                uint64_t before_lno = lineno - before_count;
+                before_ix = (before_count * (before_ix + context->before - 1)) % context->before;
+                while (before_count > 0) {
+                    String* s = &context->before_lines[before_ix];
+                    before_ix = (before_ix + 1) % context->before;
+                    if (!LineBuffer_append(line_buf, before_lno, s->length, s->buffer, 0)) {
+                        abort(ctx);
+                        return false;
+                    }
+                    ++before_lno;
+                    --before_count;
                 }
-                ++before_lno;
-                --before_count;
             }
 
             uint32_t line_len = (uint32_t) len;
@@ -614,15 +665,16 @@ bool match_file_context(RegexAllCtx* regctx, LineCtx* ctx,
                     return false;
                 }
                 continue;
-            }
-            before_ix = (before_ix + 1) % context->before;
-            String_clear(&context->before_lines[before_ix]);
-            if (!String_append_count(&context->before_lines[before_ix], line, len)) {
-                abort(ctx);
-                return false;
-            }
-            if (before_count < context->before) {
-                ++before_count;
+            } else if (context->before > 0 ){
+                before_ix = (before_ix + 1) % context->before;
+                String_clear(&context->before_lines[before_ix]);
+                if (!String_append_count(&context->before_lines[before_ix], line, len)) {
+                    abort(ctx);
+                    return false;
+                }
+                if (before_count < context->before) {
+                    ++before_count;
+                }
             }
         }
     }
@@ -711,22 +763,22 @@ typedef enum MatchResult {
 
 void get_match_funcs(match_init_fn_t* init, match_fn_t* match, uint32_t opts) {
     if (opts & OPTION_IGNORE_CASE) {
-        *init = Regex_allmatch_init_nocase;
+        *init = Regex_allmatch_init;
     } else {
         *init = Regex_allmatch_init;
     }
     switch (opts & OPTION_MATCH_MASK) {
     case (OPTION_IGNORE_CASE):
-        *match = Regex_allmatch_nocase;
+        *match = Regex_allmatch;
         break;
     case (OPTION_IGNORE_CASE | OPTION_WHOLELINE):
-        *match = Regex_fullmatch_nocase;
+        *match = Regex_fullmatch_ctx;
         break;
     case (OPTION_IGNORE_CASE | OPTION_INVERSE):
-        *match = Regex_allmatch_nocase_not;
+        *match = Regex_allmatch_not;
         break;
     case (OPTION_IGNORE_CASE | OPTION_INVERSE | OPTION_WHOLELINE):
-        *match = Regex_fullmatch_nocase_not;
+        *match = Regex_fullmatch_ctx_not;
         break;
     case (OPTION_WHOLELINE):
         *match = Regex_fullmatch_ctx;
@@ -767,15 +819,6 @@ MatchResult iterate_file_async(Regex *reg, WString* name, LineBuffer* line_buf, 
 
     RegexAllCtx regctx;
     regctx.regex = reg;
-    if (opts & OPTION_IGNORE_CASE) {
-        regctx.buffer = Mem_alloc(128);
-        if (regctx.buffer == NULL) {
-            abort(&ctx);
-            WString_free(name);
-            return MATCH_ABORT;
-        }
-        regctx.buffer_cap = 128;
-    }
 
     if (line_context != NULL) {
         if (!match_file_context(&regctx, &ctx, next_line, abort, reg_init,
@@ -786,10 +829,6 @@ MatchResult iterate_file_async(Regex *reg, WString* name, LineBuffer* line_buf, 
         if (!match_file(&regctx, &ctx, next_line, abort, reg_init, reg_match, line_buf, opts)) {
             return MATCH_ABORT;
         }
-    }
-
-    if (opts & OPTION_IGNORE_CASE) {
-        Mem_free(regctx.buffer);
     }
 
     if (!submit_linebuffer(line_buf, ix, name, ctx.binary)) {
@@ -1072,14 +1111,6 @@ MatchResult iterate_file(Regex* reg, wchar_t* file, WString *utf16_buf, LineBuff
 
     RegexAllCtx regctx;
     regctx.regex = reg;
-    if (opts & OPTION_IGNORE_CASE) {
-        regctx.buffer = Mem_alloc(128);
-        if (regctx.buffer == NULL) {
-            abort(&ctx);
-            return MATCH_ABORT;
-        }
-        regctx.buffer_cap = 128;
-    }
 
     if (line_context != NULL) {
         if (!match_file_context(&regctx, &ctx, next_line, abort, reg_init,
@@ -1090,10 +1121,6 @@ MatchResult iterate_file(Regex* reg, wchar_t* file, WString *utf16_buf, LineBuff
         if (!match_file(&regctx, &ctx, next_line, abort, reg_init, reg_match, line_buf, opts)) {
             return MATCH_ABORT;
         }
-    }
-
-    if (opts & OPTION_IGNORE_CASE) {
-        Mem_free(regctx.buffer);
     }
 
     Line* line;

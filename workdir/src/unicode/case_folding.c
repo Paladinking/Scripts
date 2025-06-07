@@ -5574,3 +5574,4162 @@ uint32_t unicode_case_fold_utf8(const uint8_t* in, uint32_t len, uint8_t* out) {
     out[3] = (c >> 24) & 0xff;
     return utf8_len_table[out[0]];
 }
+
+uint32_t unicode_case_fold_utf8_rev(const uint8_t* in, uint32_t len, uint8_t* out) {
+    uint32_t c = in[0];
+    switch (len) {
+    case 4:
+        c |= ((uint32_t)in[3]) << 24;
+    case 3:
+        c |= (((uint32_t)in[2]) << 16);
+    case 2:
+        c |= (((uint32_t)in[1]) << 8);
+    }
+    switch (c) {
+    case 97:
+        out[0] = 65;
+        return 1;
+    case 98:
+        out[0] = 66;
+        return 1;
+    case 99:
+        out[0] = 67;
+        return 1;
+    case 100:
+        out[0] = 68;
+        return 1;
+    case 101:
+        out[0] = 69;
+        return 1;
+    case 102:
+        out[0] = 70;
+        return 1;
+    case 103:
+        out[0] = 71;
+        return 1;
+    case 104:
+        out[0] = 72;
+        return 1;
+    case 105:
+        out[0] = 73;
+        return 1;
+    case 106:
+        out[0] = 74;
+        return 1;
+    case 107:
+        out[0] = 75; out[1] = 226; out[2] = 132; out[3] = 170;
+        return 2;
+    case 108:
+        out[0] = 76;
+        return 1;
+    case 109:
+        out[0] = 77;
+        return 1;
+    case 110:
+        out[0] = 78;
+        return 1;
+    case 111:
+        out[0] = 79;
+        return 1;
+    case 112:
+        out[0] = 80;
+        return 1;
+    case 113:
+        out[0] = 81;
+        return 1;
+    case 114:
+        out[0] = 82;
+        return 1;
+    case 115:
+        out[0] = 83; out[1] = 197; out[2] = 191;
+        return 2;
+    case 116:
+        out[0] = 84;
+        return 1;
+    case 117:
+        out[0] = 85;
+        return 1;
+    case 118:
+        out[0] = 86;
+        return 1;
+    case 119:
+        out[0] = 87;
+        return 1;
+    case 120:
+        out[0] = 88;
+        return 1;
+    case 121:
+        out[0] = 89;
+        return 1;
+    case 122:
+        out[0] = 90;
+        return 1;
+    case 40899:
+        out[0] = 225; out[1] = 186; out[2] = 158;
+        return 1;
+    case 41155:
+        out[0] = 195; out[1] = 128;
+        return 1;
+    case 41411:
+        out[0] = 195; out[1] = 129;
+        return 1;
+    case 41667:
+        out[0] = 195; out[1] = 130;
+        return 1;
+    case 41923:
+        out[0] = 195; out[1] = 131;
+        return 1;
+    case 42179:
+        out[0] = 195; out[1] = 132;
+        return 1;
+    case 42435:
+        out[0] = 195; out[1] = 133; out[2] = 226; out[3] = 132; out[4] = 171;
+        return 2;
+    case 42691:
+        out[0] = 195; out[1] = 134;
+        return 1;
+    case 42947:
+        out[0] = 195; out[1] = 135;
+        return 1;
+    case 43203:
+        out[0] = 195; out[1] = 136;
+        return 1;
+    case 43459:
+        out[0] = 195; out[1] = 137;
+        return 1;
+    case 43715:
+        out[0] = 195; out[1] = 138;
+        return 1;
+    case 43971:
+        out[0] = 195; out[1] = 139;
+        return 1;
+    case 44227:
+        out[0] = 195; out[1] = 140;
+        return 1;
+    case 44483:
+        out[0] = 195; out[1] = 141;
+        return 1;
+    case 44739:
+        out[0] = 195; out[1] = 142;
+        return 1;
+    case 44995:
+        out[0] = 195; out[1] = 143;
+        return 1;
+    case 45251:
+        out[0] = 195; out[1] = 144;
+        return 1;
+    case 45507:
+        out[0] = 195; out[1] = 145;
+        return 1;
+    case 45763:
+        out[0] = 195; out[1] = 146;
+        return 1;
+    case 46019:
+        out[0] = 195; out[1] = 147;
+        return 1;
+    case 46275:
+        out[0] = 195; out[1] = 148;
+        return 1;
+    case 46531:
+        out[0] = 195; out[1] = 149;
+        return 1;
+    case 46787:
+        out[0] = 195; out[1] = 150;
+        return 1;
+    case 47299:
+        out[0] = 195; out[1] = 152;
+        return 1;
+    case 47555:
+        out[0] = 195; out[1] = 153;
+        return 1;
+    case 47811:
+        out[0] = 195; out[1] = 154;
+        return 1;
+    case 48067:
+        out[0] = 195; out[1] = 155;
+        return 1;
+    case 48323:
+        out[0] = 195; out[1] = 156;
+        return 1;
+    case 48579:
+        out[0] = 195; out[1] = 157;
+        return 1;
+    case 48835:
+        out[0] = 195; out[1] = 158;
+        return 1;
+    case 49091:
+        out[0] = 197; out[1] = 184;
+        return 1;
+    case 33220:
+        out[0] = 196; out[1] = 128;
+        return 1;
+    case 33732:
+        out[0] = 196; out[1] = 130;
+        return 1;
+    case 34244:
+        out[0] = 196; out[1] = 132;
+        return 1;
+    case 34756:
+        out[0] = 196; out[1] = 134;
+        return 1;
+    case 35268:
+        out[0] = 196; out[1] = 136;
+        return 1;
+    case 35780:
+        out[0] = 196; out[1] = 138;
+        return 1;
+    case 36292:
+        out[0] = 196; out[1] = 140;
+        return 1;
+    case 36804:
+        out[0] = 196; out[1] = 142;
+        return 1;
+    case 37316:
+        out[0] = 196; out[1] = 144;
+        return 1;
+    case 37828:
+        out[0] = 196; out[1] = 146;
+        return 1;
+    case 38340:
+        out[0] = 196; out[1] = 148;
+        return 1;
+    case 38852:
+        out[0] = 196; out[1] = 150;
+        return 1;
+    case 39364:
+        out[0] = 196; out[1] = 152;
+        return 1;
+    case 39876:
+        out[0] = 196; out[1] = 154;
+        return 1;
+    case 40388:
+        out[0] = 196; out[1] = 156;
+        return 1;
+    case 40900:
+        out[0] = 196; out[1] = 158;
+        return 1;
+    case 41412:
+        out[0] = 196; out[1] = 160;
+        return 1;
+    case 41924:
+        out[0] = 196; out[1] = 162;
+        return 1;
+    case 42436:
+        out[0] = 196; out[1] = 164;
+        return 1;
+    case 42948:
+        out[0] = 196; out[1] = 166;
+        return 1;
+    case 43460:
+        out[0] = 196; out[1] = 168;
+        return 1;
+    case 43972:
+        out[0] = 196; out[1] = 170;
+        return 1;
+    case 44484:
+        out[0] = 196; out[1] = 172;
+        return 1;
+    case 44996:
+        out[0] = 196; out[1] = 174;
+        return 1;
+    case 46020:
+        out[0] = 196; out[1] = 178;
+        return 1;
+    case 46532:
+        out[0] = 196; out[1] = 180;
+        return 1;
+    case 47044:
+        out[0] = 196; out[1] = 182;
+        return 1;
+    case 47812:
+        out[0] = 196; out[1] = 185;
+        return 1;
+    case 48324:
+        out[0] = 196; out[1] = 187;
+        return 1;
+    case 48836:
+        out[0] = 196; out[1] = 189;
+        return 1;
+    case 32965:
+        out[0] = 196; out[1] = 191;
+        return 1;
+    case 33477:
+        out[0] = 197; out[1] = 129;
+        return 1;
+    case 33989:
+        out[0] = 197; out[1] = 131;
+        return 1;
+    case 34501:
+        out[0] = 197; out[1] = 133;
+        return 1;
+    case 35013:
+        out[0] = 197; out[1] = 135;
+        return 1;
+    case 35781:
+        out[0] = 197; out[1] = 138;
+        return 1;
+    case 36293:
+        out[0] = 197; out[1] = 140;
+        return 1;
+    case 36805:
+        out[0] = 197; out[1] = 142;
+        return 1;
+    case 37317:
+        out[0] = 197; out[1] = 144;
+        return 1;
+    case 37829:
+        out[0] = 197; out[1] = 146;
+        return 1;
+    case 38341:
+        out[0] = 197; out[1] = 148;
+        return 1;
+    case 38853:
+        out[0] = 197; out[1] = 150;
+        return 1;
+    case 39365:
+        out[0] = 197; out[1] = 152;
+        return 1;
+    case 39877:
+        out[0] = 197; out[1] = 154;
+        return 1;
+    case 40389:
+        out[0] = 197; out[1] = 156;
+        return 1;
+    case 40901:
+        out[0] = 197; out[1] = 158;
+        return 1;
+    case 41413:
+        out[0] = 197; out[1] = 160;
+        return 1;
+    case 41925:
+        out[0] = 197; out[1] = 162;
+        return 1;
+    case 42437:
+        out[0] = 197; out[1] = 164;
+        return 1;
+    case 42949:
+        out[0] = 197; out[1] = 166;
+        return 1;
+    case 43461:
+        out[0] = 197; out[1] = 168;
+        return 1;
+    case 43973:
+        out[0] = 197; out[1] = 170;
+        return 1;
+    case 44485:
+        out[0] = 197; out[1] = 172;
+        return 1;
+    case 44997:
+        out[0] = 197; out[1] = 174;
+        return 1;
+    case 45509:
+        out[0] = 197; out[1] = 176;
+        return 1;
+    case 46021:
+        out[0] = 197; out[1] = 178;
+        return 1;
+    case 46533:
+        out[0] = 197; out[1] = 180;
+        return 1;
+    case 47045:
+        out[0] = 197; out[1] = 182;
+        return 1;
+    case 47813:
+        out[0] = 197; out[1] = 185;
+        return 1;
+    case 48325:
+        out[0] = 197; out[1] = 187;
+        return 1;
+    case 48837:
+        out[0] = 197; out[1] = 189;
+        return 1;
+    case 32966:
+        out[0] = 201; out[1] = 131;
+        return 1;
+    case 33734:
+        out[0] = 198; out[1] = 130;
+        return 1;
+    case 34246:
+        out[0] = 198; out[1] = 132;
+        return 1;
+    case 35014:
+        out[0] = 198; out[1] = 135;
+        return 1;
+    case 36038:
+        out[0] = 198; out[1] = 139;
+        return 1;
+    case 37574:
+        out[0] = 198; out[1] = 145;
+        return 1;
+    case 38342:
+        out[0] = 199; out[1] = 182;
+        return 1;
+    case 39366:
+        out[0] = 198; out[1] = 152;
+        return 1;
+    case 39622:
+        out[0] = 200; out[1] = 189;
+        return 1;
+    case 40646:
+        out[0] = 200; out[1] = 160;
+        return 1;
+    case 41414:
+        out[0] = 198; out[1] = 160;
+        return 1;
+    case 41926:
+        out[0] = 198; out[1] = 162;
+        return 1;
+    case 42438:
+        out[0] = 198; out[1] = 164;
+        return 1;
+    case 43206:
+        out[0] = 198; out[1] = 167;
+        return 1;
+    case 44486:
+        out[0] = 198; out[1] = 172;
+        return 1;
+    case 45254:
+        out[0] = 198; out[1] = 175;
+        return 1;
+    case 46278:
+        out[0] = 198; out[1] = 179;
+        return 1;
+    case 46790:
+        out[0] = 198; out[1] = 181;
+        return 1;
+    case 47558:
+        out[0] = 198; out[1] = 184;
+        return 1;
+    case 48582:
+        out[0] = 198; out[1] = 188;
+        return 1;
+    case 49094:
+        out[0] = 199; out[1] = 183;
+        return 1;
+    case 34503:
+        out[0] = 199; out[1] = 132; out[2] = 199; out[3] = 133;
+        return 2;
+    case 35271:
+        out[0] = 199; out[1] = 135; out[2] = 199; out[3] = 136;
+        return 2;
+    case 36039:
+        out[0] = 199; out[1] = 138; out[2] = 199; out[3] = 139;
+        return 2;
+    case 36551:
+        out[0] = 199; out[1] = 141;
+        return 1;
+    case 37063:
+        out[0] = 199; out[1] = 143;
+        return 1;
+    case 37575:
+        out[0] = 199; out[1] = 145;
+        return 1;
+    case 38087:
+        out[0] = 199; out[1] = 147;
+        return 1;
+    case 38599:
+        out[0] = 199; out[1] = 149;
+        return 1;
+    case 39111:
+        out[0] = 199; out[1] = 151;
+        return 1;
+    case 39623:
+        out[0] = 199; out[1] = 153;
+        return 1;
+    case 40135:
+        out[0] = 199; out[1] = 155;
+        return 1;
+    case 40391:
+        out[0] = 198; out[1] = 142;
+        return 1;
+    case 40903:
+        out[0] = 199; out[1] = 158;
+        return 1;
+    case 41415:
+        out[0] = 199; out[1] = 160;
+        return 1;
+    case 41927:
+        out[0] = 199; out[1] = 162;
+        return 1;
+    case 42439:
+        out[0] = 199; out[1] = 164;
+        return 1;
+    case 42951:
+        out[0] = 199; out[1] = 166;
+        return 1;
+    case 43463:
+        out[0] = 199; out[1] = 168;
+        return 1;
+    case 43975:
+        out[0] = 199; out[1] = 170;
+        return 1;
+    case 44487:
+        out[0] = 199; out[1] = 172;
+        return 1;
+    case 44999:
+        out[0] = 199; out[1] = 174;
+        return 1;
+    case 46023:
+        out[0] = 199; out[1] = 177; out[2] = 199; out[3] = 178;
+        return 2;
+    case 46535:
+        out[0] = 199; out[1] = 180;
+        return 1;
+    case 47559:
+        out[0] = 199; out[1] = 184;
+        return 1;
+    case 48071:
+        out[0] = 199; out[1] = 186;
+        return 1;
+    case 48583:
+        out[0] = 199; out[1] = 188;
+        return 1;
+    case 49095:
+        out[0] = 199; out[1] = 190;
+        return 1;
+    case 33224:
+        out[0] = 200; out[1] = 128;
+        return 1;
+    case 33736:
+        out[0] = 200; out[1] = 130;
+        return 1;
+    case 34248:
+        out[0] = 200; out[1] = 132;
+        return 1;
+    case 34760:
+        out[0] = 200; out[1] = 134;
+        return 1;
+    case 35272:
+        out[0] = 200; out[1] = 136;
+        return 1;
+    case 35784:
+        out[0] = 200; out[1] = 138;
+        return 1;
+    case 36296:
+        out[0] = 200; out[1] = 140;
+        return 1;
+    case 36808:
+        out[0] = 200; out[1] = 142;
+        return 1;
+    case 37320:
+        out[0] = 200; out[1] = 144;
+        return 1;
+    case 37832:
+        out[0] = 200; out[1] = 146;
+        return 1;
+    case 38344:
+        out[0] = 200; out[1] = 148;
+        return 1;
+    case 38856:
+        out[0] = 200; out[1] = 150;
+        return 1;
+    case 39368:
+        out[0] = 200; out[1] = 152;
+        return 1;
+    case 39880:
+        out[0] = 200; out[1] = 154;
+        return 1;
+    case 40392:
+        out[0] = 200; out[1] = 156;
+        return 1;
+    case 40904:
+        out[0] = 200; out[1] = 158;
+        return 1;
+    case 41928:
+        out[0] = 200; out[1] = 162;
+        return 1;
+    case 42440:
+        out[0] = 200; out[1] = 164;
+        return 1;
+    case 42952:
+        out[0] = 200; out[1] = 166;
+        return 1;
+    case 43464:
+        out[0] = 200; out[1] = 168;
+        return 1;
+    case 43976:
+        out[0] = 200; out[1] = 170;
+        return 1;
+    case 44488:
+        out[0] = 200; out[1] = 172;
+        return 1;
+    case 45000:
+        out[0] = 200; out[1] = 174;
+        return 1;
+    case 45512:
+        out[0] = 200; out[1] = 176;
+        return 1;
+    case 46024:
+        out[0] = 200; out[1] = 178;
+        return 1;
+    case 48328:
+        out[0] = 200; out[1] = 187;
+        return 1;
+    case 49096:
+        out[0] = 226; out[1] = 177; out[2] = 190;
+        return 1;
+    case 32969:
+        out[0] = 226; out[1] = 177; out[2] = 191;
+        return 1;
+    case 33481:
+        out[0] = 201; out[1] = 129;
+        return 1;
+    case 34761:
+        out[0] = 201; out[1] = 134;
+        return 1;
+    case 35273:
+        out[0] = 201; out[1] = 136;
+        return 1;
+    case 35785:
+        out[0] = 201; out[1] = 138;
+        return 1;
+    case 36297:
+        out[0] = 201; out[1] = 140;
+        return 1;
+    case 36809:
+        out[0] = 201; out[1] = 142;
+        return 1;
+    case 37065:
+        out[0] = 226; out[1] = 177; out[2] = 175;
+        return 1;
+    case 37321:
+        out[0] = 226; out[1] = 177; out[2] = 173;
+        return 1;
+    case 37577:
+        out[0] = 226; out[1] = 177; out[2] = 176;
+        return 1;
+    case 37833:
+        out[0] = 198; out[1] = 129;
+        return 1;
+    case 38089:
+        out[0] = 198; out[1] = 134;
+        return 1;
+    case 38601:
+        out[0] = 198; out[1] = 137;
+        return 1;
+    case 38857:
+        out[0] = 198; out[1] = 138;
+        return 1;
+    case 39369:
+        out[0] = 198; out[1] = 143;
+        return 1;
+    case 39881:
+        out[0] = 198; out[1] = 144;
+        return 1;
+    case 40137:
+        out[0] = 234; out[1] = 158; out[2] = 171;
+        return 1;
+    case 41161:
+        out[0] = 198; out[1] = 147;
+        return 1;
+    case 41417:
+        out[0] = 234; out[1] = 158; out[2] = 172;
+        return 1;
+    case 41929:
+        out[0] = 198; out[1] = 148;
+        return 1;
+    case 42441:
+        out[0] = 234; out[1] = 158; out[2] = 141;
+        return 1;
+    case 42697:
+        out[0] = 234; out[1] = 158; out[2] = 170;
+        return 1;
+    case 43209:
+        out[0] = 198; out[1] = 151;
+        return 1;
+    case 43465:
+        out[0] = 198; out[1] = 150;
+        return 1;
+    case 43721:
+        out[0] = 234; out[1] = 158; out[2] = 174;
+        return 1;
+    case 43977:
+        out[0] = 226; out[1] = 177; out[2] = 162;
+        return 1;
+    case 44233:
+        out[0] = 234; out[1] = 158; out[2] = 173;
+        return 1;
+    case 45001:
+        out[0] = 198; out[1] = 156;
+        return 1;
+    case 45513:
+        out[0] = 226; out[1] = 177; out[2] = 174;
+        return 1;
+    case 45769:
+        out[0] = 198; out[1] = 157;
+        return 1;
+    case 46537:
+        out[0] = 198; out[1] = 159;
+        return 1;
+    case 48585:
+        out[0] = 226; out[1] = 177; out[2] = 164;
+        return 1;
+    case 32970:
+        out[0] = 198; out[1] = 166;
+        return 1;
+    case 33482:
+        out[0] = 234; out[1] = 159; out[2] = 133;
+        return 1;
+    case 33738:
+        out[0] = 198; out[1] = 169;
+        return 1;
+    case 34762:
+        out[0] = 234; out[1] = 158; out[2] = 177;
+        return 1;
+    case 35018:
+        out[0] = 198; out[1] = 174;
+        return 1;
+    case 35274:
+        out[0] = 201; out[1] = 132;
+        return 1;
+    case 35530:
+        out[0] = 198; out[1] = 177;
+        return 1;
+    case 35786:
+        out[0] = 198; out[1] = 178;
+        return 1;
+    case 36042:
+        out[0] = 201; out[1] = 133;
+        return 1;
+    case 37578:
+        out[0] = 198; out[1] = 183;
+        return 1;
+    case 40394:
+        out[0] = 234; out[1] = 158; out[2] = 178;
+        return 1;
+    case 40650:
+        out[0] = 234; out[1] = 158; out[2] = 176;
+        return 1;
+    case 45517:
+        out[0] = 205; out[1] = 176;
+        return 1;
+    case 46029:
+        out[0] = 205; out[1] = 178;
+        return 1;
+    case 47053:
+        out[0] = 205; out[1] = 182;
+        return 1;
+    case 48077:
+        out[0] = 207; out[1] = 189;
+        return 1;
+    case 48333:
+        out[0] = 207; out[1] = 190;
+        return 1;
+    case 48589:
+        out[0] = 207; out[1] = 191;
+        return 1;
+    case 44238:
+        out[0] = 206; out[1] = 134;
+        return 1;
+    case 44494:
+        out[0] = 206; out[1] = 136;
+        return 1;
+    case 44750:
+        out[0] = 206; out[1] = 137;
+        return 1;
+    case 45006:
+        out[0] = 206; out[1] = 138;
+        return 1;
+    case 45518:
+        out[0] = 206; out[1] = 145;
+        return 1;
+    case 45774:
+        out[0] = 206; out[1] = 146; out[2] = 207; out[3] = 144;
+        return 2;
+    case 46030:
+        out[0] = 206; out[1] = 147;
+        return 1;
+    case 46286:
+        out[0] = 206; out[1] = 148;
+        return 1;
+    case 46542:
+        out[0] = 206; out[1] = 149; out[2] = 207; out[3] = 181;
+        return 2;
+    case 46798:
+        out[0] = 206; out[1] = 150;
+        return 1;
+    case 47054:
+        out[0] = 206; out[1] = 151;
+        return 1;
+    case 47310:
+        out[0] = 206; out[1] = 152; out[2] = 207; out[3] = 145; out[4] = 207; out[5] = 180;
+        return 3;
+    case 47566:
+        out[0] = 205; out[1] = 133; out[2] = 206; out[3] = 153; out[4] = 225; out[5] = 190; out[6] = 190;
+        return 3;
+    case 47822:
+        out[0] = 206; out[1] = 154; out[2] = 207; out[3] = 176;
+        return 2;
+    case 48078:
+        out[0] = 206; out[1] = 155;
+        return 1;
+    case 48334:
+        out[0] = 194; out[1] = 181; out[2] = 206; out[3] = 156;
+        return 2;
+    case 48590:
+        out[0] = 206; out[1] = 157;
+        return 1;
+    case 48846:
+        out[0] = 206; out[1] = 158;
+        return 1;
+    case 49102:
+        out[0] = 206; out[1] = 159;
+        return 1;
+    case 32975:
+        out[0] = 206; out[1] = 160; out[2] = 207; out[3] = 150;
+        return 2;
+    case 33231:
+        out[0] = 206; out[1] = 161; out[2] = 207; out[3] = 177;
+        return 2;
+    case 33743:
+        out[0] = 206; out[1] = 163; out[2] = 207; out[3] = 130;
+        return 2;
+    case 33999:
+        out[0] = 206; out[1] = 164;
+        return 1;
+    case 34255:
+        out[0] = 206; out[1] = 165;
+        return 1;
+    case 34511:
+        out[0] = 206; out[1] = 166; out[2] = 207; out[3] = 149;
+        return 2;
+    case 34767:
+        out[0] = 206; out[1] = 167;
+        return 1;
+    case 35023:
+        out[0] = 206; out[1] = 168;
+        return 1;
+    case 35279:
+        out[0] = 206; out[1] = 169; out[2] = 226; out[3] = 132; out[4] = 166;
+        return 2;
+    case 35535:
+        out[0] = 206; out[1] = 170;
+        return 1;
+    case 35791:
+        out[0] = 206; out[1] = 171;
+        return 1;
+    case 36047:
+        out[0] = 206; out[1] = 140;
+        return 1;
+    case 36303:
+        out[0] = 206; out[1] = 142;
+        return 1;
+    case 36559:
+        out[0] = 206; out[1] = 143;
+        return 1;
+    case 38863:
+        out[0] = 207; out[1] = 143;
+        return 1;
+    case 39375:
+        out[0] = 207; out[1] = 152;
+        return 1;
+    case 39887:
+        out[0] = 207; out[1] = 154;
+        return 1;
+    case 40399:
+        out[0] = 207; out[1] = 156;
+        return 1;
+    case 40911:
+        out[0] = 207; out[1] = 158;
+        return 1;
+    case 41423:
+        out[0] = 207; out[1] = 160;
+        return 1;
+    case 41935:
+        out[0] = 207; out[1] = 162;
+        return 1;
+    case 42447:
+        out[0] = 207; out[1] = 164;
+        return 1;
+    case 42959:
+        out[0] = 207; out[1] = 166;
+        return 1;
+    case 43471:
+        out[0] = 207; out[1] = 168;
+        return 1;
+    case 43983:
+        out[0] = 207; out[1] = 170;
+        return 1;
+    case 44495:
+        out[0] = 207; out[1] = 172;
+        return 1;
+    case 45007:
+        out[0] = 207; out[1] = 174;
+        return 1;
+    case 45775:
+        out[0] = 207; out[1] = 185;
+        return 1;
+    case 46031:
+        out[0] = 205; out[1] = 191;
+        return 1;
+    case 47311:
+        out[0] = 207; out[1] = 183;
+        return 1;
+    case 48079:
+        out[0] = 207; out[1] = 186;
+        return 1;
+    case 45264:
+        out[0] = 208; out[1] = 144;
+        return 1;
+    case 45520:
+        out[0] = 208; out[1] = 145;
+        return 1;
+    case 45776:
+        out[0] = 208; out[1] = 146; out[2] = 225; out[3] = 178; out[4] = 128;
+        return 2;
+    case 46032:
+        out[0] = 208; out[1] = 147;
+        return 1;
+    case 46288:
+        out[0] = 208; out[1] = 148; out[2] = 225; out[3] = 178; out[4] = 129;
+        return 2;
+    case 46544:
+        out[0] = 208; out[1] = 149;
+        return 1;
+    case 46800:
+        out[0] = 208; out[1] = 150;
+        return 1;
+    case 47056:
+        out[0] = 208; out[1] = 151;
+        return 1;
+    case 47312:
+        out[0] = 208; out[1] = 152;
+        return 1;
+    case 47568:
+        out[0] = 208; out[1] = 153;
+        return 1;
+    case 47824:
+        out[0] = 208; out[1] = 154;
+        return 1;
+    case 48080:
+        out[0] = 208; out[1] = 155;
+        return 1;
+    case 48336:
+        out[0] = 208; out[1] = 156;
+        return 1;
+    case 48592:
+        out[0] = 208; out[1] = 157;
+        return 1;
+    case 48848:
+        out[0] = 208; out[1] = 158; out[2] = 225; out[3] = 178; out[4] = 130;
+        return 2;
+    case 49104:
+        out[0] = 208; out[1] = 159;
+        return 1;
+    case 32977:
+        out[0] = 208; out[1] = 160;
+        return 1;
+    case 33233:
+        out[0] = 208; out[1] = 161; out[2] = 225; out[3] = 178; out[4] = 131;
+        return 2;
+    case 33489:
+        out[0] = 208; out[1] = 162; out[2] = 225; out[3] = 178; out[4] = 132; out[5] = 225; out[6] = 178; out[7] = 133;
+        return 3;
+    case 33745:
+        out[0] = 208; out[1] = 163;
+        return 1;
+    case 34001:
+        out[0] = 208; out[1] = 164;
+        return 1;
+    case 34257:
+        out[0] = 208; out[1] = 165;
+        return 1;
+    case 34513:
+        out[0] = 208; out[1] = 166;
+        return 1;
+    case 34769:
+        out[0] = 208; out[1] = 167;
+        return 1;
+    case 35025:
+        out[0] = 208; out[1] = 168;
+        return 1;
+    case 35281:
+        out[0] = 208; out[1] = 169;
+        return 1;
+    case 35537:
+        out[0] = 208; out[1] = 170; out[2] = 225; out[3] = 178; out[4] = 134;
+        return 2;
+    case 35793:
+        out[0] = 208; out[1] = 171;
+        return 1;
+    case 36049:
+        out[0] = 208; out[1] = 172;
+        return 1;
+    case 36305:
+        out[0] = 208; out[1] = 173;
+        return 1;
+    case 36561:
+        out[0] = 208; out[1] = 174;
+        return 1;
+    case 36817:
+        out[0] = 208; out[1] = 175;
+        return 1;
+    case 37073:
+        out[0] = 208; out[1] = 128;
+        return 1;
+    case 37329:
+        out[0] = 208; out[1] = 129;
+        return 1;
+    case 37585:
+        out[0] = 208; out[1] = 130;
+        return 1;
+    case 37841:
+        out[0] = 208; out[1] = 131;
+        return 1;
+    case 38097:
+        out[0] = 208; out[1] = 132;
+        return 1;
+    case 38353:
+        out[0] = 208; out[1] = 133;
+        return 1;
+    case 38609:
+        out[0] = 208; out[1] = 134;
+        return 1;
+    case 38865:
+        out[0] = 208; out[1] = 135;
+        return 1;
+    case 39121:
+        out[0] = 208; out[1] = 136;
+        return 1;
+    case 39377:
+        out[0] = 208; out[1] = 137;
+        return 1;
+    case 39633:
+        out[0] = 208; out[1] = 138;
+        return 1;
+    case 39889:
+        out[0] = 208; out[1] = 139;
+        return 1;
+    case 40145:
+        out[0] = 208; out[1] = 140;
+        return 1;
+    case 40401:
+        out[0] = 208; out[1] = 141;
+        return 1;
+    case 40657:
+        out[0] = 208; out[1] = 142;
+        return 1;
+    case 40913:
+        out[0] = 208; out[1] = 143;
+        return 1;
+    case 41425:
+        out[0] = 209; out[1] = 160;
+        return 1;
+    case 41937:
+        out[0] = 209; out[1] = 162; out[2] = 225; out[3] = 178; out[4] = 135;
+        return 2;
+    case 42449:
+        out[0] = 209; out[1] = 164;
+        return 1;
+    case 42961:
+        out[0] = 209; out[1] = 166;
+        return 1;
+    case 43473:
+        out[0] = 209; out[1] = 168;
+        return 1;
+    case 43985:
+        out[0] = 209; out[1] = 170;
+        return 1;
+    case 44497:
+        out[0] = 209; out[1] = 172;
+        return 1;
+    case 45009:
+        out[0] = 209; out[1] = 174;
+        return 1;
+    case 45521:
+        out[0] = 209; out[1] = 176;
+        return 1;
+    case 46033:
+        out[0] = 209; out[1] = 178;
+        return 1;
+    case 46545:
+        out[0] = 209; out[1] = 180;
+        return 1;
+    case 47057:
+        out[0] = 209; out[1] = 182;
+        return 1;
+    case 47569:
+        out[0] = 209; out[1] = 184;
+        return 1;
+    case 48081:
+        out[0] = 209; out[1] = 186;
+        return 1;
+    case 48593:
+        out[0] = 209; out[1] = 188;
+        return 1;
+    case 49105:
+        out[0] = 209; out[1] = 190;
+        return 1;
+    case 33234:
+        out[0] = 210; out[1] = 128;
+        return 1;
+    case 35794:
+        out[0] = 210; out[1] = 138;
+        return 1;
+    case 36306:
+        out[0] = 210; out[1] = 140;
+        return 1;
+    case 36818:
+        out[0] = 210; out[1] = 142;
+        return 1;
+    case 37330:
+        out[0] = 210; out[1] = 144;
+        return 1;
+    case 37842:
+        out[0] = 210; out[1] = 146;
+        return 1;
+    case 38354:
+        out[0] = 210; out[1] = 148;
+        return 1;
+    case 38866:
+        out[0] = 210; out[1] = 150;
+        return 1;
+    case 39378:
+        out[0] = 210; out[1] = 152;
+        return 1;
+    case 39890:
+        out[0] = 210; out[1] = 154;
+        return 1;
+    case 40402:
+        out[0] = 210; out[1] = 156;
+        return 1;
+    case 40914:
+        out[0] = 210; out[1] = 158;
+        return 1;
+    case 41426:
+        out[0] = 210; out[1] = 160;
+        return 1;
+    case 41938:
+        out[0] = 210; out[1] = 162;
+        return 1;
+    case 42450:
+        out[0] = 210; out[1] = 164;
+        return 1;
+    case 42962:
+        out[0] = 210; out[1] = 166;
+        return 1;
+    case 43474:
+        out[0] = 210; out[1] = 168;
+        return 1;
+    case 43986:
+        out[0] = 210; out[1] = 170;
+        return 1;
+    case 44498:
+        out[0] = 210; out[1] = 172;
+        return 1;
+    case 45010:
+        out[0] = 210; out[1] = 174;
+        return 1;
+    case 45522:
+        out[0] = 210; out[1] = 176;
+        return 1;
+    case 46034:
+        out[0] = 210; out[1] = 178;
+        return 1;
+    case 46546:
+        out[0] = 210; out[1] = 180;
+        return 1;
+    case 47058:
+        out[0] = 210; out[1] = 182;
+        return 1;
+    case 47570:
+        out[0] = 210; out[1] = 184;
+        return 1;
+    case 48082:
+        out[0] = 210; out[1] = 186;
+        return 1;
+    case 48594:
+        out[0] = 210; out[1] = 188;
+        return 1;
+    case 49106:
+        out[0] = 210; out[1] = 190;
+        return 1;
+    case 33491:
+        out[0] = 211; out[1] = 129;
+        return 1;
+    case 34003:
+        out[0] = 211; out[1] = 131;
+        return 1;
+    case 34515:
+        out[0] = 211; out[1] = 133;
+        return 1;
+    case 35027:
+        out[0] = 211; out[1] = 135;
+        return 1;
+    case 35539:
+        out[0] = 211; out[1] = 137;
+        return 1;
+    case 36051:
+        out[0] = 211; out[1] = 139;
+        return 1;
+    case 36563:
+        out[0] = 211; out[1] = 141;
+        return 1;
+    case 36819:
+        out[0] = 211; out[1] = 128;
+        return 1;
+    case 37331:
+        out[0] = 211; out[1] = 144;
+        return 1;
+    case 37843:
+        out[0] = 211; out[1] = 146;
+        return 1;
+    case 38355:
+        out[0] = 211; out[1] = 148;
+        return 1;
+    case 38867:
+        out[0] = 211; out[1] = 150;
+        return 1;
+    case 39379:
+        out[0] = 211; out[1] = 152;
+        return 1;
+    case 39891:
+        out[0] = 211; out[1] = 154;
+        return 1;
+    case 40403:
+        out[0] = 211; out[1] = 156;
+        return 1;
+    case 40915:
+        out[0] = 211; out[1] = 158;
+        return 1;
+    case 41427:
+        out[0] = 211; out[1] = 160;
+        return 1;
+    case 41939:
+        out[0] = 211; out[1] = 162;
+        return 1;
+    case 42451:
+        out[0] = 211; out[1] = 164;
+        return 1;
+    case 42963:
+        out[0] = 211; out[1] = 166;
+        return 1;
+    case 43475:
+        out[0] = 211; out[1] = 168;
+        return 1;
+    case 43987:
+        out[0] = 211; out[1] = 170;
+        return 1;
+    case 44499:
+        out[0] = 211; out[1] = 172;
+        return 1;
+    case 45011:
+        out[0] = 211; out[1] = 174;
+        return 1;
+    case 45523:
+        out[0] = 211; out[1] = 176;
+        return 1;
+    case 46035:
+        out[0] = 211; out[1] = 178;
+        return 1;
+    case 46547:
+        out[0] = 211; out[1] = 180;
+        return 1;
+    case 47059:
+        out[0] = 211; out[1] = 182;
+        return 1;
+    case 47571:
+        out[0] = 211; out[1] = 184;
+        return 1;
+    case 48083:
+        out[0] = 211; out[1] = 186;
+        return 1;
+    case 48595:
+        out[0] = 211; out[1] = 188;
+        return 1;
+    case 49107:
+        out[0] = 211; out[1] = 190;
+        return 1;
+    case 33236:
+        out[0] = 212; out[1] = 128;
+        return 1;
+    case 33748:
+        out[0] = 212; out[1] = 130;
+        return 1;
+    case 34260:
+        out[0] = 212; out[1] = 132;
+        return 1;
+    case 34772:
+        out[0] = 212; out[1] = 134;
+        return 1;
+    case 35284:
+        out[0] = 212; out[1] = 136;
+        return 1;
+    case 35796:
+        out[0] = 212; out[1] = 138;
+        return 1;
+    case 36308:
+        out[0] = 212; out[1] = 140;
+        return 1;
+    case 36820:
+        out[0] = 212; out[1] = 142;
+        return 1;
+    case 37332:
+        out[0] = 212; out[1] = 144;
+        return 1;
+    case 37844:
+        out[0] = 212; out[1] = 146;
+        return 1;
+    case 38356:
+        out[0] = 212; out[1] = 148;
+        return 1;
+    case 38868:
+        out[0] = 212; out[1] = 150;
+        return 1;
+    case 39380:
+        out[0] = 212; out[1] = 152;
+        return 1;
+    case 39892:
+        out[0] = 212; out[1] = 154;
+        return 1;
+    case 40404:
+        out[0] = 212; out[1] = 156;
+        return 1;
+    case 40916:
+        out[0] = 212; out[1] = 158;
+        return 1;
+    case 41428:
+        out[0] = 212; out[1] = 160;
+        return 1;
+    case 41940:
+        out[0] = 212; out[1] = 162;
+        return 1;
+    case 42452:
+        out[0] = 212; out[1] = 164;
+        return 1;
+    case 42964:
+        out[0] = 212; out[1] = 166;
+        return 1;
+    case 43476:
+        out[0] = 212; out[1] = 168;
+        return 1;
+    case 43988:
+        out[0] = 212; out[1] = 170;
+        return 1;
+    case 44500:
+        out[0] = 212; out[1] = 172;
+        return 1;
+    case 45012:
+        out[0] = 212; out[1] = 174;
+        return 1;
+    case 41429:
+        out[0] = 212; out[1] = 177;
+        return 1;
+    case 41685:
+        out[0] = 212; out[1] = 178;
+        return 1;
+    case 41941:
+        out[0] = 212; out[1] = 179;
+        return 1;
+    case 42197:
+        out[0] = 212; out[1] = 180;
+        return 1;
+    case 42453:
+        out[0] = 212; out[1] = 181;
+        return 1;
+    case 42709:
+        out[0] = 212; out[1] = 182;
+        return 1;
+    case 42965:
+        out[0] = 212; out[1] = 183;
+        return 1;
+    case 43221:
+        out[0] = 212; out[1] = 184;
+        return 1;
+    case 43477:
+        out[0] = 212; out[1] = 185;
+        return 1;
+    case 43733:
+        out[0] = 212; out[1] = 186;
+        return 1;
+    case 43989:
+        out[0] = 212; out[1] = 187;
+        return 1;
+    case 44245:
+        out[0] = 212; out[1] = 188;
+        return 1;
+    case 44501:
+        out[0] = 212; out[1] = 189;
+        return 1;
+    case 44757:
+        out[0] = 212; out[1] = 190;
+        return 1;
+    case 45013:
+        out[0] = 212; out[1] = 191;
+        return 1;
+    case 45269:
+        out[0] = 213; out[1] = 128;
+        return 1;
+    case 45525:
+        out[0] = 213; out[1] = 129;
+        return 1;
+    case 45781:
+        out[0] = 213; out[1] = 130;
+        return 1;
+    case 46037:
+        out[0] = 213; out[1] = 131;
+        return 1;
+    case 46293:
+        out[0] = 213; out[1] = 132;
+        return 1;
+    case 46549:
+        out[0] = 213; out[1] = 133;
+        return 1;
+    case 46805:
+        out[0] = 213; out[1] = 134;
+        return 1;
+    case 47061:
+        out[0] = 213; out[1] = 135;
+        return 1;
+    case 47317:
+        out[0] = 213; out[1] = 136;
+        return 1;
+    case 47573:
+        out[0] = 213; out[1] = 137;
+        return 1;
+    case 47829:
+        out[0] = 213; out[1] = 138;
+        return 1;
+    case 48085:
+        out[0] = 213; out[1] = 139;
+        return 1;
+    case 48341:
+        out[0] = 213; out[1] = 140;
+        return 1;
+    case 48597:
+        out[0] = 213; out[1] = 141;
+        return 1;
+    case 48853:
+        out[0] = 213; out[1] = 142;
+        return 1;
+    case 49109:
+        out[0] = 213; out[1] = 143;
+        return 1;
+    case 32982:
+        out[0] = 213; out[1] = 144;
+        return 1;
+    case 33238:
+        out[0] = 213; out[1] = 145;
+        return 1;
+    case 33494:
+        out[0] = 213; out[1] = 146;
+        return 1;
+    case 33750:
+        out[0] = 213; out[1] = 147;
+        return 1;
+    case 34006:
+        out[0] = 213; out[1] = 148;
+        return 1;
+    case 34262:
+        out[0] = 213; out[1] = 149;
+        return 1;
+    case 34518:
+        out[0] = 213; out[1] = 150;
+        return 1;
+    case 9470945:
+        out[0] = 225; out[1] = 178; out[2] = 144;
+        return 1;
+    case 9536481:
+        out[0] = 225; out[1] = 178; out[2] = 145;
+        return 1;
+    case 9602017:
+        out[0] = 225; out[1] = 178; out[2] = 146;
+        return 1;
+    case 9667553:
+        out[0] = 225; out[1] = 178; out[2] = 147;
+        return 1;
+    case 9733089:
+        out[0] = 225; out[1] = 178; out[2] = 148;
+        return 1;
+    case 9798625:
+        out[0] = 225; out[1] = 178; out[2] = 149;
+        return 1;
+    case 9864161:
+        out[0] = 225; out[1] = 178; out[2] = 150;
+        return 1;
+    case 9929697:
+        out[0] = 225; out[1] = 178; out[2] = 151;
+        return 1;
+    case 9995233:
+        out[0] = 225; out[1] = 178; out[2] = 152;
+        return 1;
+    case 10060769:
+        out[0] = 225; out[1] = 178; out[2] = 153;
+        return 1;
+    case 10126305:
+        out[0] = 225; out[1] = 178; out[2] = 154;
+        return 1;
+    case 10191841:
+        out[0] = 225; out[1] = 178; out[2] = 155;
+        return 1;
+    case 10257377:
+        out[0] = 225; out[1] = 178; out[2] = 156;
+        return 1;
+    case 10322913:
+        out[0] = 225; out[1] = 178; out[2] = 157;
+        return 1;
+    case 10388449:
+        out[0] = 225; out[1] = 178; out[2] = 158;
+        return 1;
+    case 10453985:
+        out[0] = 225; out[1] = 178; out[2] = 159;
+        return 1;
+    case 10519521:
+        out[0] = 225; out[1] = 178; out[2] = 160;
+        return 1;
+    case 10585057:
+        out[0] = 225; out[1] = 178; out[2] = 161;
+        return 1;
+    case 10650593:
+        out[0] = 225; out[1] = 178; out[2] = 162;
+        return 1;
+    case 10716129:
+        out[0] = 225; out[1] = 178; out[2] = 163;
+        return 1;
+    case 10781665:
+        out[0] = 225; out[1] = 178; out[2] = 164;
+        return 1;
+    case 10847201:
+        out[0] = 225; out[1] = 178; out[2] = 165;
+        return 1;
+    case 10912737:
+        out[0] = 225; out[1] = 178; out[2] = 166;
+        return 1;
+    case 10978273:
+        out[0] = 225; out[1] = 178; out[2] = 167;
+        return 1;
+    case 11043809:
+        out[0] = 225; out[1] = 178; out[2] = 168;
+        return 1;
+    case 11109345:
+        out[0] = 225; out[1] = 178; out[2] = 169;
+        return 1;
+    case 11174881:
+        out[0] = 225; out[1] = 178; out[2] = 170;
+        return 1;
+    case 11240417:
+        out[0] = 225; out[1] = 178; out[2] = 171;
+        return 1;
+    case 11305953:
+        out[0] = 225; out[1] = 178; out[2] = 172;
+        return 1;
+    case 11371489:
+        out[0] = 225; out[1] = 178; out[2] = 173;
+        return 1;
+    case 11437025:
+        out[0] = 225; out[1] = 178; out[2] = 174;
+        return 1;
+    case 11502561:
+        out[0] = 225; out[1] = 178; out[2] = 175;
+        return 1;
+    case 11568097:
+        out[0] = 225; out[1] = 178; out[2] = 176;
+        return 1;
+    case 11633633:
+        out[0] = 225; out[1] = 178; out[2] = 177;
+        return 1;
+    case 11699169:
+        out[0] = 225; out[1] = 178; out[2] = 178;
+        return 1;
+    case 11764705:
+        out[0] = 225; out[1] = 178; out[2] = 179;
+        return 1;
+    case 11830241:
+        out[0] = 225; out[1] = 178; out[2] = 180;
+        return 1;
+    case 11895777:
+        out[0] = 225; out[1] = 178; out[2] = 181;
+        return 1;
+    case 11961313:
+        out[0] = 225; out[1] = 178; out[2] = 182;
+        return 1;
+    case 12026849:
+        out[0] = 225; out[1] = 178; out[2] = 183;
+        return 1;
+    case 12092385:
+        out[0] = 225; out[1] = 178; out[2] = 184;
+        return 1;
+    case 12157921:
+        out[0] = 225; out[1] = 178; out[2] = 185;
+        return 1;
+    case 12223457:
+        out[0] = 225; out[1] = 178; out[2] = 186;
+        return 1;
+    case 12420065:
+        out[0] = 225; out[1] = 178; out[2] = 189;
+        return 1;
+    case 12485601:
+        out[0] = 225; out[1] = 178; out[2] = 190;
+        return 1;
+    case 12551137:
+        out[0] = 225; out[1] = 178; out[2] = 191;
+        return 1;
+    case 10522337:
+        out[0] = 234; out[1] = 173; out[2] = 176;
+        return 1;
+    case 10587873:
+        out[0] = 234; out[1] = 173; out[2] = 177;
+        return 1;
+    case 10653409:
+        out[0] = 234; out[1] = 173; out[2] = 178;
+        return 1;
+    case 10718945:
+        out[0] = 234; out[1] = 173; out[2] = 179;
+        return 1;
+    case 10784481:
+        out[0] = 234; out[1] = 173; out[2] = 180;
+        return 1;
+    case 10850017:
+        out[0] = 234; out[1] = 173; out[2] = 181;
+        return 1;
+    case 10915553:
+        out[0] = 234; out[1] = 173; out[2] = 182;
+        return 1;
+    case 10981089:
+        out[0] = 234; out[1] = 173; out[2] = 183;
+        return 1;
+    case 11046625:
+        out[0] = 234; out[1] = 173; out[2] = 184;
+        return 1;
+    case 11112161:
+        out[0] = 234; out[1] = 173; out[2] = 185;
+        return 1;
+    case 11177697:
+        out[0] = 234; out[1] = 173; out[2] = 186;
+        return 1;
+    case 11243233:
+        out[0] = 234; out[1] = 173; out[2] = 187;
+        return 1;
+    case 11308769:
+        out[0] = 234; out[1] = 173; out[2] = 188;
+        return 1;
+    case 11374305:
+        out[0] = 234; out[1] = 173; out[2] = 189;
+        return 1;
+    case 11439841:
+        out[0] = 234; out[1] = 173; out[2] = 190;
+        return 1;
+    case 11505377:
+        out[0] = 234; out[1] = 173; out[2] = 191;
+        return 1;
+    case 11570913:
+        out[0] = 234; out[1] = 174; out[2] = 128;
+        return 1;
+    case 11636449:
+        out[0] = 234; out[1] = 174; out[2] = 129;
+        return 1;
+    case 11701985:
+        out[0] = 234; out[1] = 174; out[2] = 130;
+        return 1;
+    case 11767521:
+        out[0] = 234; out[1] = 174; out[2] = 131;
+        return 1;
+    case 11833057:
+        out[0] = 234; out[1] = 174; out[2] = 132;
+        return 1;
+    case 11898593:
+        out[0] = 234; out[1] = 174; out[2] = 133;
+        return 1;
+    case 11964129:
+        out[0] = 234; out[1] = 174; out[2] = 134;
+        return 1;
+    case 12029665:
+        out[0] = 234; out[1] = 174; out[2] = 135;
+        return 1;
+    case 12095201:
+        out[0] = 234; out[1] = 174; out[2] = 136;
+        return 1;
+    case 12160737:
+        out[0] = 234; out[1] = 174; out[2] = 137;
+        return 1;
+    case 12226273:
+        out[0] = 234; out[1] = 174; out[2] = 138;
+        return 1;
+    case 12291809:
+        out[0] = 234; out[1] = 174; out[2] = 139;
+        return 1;
+    case 12357345:
+        out[0] = 234; out[1] = 174; out[2] = 140;
+        return 1;
+    case 12422881:
+        out[0] = 234; out[1] = 174; out[2] = 141;
+        return 1;
+    case 12488417:
+        out[0] = 234; out[1] = 174; out[2] = 142;
+        return 1;
+    case 12553953:
+        out[0] = 234; out[1] = 174; out[2] = 143;
+        return 1;
+    case 8425441:
+        out[0] = 234; out[1] = 174; out[2] = 144;
+        return 1;
+    case 8490977:
+        out[0] = 234; out[1] = 174; out[2] = 145;
+        return 1;
+    case 8556513:
+        out[0] = 234; out[1] = 174; out[2] = 146;
+        return 1;
+    case 8622049:
+        out[0] = 234; out[1] = 174; out[2] = 147;
+        return 1;
+    case 8687585:
+        out[0] = 234; out[1] = 174; out[2] = 148;
+        return 1;
+    case 8753121:
+        out[0] = 234; out[1] = 174; out[2] = 149;
+        return 1;
+    case 8818657:
+        out[0] = 234; out[1] = 174; out[2] = 150;
+        return 1;
+    case 8884193:
+        out[0] = 234; out[1] = 174; out[2] = 151;
+        return 1;
+    case 8949729:
+        out[0] = 234; out[1] = 174; out[2] = 152;
+        return 1;
+    case 9015265:
+        out[0] = 234; out[1] = 174; out[2] = 153;
+        return 1;
+    case 9080801:
+        out[0] = 234; out[1] = 174; out[2] = 154;
+        return 1;
+    case 9146337:
+        out[0] = 234; out[1] = 174; out[2] = 155;
+        return 1;
+    case 9211873:
+        out[0] = 234; out[1] = 174; out[2] = 156;
+        return 1;
+    case 9277409:
+        out[0] = 234; out[1] = 174; out[2] = 157;
+        return 1;
+    case 9342945:
+        out[0] = 234; out[1] = 174; out[2] = 158;
+        return 1;
+    case 9408481:
+        out[0] = 234; out[1] = 174; out[2] = 159;
+        return 1;
+    case 9474017:
+        out[0] = 234; out[1] = 174; out[2] = 160;
+        return 1;
+    case 9539553:
+        out[0] = 234; out[1] = 174; out[2] = 161;
+        return 1;
+    case 9605089:
+        out[0] = 234; out[1] = 174; out[2] = 162;
+        return 1;
+    case 9670625:
+        out[0] = 234; out[1] = 174; out[2] = 163;
+        return 1;
+    case 9736161:
+        out[0] = 234; out[1] = 174; out[2] = 164;
+        return 1;
+    case 9801697:
+        out[0] = 234; out[1] = 174; out[2] = 165;
+        return 1;
+    case 9867233:
+        out[0] = 234; out[1] = 174; out[2] = 166;
+        return 1;
+    case 9932769:
+        out[0] = 234; out[1] = 174; out[2] = 167;
+        return 1;
+    case 9998305:
+        out[0] = 234; out[1] = 174; out[2] = 168;
+        return 1;
+    case 10063841:
+        out[0] = 234; out[1] = 174; out[2] = 169;
+        return 1;
+    case 10129377:
+        out[0] = 234; out[1] = 174; out[2] = 170;
+        return 1;
+    case 10194913:
+        out[0] = 234; out[1] = 174; out[2] = 171;
+        return 1;
+    case 10260449:
+        out[0] = 234; out[1] = 174; out[2] = 172;
+        return 1;
+    case 10325985:
+        out[0] = 234; out[1] = 174; out[2] = 173;
+        return 1;
+    case 10391521:
+        out[0] = 234; out[1] = 174; out[2] = 174;
+        return 1;
+    case 10457057:
+        out[0] = 234; out[1] = 174; out[2] = 175;
+        return 1;
+    case 10522593:
+        out[0] = 234; out[1] = 174; out[2] = 176;
+        return 1;
+    case 10588129:
+        out[0] = 234; out[1] = 174; out[2] = 177;
+        return 1;
+    case 10653665:
+        out[0] = 234; out[1] = 174; out[2] = 178;
+        return 1;
+    case 10719201:
+        out[0] = 234; out[1] = 174; out[2] = 179;
+        return 1;
+    case 10784737:
+        out[0] = 234; out[1] = 174; out[2] = 180;
+        return 1;
+    case 10850273:
+        out[0] = 234; out[1] = 174; out[2] = 181;
+        return 1;
+    case 10915809:
+        out[0] = 234; out[1] = 174; out[2] = 182;
+        return 1;
+    case 10981345:
+        out[0] = 234; out[1] = 174; out[2] = 183;
+        return 1;
+    case 11046881:
+        out[0] = 234; out[1] = 174; out[2] = 184;
+        return 1;
+    case 11112417:
+        out[0] = 234; out[1] = 174; out[2] = 185;
+        return 1;
+    case 11177953:
+        out[0] = 234; out[1] = 174; out[2] = 186;
+        return 1;
+    case 11243489:
+        out[0] = 234; out[1] = 174; out[2] = 187;
+        return 1;
+    case 11309025:
+        out[0] = 234; out[1] = 174; out[2] = 188;
+        return 1;
+    case 11374561:
+        out[0] = 234; out[1] = 174; out[2] = 189;
+        return 1;
+    case 11440097:
+        out[0] = 234; out[1] = 174; out[2] = 190;
+        return 1;
+    case 11505633:
+        out[0] = 234; out[1] = 174; out[2] = 191;
+        return 1;
+    case 11571169:
+        out[0] = 225; out[1] = 143; out[2] = 184;
+        return 1;
+    case 11636705:
+        out[0] = 225; out[1] = 143; out[2] = 185;
+        return 1;
+    case 11702241:
+        out[0] = 225; out[1] = 143; out[2] = 186;
+        return 1;
+    case 11767777:
+        out[0] = 225; out[1] = 143; out[2] = 187;
+        return 1;
+    case 11833313:
+        out[0] = 225; out[1] = 143; out[2] = 188;
+        return 1;
+    case 11898849:
+        out[0] = 225; out[1] = 143; out[2] = 189;
+        return 1;
+    case 12170721:
+        out[0] = 234; out[1] = 157; out[2] = 189;
+        return 1;
+    case 12432865:
+        out[0] = 226; out[1] = 177; out[2] = 163;
+        return 1;
+    case 9352929:
+        out[0] = 234; out[1] = 159; out[2] = 134;
+        return 1;
+    case 8501473:
+        out[0] = 225; out[1] = 184; out[2] = 128;
+        return 1;
+    case 8632545:
+        out[0] = 225; out[1] = 184; out[2] = 130;
+        return 1;
+    case 8763617:
+        out[0] = 225; out[1] = 184; out[2] = 132;
+        return 1;
+    case 8894689:
+        out[0] = 225; out[1] = 184; out[2] = 134;
+        return 1;
+    case 9025761:
+        out[0] = 225; out[1] = 184; out[2] = 136;
+        return 1;
+    case 9156833:
+        out[0] = 225; out[1] = 184; out[2] = 138;
+        return 1;
+    case 9287905:
+        out[0] = 225; out[1] = 184; out[2] = 140;
+        return 1;
+    case 9418977:
+        out[0] = 225; out[1] = 184; out[2] = 142;
+        return 1;
+    case 9550049:
+        out[0] = 225; out[1] = 184; out[2] = 144;
+        return 1;
+    case 9681121:
+        out[0] = 225; out[1] = 184; out[2] = 146;
+        return 1;
+    case 9812193:
+        out[0] = 225; out[1] = 184; out[2] = 148;
+        return 1;
+    case 9943265:
+        out[0] = 225; out[1] = 184; out[2] = 150;
+        return 1;
+    case 10074337:
+        out[0] = 225; out[1] = 184; out[2] = 152;
+        return 1;
+    case 10205409:
+        out[0] = 225; out[1] = 184; out[2] = 154;
+        return 1;
+    case 10336481:
+        out[0] = 225; out[1] = 184; out[2] = 156;
+        return 1;
+    case 10467553:
+        out[0] = 225; out[1] = 184; out[2] = 158;
+        return 1;
+    case 10598625:
+        out[0] = 225; out[1] = 184; out[2] = 160;
+        return 1;
+    case 10729697:
+        out[0] = 225; out[1] = 184; out[2] = 162;
+        return 1;
+    case 10860769:
+        out[0] = 225; out[1] = 184; out[2] = 164;
+        return 1;
+    case 10991841:
+        out[0] = 225; out[1] = 184; out[2] = 166;
+        return 1;
+    case 11122913:
+        out[0] = 225; out[1] = 184; out[2] = 168;
+        return 1;
+    case 11253985:
+        out[0] = 225; out[1] = 184; out[2] = 170;
+        return 1;
+    case 11385057:
+        out[0] = 225; out[1] = 184; out[2] = 172;
+        return 1;
+    case 11516129:
+        out[0] = 225; out[1] = 184; out[2] = 174;
+        return 1;
+    case 11647201:
+        out[0] = 225; out[1] = 184; out[2] = 176;
+        return 1;
+    case 11778273:
+        out[0] = 225; out[1] = 184; out[2] = 178;
+        return 1;
+    case 11909345:
+        out[0] = 225; out[1] = 184; out[2] = 180;
+        return 1;
+    case 12040417:
+        out[0] = 225; out[1] = 184; out[2] = 182;
+        return 1;
+    case 12171489:
+        out[0] = 225; out[1] = 184; out[2] = 184;
+        return 1;
+    case 12302561:
+        out[0] = 225; out[1] = 184; out[2] = 186;
+        return 1;
+    case 12433633:
+        out[0] = 225; out[1] = 184; out[2] = 188;
+        return 1;
+    case 12564705:
+        out[0] = 225; out[1] = 184; out[2] = 190;
+        return 1;
+    case 8501729:
+        out[0] = 225; out[1] = 185; out[2] = 128;
+        return 1;
+    case 8632801:
+        out[0] = 225; out[1] = 185; out[2] = 130;
+        return 1;
+    case 8763873:
+        out[0] = 225; out[1] = 185; out[2] = 132;
+        return 1;
+    case 8894945:
+        out[0] = 225; out[1] = 185; out[2] = 134;
+        return 1;
+    case 9026017:
+        out[0] = 225; out[1] = 185; out[2] = 136;
+        return 1;
+    case 9157089:
+        out[0] = 225; out[1] = 185; out[2] = 138;
+        return 1;
+    case 9288161:
+        out[0] = 225; out[1] = 185; out[2] = 140;
+        return 1;
+    case 9419233:
+        out[0] = 225; out[1] = 185; out[2] = 142;
+        return 1;
+    case 9550305:
+        out[0] = 225; out[1] = 185; out[2] = 144;
+        return 1;
+    case 9681377:
+        out[0] = 225; out[1] = 185; out[2] = 146;
+        return 1;
+    case 9812449:
+        out[0] = 225; out[1] = 185; out[2] = 148;
+        return 1;
+    case 9943521:
+        out[0] = 225; out[1] = 185; out[2] = 150;
+        return 1;
+    case 10074593:
+        out[0] = 225; out[1] = 185; out[2] = 152;
+        return 1;
+    case 10205665:
+        out[0] = 225; out[1] = 185; out[2] = 154;
+        return 1;
+    case 10336737:
+        out[0] = 225; out[1] = 185; out[2] = 156;
+        return 1;
+    case 10467809:
+        out[0] = 225; out[1] = 185; out[2] = 158;
+        return 1;
+    case 10598881:
+        out[0] = 225; out[1] = 185; out[2] = 160; out[3] = 225; out[4] = 186; out[5] = 155;
+        return 2;
+    case 10729953:
+        out[0] = 225; out[1] = 185; out[2] = 162;
+        return 1;
+    case 10861025:
+        out[0] = 225; out[1] = 185; out[2] = 164;
+        return 1;
+    case 10992097:
+        out[0] = 225; out[1] = 185; out[2] = 166;
+        return 1;
+    case 11123169:
+        out[0] = 225; out[1] = 185; out[2] = 168;
+        return 1;
+    case 11254241:
+        out[0] = 225; out[1] = 185; out[2] = 170;
+        return 1;
+    case 11385313:
+        out[0] = 225; out[1] = 185; out[2] = 172;
+        return 1;
+    case 11516385:
+        out[0] = 225; out[1] = 185; out[2] = 174;
+        return 1;
+    case 11647457:
+        out[0] = 225; out[1] = 185; out[2] = 176;
+        return 1;
+    case 11778529:
+        out[0] = 225; out[1] = 185; out[2] = 178;
+        return 1;
+    case 11909601:
+        out[0] = 225; out[1] = 185; out[2] = 180;
+        return 1;
+    case 12040673:
+        out[0] = 225; out[1] = 185; out[2] = 182;
+        return 1;
+    case 12171745:
+        out[0] = 225; out[1] = 185; out[2] = 184;
+        return 1;
+    case 12302817:
+        out[0] = 225; out[1] = 185; out[2] = 186;
+        return 1;
+    case 12433889:
+        out[0] = 225; out[1] = 185; out[2] = 188;
+        return 1;
+    case 12564961:
+        out[0] = 225; out[1] = 185; out[2] = 190;
+        return 1;
+    case 8501985:
+        out[0] = 225; out[1] = 186; out[2] = 128;
+        return 1;
+    case 8633057:
+        out[0] = 225; out[1] = 186; out[2] = 130;
+        return 1;
+    case 8764129:
+        out[0] = 225; out[1] = 186; out[2] = 132;
+        return 1;
+    case 8895201:
+        out[0] = 225; out[1] = 186; out[2] = 134;
+        return 1;
+    case 9026273:
+        out[0] = 225; out[1] = 186; out[2] = 136;
+        return 1;
+    case 9157345:
+        out[0] = 225; out[1] = 186; out[2] = 138;
+        return 1;
+    case 9288417:
+        out[0] = 225; out[1] = 186; out[2] = 140;
+        return 1;
+    case 9419489:
+        out[0] = 225; out[1] = 186; out[2] = 142;
+        return 1;
+    case 9550561:
+        out[0] = 225; out[1] = 186; out[2] = 144;
+        return 1;
+    case 9681633:
+        out[0] = 225; out[1] = 186; out[2] = 146;
+        return 1;
+    case 9812705:
+        out[0] = 225; out[1] = 186; out[2] = 148;
+        return 1;
+    case 10599137:
+        out[0] = 225; out[1] = 186; out[2] = 160;
+        return 1;
+    case 10730209:
+        out[0] = 225; out[1] = 186; out[2] = 162;
+        return 1;
+    case 10861281:
+        out[0] = 225; out[1] = 186; out[2] = 164;
+        return 1;
+    case 10992353:
+        out[0] = 225; out[1] = 186; out[2] = 166;
+        return 1;
+    case 11123425:
+        out[0] = 225; out[1] = 186; out[2] = 168;
+        return 1;
+    case 11254497:
+        out[0] = 225; out[1] = 186; out[2] = 170;
+        return 1;
+    case 11385569:
+        out[0] = 225; out[1] = 186; out[2] = 172;
+        return 1;
+    case 11516641:
+        out[0] = 225; out[1] = 186; out[2] = 174;
+        return 1;
+    case 11647713:
+        out[0] = 225; out[1] = 186; out[2] = 176;
+        return 1;
+    case 11778785:
+        out[0] = 225; out[1] = 186; out[2] = 178;
+        return 1;
+    case 11909857:
+        out[0] = 225; out[1] = 186; out[2] = 180;
+        return 1;
+    case 12040929:
+        out[0] = 225; out[1] = 186; out[2] = 182;
+        return 1;
+    case 12172001:
+        out[0] = 225; out[1] = 186; out[2] = 184;
+        return 1;
+    case 12303073:
+        out[0] = 225; out[1] = 186; out[2] = 186;
+        return 1;
+    case 12434145:
+        out[0] = 225; out[1] = 186; out[2] = 188;
+        return 1;
+    case 12565217:
+        out[0] = 225; out[1] = 186; out[2] = 190;
+        return 1;
+    case 8502241:
+        out[0] = 225; out[1] = 187; out[2] = 128;
+        return 1;
+    case 8633313:
+        out[0] = 225; out[1] = 187; out[2] = 130;
+        return 1;
+    case 8764385:
+        out[0] = 225; out[1] = 187; out[2] = 132;
+        return 1;
+    case 8895457:
+        out[0] = 225; out[1] = 187; out[2] = 134;
+        return 1;
+    case 9026529:
+        out[0] = 225; out[1] = 187; out[2] = 136;
+        return 1;
+    case 9157601:
+        out[0] = 225; out[1] = 187; out[2] = 138;
+        return 1;
+    case 9288673:
+        out[0] = 225; out[1] = 187; out[2] = 140;
+        return 1;
+    case 9419745:
+        out[0] = 225; out[1] = 187; out[2] = 142;
+        return 1;
+    case 9550817:
+        out[0] = 225; out[1] = 187; out[2] = 144;
+        return 1;
+    case 9681889:
+        out[0] = 225; out[1] = 187; out[2] = 146;
+        return 1;
+    case 9812961:
+        out[0] = 225; out[1] = 187; out[2] = 148;
+        return 1;
+    case 9944033:
+        out[0] = 225; out[1] = 187; out[2] = 150;
+        return 1;
+    case 10075105:
+        out[0] = 225; out[1] = 187; out[2] = 152;
+        return 1;
+    case 10206177:
+        out[0] = 225; out[1] = 187; out[2] = 154;
+        return 1;
+    case 10337249:
+        out[0] = 225; out[1] = 187; out[2] = 156;
+        return 1;
+    case 10468321:
+        out[0] = 225; out[1] = 187; out[2] = 158;
+        return 1;
+    case 10599393:
+        out[0] = 225; out[1] = 187; out[2] = 160;
+        return 1;
+    case 10730465:
+        out[0] = 225; out[1] = 187; out[2] = 162;
+        return 1;
+    case 10861537:
+        out[0] = 225; out[1] = 187; out[2] = 164;
+        return 1;
+    case 10992609:
+        out[0] = 225; out[1] = 187; out[2] = 166;
+        return 1;
+    case 11123681:
+        out[0] = 225; out[1] = 187; out[2] = 168;
+        return 1;
+    case 11254753:
+        out[0] = 225; out[1] = 187; out[2] = 170;
+        return 1;
+    case 11385825:
+        out[0] = 225; out[1] = 187; out[2] = 172;
+        return 1;
+    case 11516897:
+        out[0] = 225; out[1] = 187; out[2] = 174;
+        return 1;
+    case 11647969:
+        out[0] = 225; out[1] = 187; out[2] = 176;
+        return 1;
+    case 11779041:
+        out[0] = 225; out[1] = 187; out[2] = 178;
+        return 1;
+    case 11910113:
+        out[0] = 225; out[1] = 187; out[2] = 180;
+        return 1;
+    case 12041185:
+        out[0] = 225; out[1] = 187; out[2] = 182;
+        return 1;
+    case 12172257:
+        out[0] = 225; out[1] = 187; out[2] = 184;
+        return 1;
+    case 12303329:
+        out[0] = 225; out[1] = 187; out[2] = 186;
+        return 1;
+    case 12434401:
+        out[0] = 225; out[1] = 187; out[2] = 188;
+        return 1;
+    case 12565473:
+        out[0] = 225; out[1] = 187; out[2] = 190;
+        return 1;
+    case 8436961:
+        out[0] = 225; out[1] = 188; out[2] = 136;
+        return 1;
+    case 8502497:
+        out[0] = 225; out[1] = 188; out[2] = 137;
+        return 1;
+    case 8568033:
+        out[0] = 225; out[1] = 188; out[2] = 138;
+        return 1;
+    case 8633569:
+        out[0] = 225; out[1] = 188; out[2] = 139;
+        return 1;
+    case 8699105:
+        out[0] = 225; out[1] = 188; out[2] = 140;
+        return 1;
+    case 8764641:
+        out[0] = 225; out[1] = 188; out[2] = 141;
+        return 1;
+    case 8830177:
+        out[0] = 225; out[1] = 188; out[2] = 142;
+        return 1;
+    case 8895713:
+        out[0] = 225; out[1] = 188; out[2] = 143;
+        return 1;
+    case 9485537:
+        out[0] = 225; out[1] = 188; out[2] = 152;
+        return 1;
+    case 9551073:
+        out[0] = 225; out[1] = 188; out[2] = 153;
+        return 1;
+    case 9616609:
+        out[0] = 225; out[1] = 188; out[2] = 154;
+        return 1;
+    case 9682145:
+        out[0] = 225; out[1] = 188; out[2] = 155;
+        return 1;
+    case 9747681:
+        out[0] = 225; out[1] = 188; out[2] = 156;
+        return 1;
+    case 9813217:
+        out[0] = 225; out[1] = 188; out[2] = 157;
+        return 1;
+    case 10534113:
+        out[0] = 225; out[1] = 188; out[2] = 168;
+        return 1;
+    case 10599649:
+        out[0] = 225; out[1] = 188; out[2] = 169;
+        return 1;
+    case 10665185:
+        out[0] = 225; out[1] = 188; out[2] = 170;
+        return 1;
+    case 10730721:
+        out[0] = 225; out[1] = 188; out[2] = 171;
+        return 1;
+    case 10796257:
+        out[0] = 225; out[1] = 188; out[2] = 172;
+        return 1;
+    case 10861793:
+        out[0] = 225; out[1] = 188; out[2] = 173;
+        return 1;
+    case 10927329:
+        out[0] = 225; out[1] = 188; out[2] = 174;
+        return 1;
+    case 10992865:
+        out[0] = 225; out[1] = 188; out[2] = 175;
+        return 1;
+    case 11582689:
+        out[0] = 225; out[1] = 188; out[2] = 184;
+        return 1;
+    case 11648225:
+        out[0] = 225; out[1] = 188; out[2] = 185;
+        return 1;
+    case 11713761:
+        out[0] = 225; out[1] = 188; out[2] = 186;
+        return 1;
+    case 11779297:
+        out[0] = 225; out[1] = 188; out[2] = 187;
+        return 1;
+    case 11844833:
+        out[0] = 225; out[1] = 188; out[2] = 188;
+        return 1;
+    case 11910369:
+        out[0] = 225; out[1] = 188; out[2] = 189;
+        return 1;
+    case 11975905:
+        out[0] = 225; out[1] = 188; out[2] = 190;
+        return 1;
+    case 12041441:
+        out[0] = 225; out[1] = 188; out[2] = 191;
+        return 1;
+    case 8437217:
+        out[0] = 225; out[1] = 189; out[2] = 136;
+        return 1;
+    case 8502753:
+        out[0] = 225; out[1] = 189; out[2] = 137;
+        return 1;
+    case 8568289:
+        out[0] = 225; out[1] = 189; out[2] = 138;
+        return 1;
+    case 8633825:
+        out[0] = 225; out[1] = 189; out[2] = 139;
+        return 1;
+    case 8699361:
+        out[0] = 225; out[1] = 189; out[2] = 140;
+        return 1;
+    case 8764897:
+        out[0] = 225; out[1] = 189; out[2] = 141;
+        return 1;
+    case 9551329:
+        out[0] = 225; out[1] = 189; out[2] = 153;
+        return 1;
+    case 9682401:
+        out[0] = 225; out[1] = 189; out[2] = 155;
+        return 1;
+    case 9813473:
+        out[0] = 225; out[1] = 189; out[2] = 157;
+        return 1;
+    case 9944545:
+        out[0] = 225; out[1] = 189; out[2] = 159;
+        return 1;
+    case 10534369:
+        out[0] = 225; out[1] = 189; out[2] = 168;
+        return 1;
+    case 10599905:
+        out[0] = 225; out[1] = 189; out[2] = 169;
+        return 1;
+    case 10665441:
+        out[0] = 225; out[1] = 189; out[2] = 170;
+        return 1;
+    case 10730977:
+        out[0] = 225; out[1] = 189; out[2] = 171;
+        return 1;
+    case 10796513:
+        out[0] = 225; out[1] = 189; out[2] = 172;
+        return 1;
+    case 10862049:
+        out[0] = 225; out[1] = 189; out[2] = 173;
+        return 1;
+    case 10927585:
+        out[0] = 225; out[1] = 189; out[2] = 174;
+        return 1;
+    case 10993121:
+        out[0] = 225; out[1] = 189; out[2] = 175;
+        return 1;
+    case 11582945:
+        out[0] = 225; out[1] = 190; out[2] = 186;
+        return 1;
+    case 11648481:
+        out[0] = 225; out[1] = 190; out[2] = 187;
+        return 1;
+    case 11714017:
+        out[0] = 225; out[1] = 191; out[2] = 136;
+        return 1;
+    case 11779553:
+        out[0] = 225; out[1] = 191; out[2] = 137;
+        return 1;
+    case 11845089:
+        out[0] = 225; out[1] = 191; out[2] = 138;
+        return 1;
+    case 11910625:
+        out[0] = 225; out[1] = 191; out[2] = 139;
+        return 1;
+    case 11976161:
+        out[0] = 225; out[1] = 191; out[2] = 154;
+        return 1;
+    case 12041697:
+        out[0] = 225; out[1] = 191; out[2] = 155;
+        return 1;
+    case 12107233:
+        out[0] = 225; out[1] = 191; out[2] = 184;
+        return 1;
+    case 12172769:
+        out[0] = 225; out[1] = 191; out[2] = 185;
+        return 1;
+    case 12238305:
+        out[0] = 225; out[1] = 191; out[2] = 170;
+        return 1;
+    case 12303841:
+        out[0] = 225; out[1] = 191; out[2] = 171;
+        return 1;
+    case 12369377:
+        out[0] = 225; out[1] = 191; out[2] = 186;
+        return 1;
+    case 12434913:
+        out[0] = 225; out[1] = 191; out[2] = 187;
+        return 1;
+    case 8437473:
+        out[0] = 225; out[1] = 190; out[2] = 136;
+        return 1;
+    case 8503009:
+        out[0] = 225; out[1] = 190; out[2] = 137;
+        return 1;
+    case 8568545:
+        out[0] = 225; out[1] = 190; out[2] = 138;
+        return 1;
+    case 8634081:
+        out[0] = 225; out[1] = 190; out[2] = 139;
+        return 1;
+    case 8699617:
+        out[0] = 225; out[1] = 190; out[2] = 140;
+        return 1;
+    case 8765153:
+        out[0] = 225; out[1] = 190; out[2] = 141;
+        return 1;
+    case 8830689:
+        out[0] = 225; out[1] = 190; out[2] = 142;
+        return 1;
+    case 8896225:
+        out[0] = 225; out[1] = 190; out[2] = 143;
+        return 1;
+    case 9486049:
+        out[0] = 225; out[1] = 190; out[2] = 152;
+        return 1;
+    case 9551585:
+        out[0] = 225; out[1] = 190; out[2] = 153;
+        return 1;
+    case 9617121:
+        out[0] = 225; out[1] = 190; out[2] = 154;
+        return 1;
+    case 9682657:
+        out[0] = 225; out[1] = 190; out[2] = 155;
+        return 1;
+    case 9748193:
+        out[0] = 225; out[1] = 190; out[2] = 156;
+        return 1;
+    case 9813729:
+        out[0] = 225; out[1] = 190; out[2] = 157;
+        return 1;
+    case 9879265:
+        out[0] = 225; out[1] = 190; out[2] = 158;
+        return 1;
+    case 9944801:
+        out[0] = 225; out[1] = 190; out[2] = 159;
+        return 1;
+    case 10534625:
+        out[0] = 225; out[1] = 190; out[2] = 168;
+        return 1;
+    case 10600161:
+        out[0] = 225; out[1] = 190; out[2] = 169;
+        return 1;
+    case 10665697:
+        out[0] = 225; out[1] = 190; out[2] = 170;
+        return 1;
+    case 10731233:
+        out[0] = 225; out[1] = 190; out[2] = 171;
+        return 1;
+    case 10796769:
+        out[0] = 225; out[1] = 190; out[2] = 172;
+        return 1;
+    case 10862305:
+        out[0] = 225; out[1] = 190; out[2] = 173;
+        return 1;
+    case 10927841:
+        out[0] = 225; out[1] = 190; out[2] = 174;
+        return 1;
+    case 10993377:
+        out[0] = 225; out[1] = 190; out[2] = 175;
+        return 1;
+    case 11583201:
+        out[0] = 225; out[1] = 190; out[2] = 184;
+        return 1;
+    case 11648737:
+        out[0] = 225; out[1] = 190; out[2] = 185;
+        return 1;
+    case 11779809:
+        out[0] = 225; out[1] = 190; out[2] = 188;
+        return 1;
+    case 8634337:
+        out[0] = 225; out[1] = 191; out[2] = 140;
+        return 1;
+    case 9486305:
+        out[0] = 225; out[1] = 191; out[2] = 152;
+        return 1;
+    case 9551841:
+        out[0] = 225; out[1] = 191; out[2] = 153;
+        return 1;
+    case 10534881:
+        out[0] = 225; out[1] = 191; out[2] = 168;
+        return 1;
+    case 10600417:
+        out[0] = 225; out[1] = 191; out[2] = 169;
+        return 1;
+    case 10862561:
+        out[0] = 225; out[1] = 191; out[2] = 172;
+        return 1;
+    case 11780065:
+        out[0] = 225; out[1] = 191; out[2] = 188;
+        return 1;
+    case 9340386:
+        out[0] = 226; out[1] = 132; out[2] = 178;
+        return 1;
+    case 11568610:
+        out[0] = 226; out[1] = 133; out[2] = 160;
+        return 1;
+    case 11634146:
+        out[0] = 226; out[1] = 133; out[2] = 161;
+        return 1;
+    case 11699682:
+        out[0] = 226; out[1] = 133; out[2] = 162;
+        return 1;
+    case 11765218:
+        out[0] = 226; out[1] = 133; out[2] = 163;
+        return 1;
+    case 11830754:
+        out[0] = 226; out[1] = 133; out[2] = 164;
+        return 1;
+    case 11896290:
+        out[0] = 226; out[1] = 133; out[2] = 165;
+        return 1;
+    case 11961826:
+        out[0] = 226; out[1] = 133; out[2] = 166;
+        return 1;
+    case 12027362:
+        out[0] = 226; out[1] = 133; out[2] = 167;
+        return 1;
+    case 12092898:
+        out[0] = 226; out[1] = 133; out[2] = 168;
+        return 1;
+    case 12158434:
+        out[0] = 226; out[1] = 133; out[2] = 169;
+        return 1;
+    case 12223970:
+        out[0] = 226; out[1] = 133; out[2] = 170;
+        return 1;
+    case 12289506:
+        out[0] = 226; out[1] = 133; out[2] = 171;
+        return 1;
+    case 12355042:
+        out[0] = 226; out[1] = 133; out[2] = 172;
+        return 1;
+    case 12420578:
+        out[0] = 226; out[1] = 133; out[2] = 173;
+        return 1;
+    case 12486114:
+        out[0] = 226; out[1] = 133; out[2] = 174;
+        return 1;
+    case 12551650:
+        out[0] = 226; out[1] = 133; out[2] = 175;
+        return 1;
+    case 8685282:
+        out[0] = 226; out[1] = 134; out[2] = 131;
+        return 1;
+    case 9475042:
+        out[0] = 226; out[1] = 146; out[2] = 182;
+        return 1;
+    case 9540578:
+        out[0] = 226; out[1] = 146; out[2] = 183;
+        return 1;
+    case 9606114:
+        out[0] = 226; out[1] = 146; out[2] = 184;
+        return 1;
+    case 9671650:
+        out[0] = 226; out[1] = 146; out[2] = 185;
+        return 1;
+    case 9737186:
+        out[0] = 226; out[1] = 146; out[2] = 186;
+        return 1;
+    case 9802722:
+        out[0] = 226; out[1] = 146; out[2] = 187;
+        return 1;
+    case 9868258:
+        out[0] = 226; out[1] = 146; out[2] = 188;
+        return 1;
+    case 9933794:
+        out[0] = 226; out[1] = 146; out[2] = 189;
+        return 1;
+    case 9999330:
+        out[0] = 226; out[1] = 146; out[2] = 190;
+        return 1;
+    case 10064866:
+        out[0] = 226; out[1] = 146; out[2] = 191;
+        return 1;
+    case 10130402:
+        out[0] = 226; out[1] = 147; out[2] = 128;
+        return 1;
+    case 10195938:
+        out[0] = 226; out[1] = 147; out[2] = 129;
+        return 1;
+    case 10261474:
+        out[0] = 226; out[1] = 147; out[2] = 130;
+        return 1;
+    case 10327010:
+        out[0] = 226; out[1] = 147; out[2] = 131;
+        return 1;
+    case 10392546:
+        out[0] = 226; out[1] = 147; out[2] = 132;
+        return 1;
+    case 10458082:
+        out[0] = 226; out[1] = 147; out[2] = 133;
+        return 1;
+    case 10523618:
+        out[0] = 226; out[1] = 147; out[2] = 134;
+        return 1;
+    case 10589154:
+        out[0] = 226; out[1] = 147; out[2] = 135;
+        return 1;
+    case 10654690:
+        out[0] = 226; out[1] = 147; out[2] = 136;
+        return 1;
+    case 10720226:
+        out[0] = 226; out[1] = 147; out[2] = 137;
+        return 1;
+    case 10785762:
+        out[0] = 226; out[1] = 147; out[2] = 138;
+        return 1;
+    case 10851298:
+        out[0] = 226; out[1] = 147; out[2] = 139;
+        return 1;
+    case 10916834:
+        out[0] = 226; out[1] = 147; out[2] = 140;
+        return 1;
+    case 10982370:
+        out[0] = 226; out[1] = 147; out[2] = 141;
+        return 1;
+    case 11047906:
+        out[0] = 226; out[1] = 147; out[2] = 142;
+        return 1;
+    case 11113442:
+        out[0] = 226; out[1] = 147; out[2] = 143;
+        return 1;
+    case 11579618:
+        out[0] = 226; out[1] = 176; out[2] = 128;
+        return 1;
+    case 11645154:
+        out[0] = 226; out[1] = 176; out[2] = 129;
+        return 1;
+    case 11710690:
+        out[0] = 226; out[1] = 176; out[2] = 130;
+        return 1;
+    case 11776226:
+        out[0] = 226; out[1] = 176; out[2] = 131;
+        return 1;
+    case 11841762:
+        out[0] = 226; out[1] = 176; out[2] = 132;
+        return 1;
+    case 11907298:
+        out[0] = 226; out[1] = 176; out[2] = 133;
+        return 1;
+    case 11972834:
+        out[0] = 226; out[1] = 176; out[2] = 134;
+        return 1;
+    case 12038370:
+        out[0] = 226; out[1] = 176; out[2] = 135;
+        return 1;
+    case 12103906:
+        out[0] = 226; out[1] = 176; out[2] = 136;
+        return 1;
+    case 12169442:
+        out[0] = 226; out[1] = 176; out[2] = 137;
+        return 1;
+    case 12234978:
+        out[0] = 226; out[1] = 176; out[2] = 138;
+        return 1;
+    case 12300514:
+        out[0] = 226; out[1] = 176; out[2] = 139;
+        return 1;
+    case 12366050:
+        out[0] = 226; out[1] = 176; out[2] = 140;
+        return 1;
+    case 12431586:
+        out[0] = 226; out[1] = 176; out[2] = 141;
+        return 1;
+    case 12497122:
+        out[0] = 226; out[1] = 176; out[2] = 142;
+        return 1;
+    case 12562658:
+        out[0] = 226; out[1] = 176; out[2] = 143;
+        return 1;
+    case 8434146:
+        out[0] = 226; out[1] = 176; out[2] = 144;
+        return 1;
+    case 8499682:
+        out[0] = 226; out[1] = 176; out[2] = 145;
+        return 1;
+    case 8565218:
+        out[0] = 226; out[1] = 176; out[2] = 146;
+        return 1;
+    case 8630754:
+        out[0] = 226; out[1] = 176; out[2] = 147;
+        return 1;
+    case 8696290:
+        out[0] = 226; out[1] = 176; out[2] = 148;
+        return 1;
+    case 8761826:
+        out[0] = 226; out[1] = 176; out[2] = 149;
+        return 1;
+    case 8827362:
+        out[0] = 226; out[1] = 176; out[2] = 150;
+        return 1;
+    case 8892898:
+        out[0] = 226; out[1] = 176; out[2] = 151;
+        return 1;
+    case 8958434:
+        out[0] = 226; out[1] = 176; out[2] = 152;
+        return 1;
+    case 9023970:
+        out[0] = 226; out[1] = 176; out[2] = 153;
+        return 1;
+    case 9089506:
+        out[0] = 226; out[1] = 176; out[2] = 154;
+        return 1;
+    case 9155042:
+        out[0] = 226; out[1] = 176; out[2] = 155;
+        return 1;
+    case 9220578:
+        out[0] = 226; out[1] = 176; out[2] = 156;
+        return 1;
+    case 9286114:
+        out[0] = 226; out[1] = 176; out[2] = 157;
+        return 1;
+    case 9351650:
+        out[0] = 226; out[1] = 176; out[2] = 158;
+        return 1;
+    case 9417186:
+        out[0] = 226; out[1] = 176; out[2] = 159;
+        return 1;
+    case 9482722:
+        out[0] = 226; out[1] = 176; out[2] = 160;
+        return 1;
+    case 9548258:
+        out[0] = 226; out[1] = 176; out[2] = 161;
+        return 1;
+    case 9613794:
+        out[0] = 226; out[1] = 176; out[2] = 162;
+        return 1;
+    case 9679330:
+        out[0] = 226; out[1] = 176; out[2] = 163;
+        return 1;
+    case 9744866:
+        out[0] = 226; out[1] = 176; out[2] = 164;
+        return 1;
+    case 9810402:
+        out[0] = 226; out[1] = 176; out[2] = 165;
+        return 1;
+    case 9875938:
+        out[0] = 226; out[1] = 176; out[2] = 166;
+        return 1;
+    case 9941474:
+        out[0] = 226; out[1] = 176; out[2] = 167;
+        return 1;
+    case 10007010:
+        out[0] = 226; out[1] = 176; out[2] = 168;
+        return 1;
+    case 10072546:
+        out[0] = 226; out[1] = 176; out[2] = 169;
+        return 1;
+    case 10138082:
+        out[0] = 226; out[1] = 176; out[2] = 170;
+        return 1;
+    case 10203618:
+        out[0] = 226; out[1] = 176; out[2] = 171;
+        return 1;
+    case 10269154:
+        out[0] = 226; out[1] = 176; out[2] = 172;
+        return 1;
+    case 10334690:
+        out[0] = 226; out[1] = 176; out[2] = 173;
+        return 1;
+    case 10400226:
+        out[0] = 226; out[1] = 176; out[2] = 174;
+        return 1;
+    case 10596834:
+        out[0] = 226; out[1] = 177; out[2] = 160;
+        return 1;
+    case 10858978:
+        out[0] = 200; out[1] = 186;
+        return 1;
+    case 10924514:
+        out[0] = 200; out[1] = 190;
+        return 1;
+    case 11055586:
+        out[0] = 226; out[1] = 177; out[2] = 167;
+        return 1;
+    case 11186658:
+        out[0] = 226; out[1] = 177; out[2] = 169;
+        return 1;
+    case 11317730:
+        out[0] = 226; out[1] = 177; out[2] = 171;
+        return 1;
+    case 11776482:
+        out[0] = 226; out[1] = 177; out[2] = 178;
+        return 1;
+    case 11973090:
+        out[0] = 226; out[1] = 177; out[2] = 181;
+        return 1;
+    case 8499938:
+        out[0] = 226; out[1] = 178; out[2] = 128;
+        return 1;
+    case 8631010:
+        out[0] = 226; out[1] = 178; out[2] = 130;
+        return 1;
+    case 8762082:
+        out[0] = 226; out[1] = 178; out[2] = 132;
+        return 1;
+    case 8893154:
+        out[0] = 226; out[1] = 178; out[2] = 134;
+        return 1;
+    case 9024226:
+        out[0] = 226; out[1] = 178; out[2] = 136;
+        return 1;
+    case 9155298:
+        out[0] = 226; out[1] = 178; out[2] = 138;
+        return 1;
+    case 9286370:
+        out[0] = 226; out[1] = 178; out[2] = 140;
+        return 1;
+    case 9417442:
+        out[0] = 226; out[1] = 178; out[2] = 142;
+        return 1;
+    case 9548514:
+        out[0] = 226; out[1] = 178; out[2] = 144;
+        return 1;
+    case 9679586:
+        out[0] = 226; out[1] = 178; out[2] = 146;
+        return 1;
+    case 9810658:
+        out[0] = 226; out[1] = 178; out[2] = 148;
+        return 1;
+    case 9941730:
+        out[0] = 226; out[1] = 178; out[2] = 150;
+        return 1;
+    case 10072802:
+        out[0] = 226; out[1] = 178; out[2] = 152;
+        return 1;
+    case 10203874:
+        out[0] = 226; out[1] = 178; out[2] = 154;
+        return 1;
+    case 10334946:
+        out[0] = 226; out[1] = 178; out[2] = 156;
+        return 1;
+    case 10466018:
+        out[0] = 226; out[1] = 178; out[2] = 158;
+        return 1;
+    case 10597090:
+        out[0] = 226; out[1] = 178; out[2] = 160;
+        return 1;
+    case 10728162:
+        out[0] = 226; out[1] = 178; out[2] = 162;
+        return 1;
+    case 10859234:
+        out[0] = 226; out[1] = 178; out[2] = 164;
+        return 1;
+    case 10990306:
+        out[0] = 226; out[1] = 178; out[2] = 166;
+        return 1;
+    case 11121378:
+        out[0] = 226; out[1] = 178; out[2] = 168;
+        return 1;
+    case 11252450:
+        out[0] = 226; out[1] = 178; out[2] = 170;
+        return 1;
+    case 11383522:
+        out[0] = 226; out[1] = 178; out[2] = 172;
+        return 1;
+    case 11514594:
+        out[0] = 226; out[1] = 178; out[2] = 174;
+        return 1;
+    case 11645666:
+        out[0] = 226; out[1] = 178; out[2] = 176;
+        return 1;
+    case 11776738:
+        out[0] = 226; out[1] = 178; out[2] = 178;
+        return 1;
+    case 11907810:
+        out[0] = 226; out[1] = 178; out[2] = 180;
+        return 1;
+    case 12038882:
+        out[0] = 226; out[1] = 178; out[2] = 182;
+        return 1;
+    case 12169954:
+        out[0] = 226; out[1] = 178; out[2] = 184;
+        return 1;
+    case 12301026:
+        out[0] = 226; out[1] = 178; out[2] = 186;
+        return 1;
+    case 12432098:
+        out[0] = 226; out[1] = 178; out[2] = 188;
+        return 1;
+    case 12563170:
+        out[0] = 226; out[1] = 178; out[2] = 190;
+        return 1;
+    case 8500194:
+        out[0] = 226; out[1] = 179; out[2] = 128;
+        return 1;
+    case 8631266:
+        out[0] = 226; out[1] = 179; out[2] = 130;
+        return 1;
+    case 8762338:
+        out[0] = 226; out[1] = 179; out[2] = 132;
+        return 1;
+    case 8893410:
+        out[0] = 226; out[1] = 179; out[2] = 134;
+        return 1;
+    case 9024482:
+        out[0] = 226; out[1] = 179; out[2] = 136;
+        return 1;
+    case 9155554:
+        out[0] = 226; out[1] = 179; out[2] = 138;
+        return 1;
+    case 9286626:
+        out[0] = 226; out[1] = 179; out[2] = 140;
+        return 1;
+    case 9417698:
+        out[0] = 226; out[1] = 179; out[2] = 142;
+        return 1;
+    case 9548770:
+        out[0] = 226; out[1] = 179; out[2] = 144;
+        return 1;
+    case 9679842:
+        out[0] = 226; out[1] = 179; out[2] = 146;
+        return 1;
+    case 9810914:
+        out[0] = 226; out[1] = 179; out[2] = 148;
+        return 1;
+    case 9941986:
+        out[0] = 226; out[1] = 179; out[2] = 150;
+        return 1;
+    case 10073058:
+        out[0] = 226; out[1] = 179; out[2] = 152;
+        return 1;
+    case 10204130:
+        out[0] = 226; out[1] = 179; out[2] = 154;
+        return 1;
+    case 10335202:
+        out[0] = 226; out[1] = 179; out[2] = 156;
+        return 1;
+    case 10466274:
+        out[0] = 226; out[1] = 179; out[2] = 158;
+        return 1;
+    case 10597346:
+        out[0] = 226; out[1] = 179; out[2] = 160;
+        return 1;
+    case 10728418:
+        out[0] = 226; out[1] = 179; out[2] = 162;
+        return 1;
+    case 11318242:
+        out[0] = 226; out[1] = 179; out[2] = 171;
+        return 1;
+    case 11449314:
+        out[0] = 226; out[1] = 179; out[2] = 173;
+        return 1;
+    case 11776994:
+        out[0] = 226; out[1] = 179; out[2] = 178;
+        return 1;
+    case 8434914:
+        out[0] = 225; out[1] = 130; out[2] = 160;
+        return 1;
+    case 8500450:
+        out[0] = 225; out[1] = 130; out[2] = 161;
+        return 1;
+    case 8565986:
+        out[0] = 225; out[1] = 130; out[2] = 162;
+        return 1;
+    case 8631522:
+        out[0] = 225; out[1] = 130; out[2] = 163;
+        return 1;
+    case 8697058:
+        out[0] = 225; out[1] = 130; out[2] = 164;
+        return 1;
+    case 8762594:
+        out[0] = 225; out[1] = 130; out[2] = 165;
+        return 1;
+    case 8828130:
+        out[0] = 225; out[1] = 130; out[2] = 166;
+        return 1;
+    case 8893666:
+        out[0] = 225; out[1] = 130; out[2] = 167;
+        return 1;
+    case 8959202:
+        out[0] = 225; out[1] = 130; out[2] = 168;
+        return 1;
+    case 9024738:
+        out[0] = 225; out[1] = 130; out[2] = 169;
+        return 1;
+    case 9090274:
+        out[0] = 225; out[1] = 130; out[2] = 170;
+        return 1;
+    case 9155810:
+        out[0] = 225; out[1] = 130; out[2] = 171;
+        return 1;
+    case 9221346:
+        out[0] = 225; out[1] = 130; out[2] = 172;
+        return 1;
+    case 9286882:
+        out[0] = 225; out[1] = 130; out[2] = 173;
+        return 1;
+    case 9352418:
+        out[0] = 225; out[1] = 130; out[2] = 174;
+        return 1;
+    case 9417954:
+        out[0] = 225; out[1] = 130; out[2] = 175;
+        return 1;
+    case 9483490:
+        out[0] = 225; out[1] = 130; out[2] = 176;
+        return 1;
+    case 9549026:
+        out[0] = 225; out[1] = 130; out[2] = 177;
+        return 1;
+    case 9614562:
+        out[0] = 225; out[1] = 130; out[2] = 178;
+        return 1;
+    case 9680098:
+        out[0] = 225; out[1] = 130; out[2] = 179;
+        return 1;
+    case 9745634:
+        out[0] = 225; out[1] = 130; out[2] = 180;
+        return 1;
+    case 9811170:
+        out[0] = 225; out[1] = 130; out[2] = 181;
+        return 1;
+    case 9876706:
+        out[0] = 225; out[1] = 130; out[2] = 182;
+        return 1;
+    case 9942242:
+        out[0] = 225; out[1] = 130; out[2] = 183;
+        return 1;
+    case 10007778:
+        out[0] = 225; out[1] = 130; out[2] = 184;
+        return 1;
+    case 10073314:
+        out[0] = 225; out[1] = 130; out[2] = 185;
+        return 1;
+    case 10138850:
+        out[0] = 225; out[1] = 130; out[2] = 186;
+        return 1;
+    case 10204386:
+        out[0] = 225; out[1] = 130; out[2] = 187;
+        return 1;
+    case 10269922:
+        out[0] = 225; out[1] = 130; out[2] = 188;
+        return 1;
+    case 10335458:
+        out[0] = 225; out[1] = 130; out[2] = 189;
+        return 1;
+    case 10400994:
+        out[0] = 225; out[1] = 130; out[2] = 190;
+        return 1;
+    case 10466530:
+        out[0] = 225; out[1] = 130; out[2] = 191;
+        return 1;
+    case 10532066:
+        out[0] = 225; out[1] = 131; out[2] = 128;
+        return 1;
+    case 10597602:
+        out[0] = 225; out[1] = 131; out[2] = 129;
+        return 1;
+    case 10663138:
+        out[0] = 225; out[1] = 131; out[2] = 130;
+        return 1;
+    case 10728674:
+        out[0] = 225; out[1] = 131; out[2] = 131;
+        return 1;
+    case 10794210:
+        out[0] = 225; out[1] = 131; out[2] = 132;
+        return 1;
+    case 10859746:
+        out[0] = 225; out[1] = 131; out[2] = 133;
+        return 1;
+    case 10990818:
+        out[0] = 225; out[1] = 131; out[2] = 135;
+        return 1;
+    case 11384034:
+        out[0] = 225; out[1] = 131; out[2] = 141;
+        return 1;
+    case 8493546:
+        out[0] = 234; out[1] = 153; out[2] = 128;
+        return 1;
+    case 8624618:
+        out[0] = 234; out[1] = 153; out[2] = 130;
+        return 1;
+    case 8755690:
+        out[0] = 234; out[1] = 153; out[2] = 132;
+        return 1;
+    case 8886762:
+        out[0] = 234; out[1] = 153; out[2] = 134;
+        return 1;
+    case 9017834:
+        out[0] = 234; out[1] = 153; out[2] = 136;
+        return 1;
+    case 9148906:
+        out[0] = 225; out[1] = 178; out[2] = 136; out[3] = 234; out[4] = 153; out[5] = 138;
+        return 2;
+    case 9279978:
+        out[0] = 234; out[1] = 153; out[2] = 140;
+        return 1;
+    case 9411050:
+        out[0] = 234; out[1] = 153; out[2] = 142;
+        return 1;
+    case 9542122:
+        out[0] = 234; out[1] = 153; out[2] = 144;
+        return 1;
+    case 9673194:
+        out[0] = 234; out[1] = 153; out[2] = 146;
+        return 1;
+    case 9804266:
+        out[0] = 234; out[1] = 153; out[2] = 148;
+        return 1;
+    case 9935338:
+        out[0] = 234; out[1] = 153; out[2] = 150;
+        return 1;
+    case 10066410:
+        out[0] = 234; out[1] = 153; out[2] = 152;
+        return 1;
+    case 10197482:
+        out[0] = 234; out[1] = 153; out[2] = 154;
+        return 1;
+    case 10328554:
+        out[0] = 234; out[1] = 153; out[2] = 156;
+        return 1;
+    case 10459626:
+        out[0] = 234; out[1] = 153; out[2] = 158;
+        return 1;
+    case 10590698:
+        out[0] = 234; out[1] = 153; out[2] = 160;
+        return 1;
+    case 10721770:
+        out[0] = 234; out[1] = 153; out[2] = 162;
+        return 1;
+    case 10852842:
+        out[0] = 234; out[1] = 153; out[2] = 164;
+        return 1;
+    case 10983914:
+        out[0] = 234; out[1] = 153; out[2] = 166;
+        return 1;
+    case 11114986:
+        out[0] = 234; out[1] = 153; out[2] = 168;
+        return 1;
+    case 11246058:
+        out[0] = 234; out[1] = 153; out[2] = 170;
+        return 1;
+    case 11377130:
+        out[0] = 234; out[1] = 153; out[2] = 172;
+        return 1;
+    case 8493802:
+        out[0] = 234; out[1] = 154; out[2] = 128;
+        return 1;
+    case 8624874:
+        out[0] = 234; out[1] = 154; out[2] = 130;
+        return 1;
+    case 8755946:
+        out[0] = 234; out[1] = 154; out[2] = 132;
+        return 1;
+    case 8887018:
+        out[0] = 234; out[1] = 154; out[2] = 134;
+        return 1;
+    case 9018090:
+        out[0] = 234; out[1] = 154; out[2] = 136;
+        return 1;
+    case 9149162:
+        out[0] = 234; out[1] = 154; out[2] = 138;
+        return 1;
+    case 9280234:
+        out[0] = 234; out[1] = 154; out[2] = 140;
+        return 1;
+    case 9411306:
+        out[0] = 234; out[1] = 154; out[2] = 142;
+        return 1;
+    case 9542378:
+        out[0] = 234; out[1] = 154; out[2] = 144;
+        return 1;
+    case 9673450:
+        out[0] = 234; out[1] = 154; out[2] = 146;
+        return 1;
+    case 9804522:
+        out[0] = 234; out[1] = 154; out[2] = 148;
+        return 1;
+    case 9935594:
+        out[0] = 234; out[1] = 154; out[2] = 150;
+        return 1;
+    case 10066666:
+        out[0] = 234; out[1] = 154; out[2] = 152;
+        return 1;
+    case 10197738:
+        out[0] = 234; out[1] = 154; out[2] = 154;
+        return 1;
+    case 10722538:
+        out[0] = 234; out[1] = 156; out[2] = 162;
+        return 1;
+    case 10853610:
+        out[0] = 234; out[1] = 156; out[2] = 164;
+        return 1;
+    case 10984682:
+        out[0] = 234; out[1] = 156; out[2] = 166;
+        return 1;
+    case 11115754:
+        out[0] = 234; out[1] = 156; out[2] = 168;
+        return 1;
+    case 11246826:
+        out[0] = 234; out[1] = 156; out[2] = 170;
+        return 1;
+    case 11377898:
+        out[0] = 234; out[1] = 156; out[2] = 172;
+        return 1;
+    case 11508970:
+        out[0] = 234; out[1] = 156; out[2] = 174;
+        return 1;
+    case 11771114:
+        out[0] = 234; out[1] = 156; out[2] = 178;
+        return 1;
+    case 11902186:
+        out[0] = 234; out[1] = 156; out[2] = 180;
+        return 1;
+    case 12033258:
+        out[0] = 234; out[1] = 156; out[2] = 182;
+        return 1;
+    case 12164330:
+        out[0] = 234; out[1] = 156; out[2] = 184;
+        return 1;
+    case 12295402:
+        out[0] = 234; out[1] = 156; out[2] = 186;
+        return 1;
+    case 12426474:
+        out[0] = 234; out[1] = 156; out[2] = 188;
+        return 1;
+    case 12557546:
+        out[0] = 234; out[1] = 156; out[2] = 190;
+        return 1;
+    case 8494570:
+        out[0] = 234; out[1] = 157; out[2] = 128;
+        return 1;
+    case 8625642:
+        out[0] = 234; out[1] = 157; out[2] = 130;
+        return 1;
+    case 8756714:
+        out[0] = 234; out[1] = 157; out[2] = 132;
+        return 1;
+    case 8887786:
+        out[0] = 234; out[1] = 157; out[2] = 134;
+        return 1;
+    case 9018858:
+        out[0] = 234; out[1] = 157; out[2] = 136;
+        return 1;
+    case 9149930:
+        out[0] = 234; out[1] = 157; out[2] = 138;
+        return 1;
+    case 9281002:
+        out[0] = 234; out[1] = 157; out[2] = 140;
+        return 1;
+    case 9412074:
+        out[0] = 234; out[1] = 157; out[2] = 142;
+        return 1;
+    case 9543146:
+        out[0] = 234; out[1] = 157; out[2] = 144;
+        return 1;
+    case 9674218:
+        out[0] = 234; out[1] = 157; out[2] = 146;
+        return 1;
+    case 9805290:
+        out[0] = 234; out[1] = 157; out[2] = 148;
+        return 1;
+    case 9936362:
+        out[0] = 234; out[1] = 157; out[2] = 150;
+        return 1;
+    case 10067434:
+        out[0] = 234; out[1] = 157; out[2] = 152;
+        return 1;
+    case 10198506:
+        out[0] = 234; out[1] = 157; out[2] = 154;
+        return 1;
+    case 10329578:
+        out[0] = 234; out[1] = 157; out[2] = 156;
+        return 1;
+    case 10460650:
+        out[0] = 234; out[1] = 157; out[2] = 158;
+        return 1;
+    case 10591722:
+        out[0] = 234; out[1] = 157; out[2] = 160;
+        return 1;
+    case 10722794:
+        out[0] = 234; out[1] = 157; out[2] = 162;
+        return 1;
+    case 10853866:
+        out[0] = 234; out[1] = 157; out[2] = 164;
+        return 1;
+    case 10984938:
+        out[0] = 234; out[1] = 157; out[2] = 166;
+        return 1;
+    case 11116010:
+        out[0] = 234; out[1] = 157; out[2] = 168;
+        return 1;
+    case 11247082:
+        out[0] = 234; out[1] = 157; out[2] = 170;
+        return 1;
+    case 11378154:
+        out[0] = 234; out[1] = 157; out[2] = 172;
+        return 1;
+    case 11509226:
+        out[0] = 234; out[1] = 157; out[2] = 174;
+        return 1;
+    case 12230122:
+        out[0] = 234; out[1] = 157; out[2] = 185;
+        return 1;
+    case 12361194:
+        out[0] = 234; out[1] = 157; out[2] = 187;
+        return 1;
+    case 12557802:
+        out[0] = 234; out[1] = 157; out[2] = 190;
+        return 1;
+    case 8494826:
+        out[0] = 234; out[1] = 158; out[2] = 128;
+        return 1;
+    case 8625898:
+        out[0] = 234; out[1] = 158; out[2] = 130;
+        return 1;
+    case 8756970:
+        out[0] = 234; out[1] = 158; out[2] = 132;
+        return 1;
+    case 8888042:
+        out[0] = 234; out[1] = 158; out[2] = 134;
+        return 1;
+    case 9215722:
+        out[0] = 234; out[1] = 158; out[2] = 139;
+        return 1;
+    case 9543402:
+        out[0] = 234; out[1] = 158; out[2] = 144;
+        return 1;
+    case 9674474:
+        out[0] = 234; out[1] = 158; out[2] = 146;
+        return 1;
+    case 9740010:
+        out[0] = 234; out[1] = 159; out[2] = 132;
+        return 1;
+    case 9936618:
+        out[0] = 234; out[1] = 158; out[2] = 150;
+        return 1;
+    case 10067690:
+        out[0] = 234; out[1] = 158; out[2] = 152;
+        return 1;
+    case 10198762:
+        out[0] = 234; out[1] = 158; out[2] = 154;
+        return 1;
+    case 10329834:
+        out[0] = 234; out[1] = 158; out[2] = 156;
+        return 1;
+    case 10460906:
+        out[0] = 234; out[1] = 158; out[2] = 158;
+        return 1;
+    case 10591978:
+        out[0] = 234; out[1] = 158; out[2] = 160;
+        return 1;
+    case 10723050:
+        out[0] = 234; out[1] = 158; out[2] = 162;
+        return 1;
+    case 10854122:
+        out[0] = 234; out[1] = 158; out[2] = 164;
+        return 1;
+    case 10985194:
+        out[0] = 234; out[1] = 158; out[2] = 166;
+        return 1;
+    case 11116266:
+        out[0] = 234; out[1] = 158; out[2] = 168;
+        return 1;
+    case 11902698:
+        out[0] = 234; out[1] = 158; out[2] = 180;
+        return 1;
+    case 12033770:
+        out[0] = 234; out[1] = 158; out[2] = 182;
+        return 1;
+    case 12164842:
+        out[0] = 234; out[1] = 158; out[2] = 184;
+        return 1;
+    case 12295914:
+        out[0] = 234; out[1] = 158; out[2] = 186;
+        return 1;
+    case 12426986:
+        out[0] = 234; out[1] = 158; out[2] = 188;
+        return 1;
+    case 12558058:
+        out[0] = 234; out[1] = 158; out[2] = 190;
+        return 1;
+    case 8626154:
+        out[0] = 234; out[1] = 159; out[2] = 130;
+        return 1;
+    case 9678314:
+        out[0] = 234; out[1] = 158; out[2] = 179;
+        return 1;
+    case 8502767:
+        out[0] = 239; out[1] = 188; out[2] = 161;
+        return 1;
+    case 8568303:
+        out[0] = 239; out[1] = 188; out[2] = 162;
+        return 1;
+    case 8633839:
+        out[0] = 239; out[1] = 188; out[2] = 163;
+        return 1;
+    case 8699375:
+        out[0] = 239; out[1] = 188; out[2] = 164;
+        return 1;
+    case 8764911:
+        out[0] = 239; out[1] = 188; out[2] = 165;
+        return 1;
+    case 8830447:
+        out[0] = 239; out[1] = 188; out[2] = 166;
+        return 1;
+    case 8895983:
+        out[0] = 239; out[1] = 188; out[2] = 167;
+        return 1;
+    case 8961519:
+        out[0] = 239; out[1] = 188; out[2] = 168;
+        return 1;
+    case 9027055:
+        out[0] = 239; out[1] = 188; out[2] = 169;
+        return 1;
+    case 9092591:
+        out[0] = 239; out[1] = 188; out[2] = 170;
+        return 1;
+    case 9158127:
+        out[0] = 239; out[1] = 188; out[2] = 171;
+        return 1;
+    case 9223663:
+        out[0] = 239; out[1] = 188; out[2] = 172;
+        return 1;
+    case 9289199:
+        out[0] = 239; out[1] = 188; out[2] = 173;
+        return 1;
+    case 9354735:
+        out[0] = 239; out[1] = 188; out[2] = 174;
+        return 1;
+    case 9420271:
+        out[0] = 239; out[1] = 188; out[2] = 175;
+        return 1;
+    case 9485807:
+        out[0] = 239; out[1] = 188; out[2] = 176;
+        return 1;
+    case 9551343:
+        out[0] = 239; out[1] = 188; out[2] = 177;
+        return 1;
+    case 9616879:
+        out[0] = 239; out[1] = 188; out[2] = 178;
+        return 1;
+    case 9682415:
+        out[0] = 239; out[1] = 188; out[2] = 179;
+        return 1;
+    case 9747951:
+        out[0] = 239; out[1] = 188; out[2] = 180;
+        return 1;
+    case 9813487:
+        out[0] = 239; out[1] = 188; out[2] = 181;
+        return 1;
+    case 9879023:
+        out[0] = 239; out[1] = 188; out[2] = 182;
+        return 1;
+    case 9944559:
+        out[0] = 239; out[1] = 188; out[2] = 183;
+        return 1;
+    case 10010095:
+        out[0] = 239; out[1] = 188; out[2] = 184;
+        return 1;
+    case 10075631:
+        out[0] = 239; out[1] = 188; out[2] = 185;
+        return 1;
+    case 10141167:
+        out[0] = 239; out[1] = 188; out[2] = 186;
+        return 1;
+    case 2828046576:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 128;
+        return 1;
+    case 2844823792:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 129;
+        return 1;
+    case 2861601008:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 130;
+        return 1;
+    case 2878378224:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 131;
+        return 1;
+    case 2895155440:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 132;
+        return 1;
+    case 2911932656:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 133;
+        return 1;
+    case 2928709872:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 134;
+        return 1;
+    case 2945487088:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 135;
+        return 1;
+    case 2962264304:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 136;
+        return 1;
+    case 2979041520:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 137;
+        return 1;
+    case 2995818736:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 138;
+        return 1;
+    case 3012595952:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 139;
+        return 1;
+    case 3029373168:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 140;
+        return 1;
+    case 3046150384:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 141;
+        return 1;
+    case 3062927600:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 142;
+        return 1;
+    case 3079704816:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 143;
+        return 1;
+    case 3096482032:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 144;
+        return 1;
+    case 3113259248:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 145;
+        return 1;
+    case 3130036464:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 146;
+        return 1;
+    case 3146813680:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 147;
+        return 1;
+    case 3163590896:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 148;
+        return 1;
+    case 3180368112:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 149;
+        return 1;
+    case 3197145328:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 150;
+        return 1;
+    case 3213922544:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 151;
+        return 1;
+    case 2157023472:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 152;
+        return 1;
+    case 2173800688:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 153;
+        return 1;
+    case 2190577904:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 154;
+        return 1;
+    case 2207355120:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 155;
+        return 1;
+    case 2224132336:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 156;
+        return 1;
+    case 2240909552:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 157;
+        return 1;
+    case 2257686768:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 158;
+        return 1;
+    case 2274463984:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 159;
+        return 1;
+    case 2291241200:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 160;
+        return 1;
+    case 2308018416:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 161;
+        return 1;
+    case 2324795632:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 162;
+        return 1;
+    case 2341572848:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 163;
+        return 1;
+    case 2358350064:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 164;
+        return 1;
+    case 2375127280:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 165;
+        return 1;
+    case 2391904496:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 166;
+        return 1;
+    case 2408681712:
+        out[0] = 240; out[1] = 144; out[2] = 144; out[3] = 167;
+        return 1;
+    case 2559807728:
+        out[0] = 240; out[1] = 144; out[2] = 146; out[3] = 176;
+        return 1;
+    case 2576584944:
+        out[0] = 240; out[1] = 144; out[2] = 146; out[3] = 177;
+        return 1;
+    case 2593362160:
+        out[0] = 240; out[1] = 144; out[2] = 146; out[3] = 178;
+        return 1;
+    case 2610139376:
+        out[0] = 240; out[1] = 144; out[2] = 146; out[3] = 179;
+        return 1;
+    case 2626916592:
+        out[0] = 240; out[1] = 144; out[2] = 146; out[3] = 180;
+        return 1;
+    case 2643693808:
+        out[0] = 240; out[1] = 144; out[2] = 146; out[3] = 181;
+        return 1;
+    case 2660471024:
+        out[0] = 240; out[1] = 144; out[2] = 146; out[3] = 182;
+        return 1;
+    case 2677248240:
+        out[0] = 240; out[1] = 144; out[2] = 146; out[3] = 183;
+        return 1;
+    case 2694025456:
+        out[0] = 240; out[1] = 144; out[2] = 146; out[3] = 184;
+        return 1;
+    case 2710802672:
+        out[0] = 240; out[1] = 144; out[2] = 146; out[3] = 185;
+        return 1;
+    case 2727579888:
+        out[0] = 240; out[1] = 144; out[2] = 146; out[3] = 186;
+        return 1;
+    case 2744357104:
+        out[0] = 240; out[1] = 144; out[2] = 146; out[3] = 187;
+        return 1;
+    case 2761134320:
+        out[0] = 240; out[1] = 144; out[2] = 146; out[3] = 188;
+        return 1;
+    case 2777911536:
+        out[0] = 240; out[1] = 144; out[2] = 146; out[3] = 189;
+        return 1;
+    case 2794688752:
+        out[0] = 240; out[1] = 144; out[2] = 146; out[3] = 190;
+        return 1;
+    case 2811465968:
+        out[0] = 240; out[1] = 144; out[2] = 146; out[3] = 191;
+        return 1;
+    case 2828243184:
+        out[0] = 240; out[1] = 144; out[2] = 147; out[3] = 128;
+        return 1;
+    case 2845020400:
+        out[0] = 240; out[1] = 144; out[2] = 147; out[3] = 129;
+        return 1;
+    case 2861797616:
+        out[0] = 240; out[1] = 144; out[2] = 147; out[3] = 130;
+        return 1;
+    case 2878574832:
+        out[0] = 240; out[1] = 144; out[2] = 147; out[3] = 131;
+        return 1;
+    case 2895352048:
+        out[0] = 240; out[1] = 144; out[2] = 147; out[3] = 132;
+        return 1;
+    case 2912129264:
+        out[0] = 240; out[1] = 144; out[2] = 147; out[3] = 133;
+        return 1;
+    case 2928906480:
+        out[0] = 240; out[1] = 144; out[2] = 147; out[3] = 134;
+        return 1;
+    case 2945683696:
+        out[0] = 240; out[1] = 144; out[2] = 147; out[3] = 135;
+        return 1;
+    case 2962460912:
+        out[0] = 240; out[1] = 144; out[2] = 147; out[3] = 136;
+        return 1;
+    case 2979238128:
+        out[0] = 240; out[1] = 144; out[2] = 147; out[3] = 137;
+        return 1;
+    case 2996015344:
+        out[0] = 240; out[1] = 144; out[2] = 147; out[3] = 138;
+        return 1;
+    case 3012792560:
+        out[0] = 240; out[1] = 144; out[2] = 147; out[3] = 139;
+        return 1;
+    case 3029569776:
+        out[0] = 240; out[1] = 144; out[2] = 147; out[3] = 140;
+        return 1;
+    case 3046346992:
+        out[0] = 240; out[1] = 144; out[2] = 147; out[3] = 141;
+        return 1;
+    case 3063124208:
+        out[0] = 240; out[1] = 144; out[2] = 147; out[3] = 142;
+        return 1;
+    case 3079901424:
+        out[0] = 240; out[1] = 144; out[2] = 147; out[3] = 143;
+        return 1;
+    case 3096678640:
+        out[0] = 240; out[1] = 144; out[2] = 147; out[3] = 144;
+        return 1;
+    case 3113455856:
+        out[0] = 240; out[1] = 144; out[2] = 147; out[3] = 145;
+        return 1;
+    case 3130233072:
+        out[0] = 240; out[1] = 144; out[2] = 147; out[3] = 146;
+        return 1;
+    case 3147010288:
+        out[0] = 240; out[1] = 144; out[2] = 147; out[3] = 147;
+        return 1;
+    case 2159251696:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 128;
+        return 1;
+    case 2176028912:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 129;
+        return 1;
+    case 2192806128:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 130;
+        return 1;
+    case 2209583344:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 131;
+        return 1;
+    case 2226360560:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 132;
+        return 1;
+    case 2243137776:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 133;
+        return 1;
+    case 2259914992:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 134;
+        return 1;
+    case 2276692208:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 135;
+        return 1;
+    case 2293469424:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 136;
+        return 1;
+    case 2310246640:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 137;
+        return 1;
+    case 2327023856:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 138;
+        return 1;
+    case 2343801072:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 139;
+        return 1;
+    case 2360578288:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 140;
+        return 1;
+    case 2377355504:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 141;
+        return 1;
+    case 2394132720:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 142;
+        return 1;
+    case 2410909936:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 143;
+        return 1;
+    case 2427687152:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 144;
+        return 1;
+    case 2444464368:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 145;
+        return 1;
+    case 2461241584:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 146;
+        return 1;
+    case 2478018800:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 147;
+        return 1;
+    case 2494796016:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 148;
+        return 1;
+    case 2511573232:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 149;
+        return 1;
+    case 2528350448:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 150;
+        return 1;
+    case 2545127664:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 151;
+        return 1;
+    case 2561904880:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 152;
+        return 1;
+    case 2578682096:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 153;
+        return 1;
+    case 2595459312:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 154;
+        return 1;
+    case 2612236528:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 155;
+        return 1;
+    case 2629013744:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 156;
+        return 1;
+    case 2645790960:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 157;
+        return 1;
+    case 2662568176:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 158;
+        return 1;
+    case 2679345392:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 159;
+        return 1;
+    case 2696122608:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 160;
+        return 1;
+    case 2712899824:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 161;
+        return 1;
+    case 2729677040:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 162;
+        return 1;
+    case 2746454256:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 163;
+        return 1;
+    case 2763231472:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 164;
+        return 1;
+    case 2780008688:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 165;
+        return 1;
+    case 2796785904:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 166;
+        return 1;
+    case 2813563120:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 167;
+        return 1;
+    case 2830340336:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 168;
+        return 1;
+    case 2847117552:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 169;
+        return 1;
+    case 2863894768:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 170;
+        return 1;
+    case 2880671984:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 171;
+        return 1;
+    case 2897449200:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 172;
+        return 1;
+    case 2914226416:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 173;
+        return 1;
+    case 2931003632:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 174;
+        return 1;
+    case 2947780848:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 175;
+        return 1;
+    case 2964558064:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 176;
+        return 1;
+    case 2981335280:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 177;
+        return 1;
+    case 2998112496:
+        out[0] = 240; out[1] = 144; out[2] = 178; out[3] = 178;
+        return 1;
+    case 2158203376:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 160;
+        return 1;
+    case 2174980592:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 161;
+        return 1;
+    case 2191757808:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 162;
+        return 1;
+    case 2208535024:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 163;
+        return 1;
+    case 2225312240:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 164;
+        return 1;
+    case 2242089456:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 165;
+        return 1;
+    case 2258866672:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 166;
+        return 1;
+    case 2275643888:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 167;
+        return 1;
+    case 2292421104:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 168;
+        return 1;
+    case 2309198320:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 169;
+        return 1;
+    case 2325975536:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 170;
+        return 1;
+    case 2342752752:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 171;
+        return 1;
+    case 2359529968:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 172;
+        return 1;
+    case 2376307184:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 173;
+        return 1;
+    case 2393084400:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 174;
+        return 1;
+    case 2409861616:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 175;
+        return 1;
+    case 2426638832:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 176;
+        return 1;
+    case 2443416048:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 177;
+        return 1;
+    case 2460193264:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 178;
+        return 1;
+    case 2476970480:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 179;
+        return 1;
+    case 2493747696:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 180;
+        return 1;
+    case 2510524912:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 181;
+        return 1;
+    case 2527302128:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 182;
+        return 1;
+    case 2544079344:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 183;
+        return 1;
+    case 2560856560:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 184;
+        return 1;
+    case 2577633776:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 185;
+        return 1;
+    case 2594410992:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 186;
+        return 1;
+    case 2611188208:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 187;
+        return 1;
+    case 2627965424:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 188;
+        return 1;
+    case 2644742640:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 189;
+        return 1;
+    case 2661519856:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 190;
+        return 1;
+    case 2678297072:
+        out[0] = 240; out[1] = 145; out[2] = 162; out[3] = 191;
+        return 1;
+    case 2696517360:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 128;
+        return 1;
+    case 2713294576:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 129;
+        return 1;
+    case 2730071792:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 130;
+        return 1;
+    case 2746849008:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 131;
+        return 1;
+    case 2763626224:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 132;
+        return 1;
+    case 2780403440:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 133;
+        return 1;
+    case 2797180656:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 134;
+        return 1;
+    case 2813957872:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 135;
+        return 1;
+    case 2830735088:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 136;
+        return 1;
+    case 2847512304:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 137;
+        return 1;
+    case 2864289520:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 138;
+        return 1;
+    case 2881066736:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 139;
+        return 1;
+    case 2897843952:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 140;
+        return 1;
+    case 2914621168:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 141;
+        return 1;
+    case 2931398384:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 142;
+        return 1;
+    case 2948175600:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 143;
+        return 1;
+    case 2964952816:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 144;
+        return 1;
+    case 2981730032:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 145;
+        return 1;
+    case 2998507248:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 146;
+        return 1;
+    case 3015284464:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 147;
+        return 1;
+    case 3032061680:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 148;
+        return 1;
+    case 3048838896:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 149;
+        return 1;
+    case 3065616112:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 150;
+        return 1;
+    case 3082393328:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 151;
+        return 1;
+    case 3099170544:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 152;
+        return 1;
+    case 3115947760:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 153;
+        return 1;
+    case 3132724976:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 154;
+        return 1;
+    case 3149502192:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 155;
+        return 1;
+    case 3166279408:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 156;
+        return 1;
+    case 3183056624:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 157;
+        return 1;
+    case 3199833840:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 158;
+        return 1;
+    case 3216611056:
+        out[0] = 240; out[1] = 150; out[2] = 185; out[3] = 159;
+        return 1;
+    case 2728697584:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 128;
+        return 1;
+    case 2745474800:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 129;
+        return 1;
+    case 2762252016:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 130;
+        return 1;
+    case 2779029232:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 131;
+        return 1;
+    case 2795806448:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 132;
+        return 1;
+    case 2812583664:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 133;
+        return 1;
+    case 2829360880:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 134;
+        return 1;
+    case 2846138096:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 135;
+        return 1;
+    case 2862915312:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 136;
+        return 1;
+    case 2879692528:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 137;
+        return 1;
+    case 2896469744:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 138;
+        return 1;
+    case 2913246960:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 139;
+        return 1;
+    case 2930024176:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 140;
+        return 1;
+    case 2946801392:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 141;
+        return 1;
+    case 2963578608:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 142;
+        return 1;
+    case 2980355824:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 143;
+        return 1;
+    case 2997133040:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 144;
+        return 1;
+    case 3013910256:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 145;
+        return 1;
+    case 3030687472:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 146;
+        return 1;
+    case 3047464688:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 147;
+        return 1;
+    case 3064241904:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 148;
+        return 1;
+    case 3081019120:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 149;
+        return 1;
+    case 3097796336:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 150;
+        return 1;
+    case 3114573552:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 151;
+        return 1;
+    case 3131350768:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 152;
+        return 1;
+    case 3148127984:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 153;
+        return 1;
+    case 3164905200:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 154;
+        return 1;
+    case 3181682416:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 155;
+        return 1;
+    case 3198459632:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 156;
+        return 1;
+    case 3215236848:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 157;
+        return 1;
+    case 2158337776:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 158;
+        return 1;
+    case 2175114992:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 159;
+        return 1;
+    case 2191892208:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 160;
+        return 1;
+    case 2208669424:
+        out[0] = 240; out[1] = 158; out[2] = 164; out[3] = 161;
+        return 1;
+    default:
+        return 0;
+    }
+}

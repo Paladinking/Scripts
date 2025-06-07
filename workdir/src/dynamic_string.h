@@ -62,6 +62,8 @@ bool String_copy(String_noinit* dest, String* source);
 // Increase capacity to allow `count` elements
 bool String_reserve(String* s, size_t count);
 
+bool String_append_utf16_bytes(String* s, const wchar_t* str, size_t count);
+
 bool String_from_utf16_bytes(String* dest, const wchar_t* s, size_t count);
 
 bool String_from_utf16_str(String* dest, const wchar_t* s);
