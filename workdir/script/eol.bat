@@ -16,10 +16,10 @@ def main() -> None:
             if not os.path.isfile(arg):
                 continue
             try:
-                with open(arg, 'r', encoding='utf-8') as file:
-                    data = file.read().split('\n')
-            except Exception:
-                print(f"Could not open '{arg}'", file=sys.stderr)
+                with open(arg, 'rb') as file:
+                    data = file.read().replace(b'\r\n', b'\n').replace(b'\r', b'\n').split(b'\n')
+            except Exception as e:
+                print(f"Could not open '{arg}', {e}", file=sys.stderr)
                 continue
             if not data[-1]:
                 data = data[:-1]
@@ -31,7 +31,7 @@ def main() -> None:
                 eol = b'\r\n'
             with open(arg, 'wb') as file:
                 for line in data:
-                    file.write(line.encode('utf-8'))
+                    file.write(line)
                     file.write(eol)
         return
 
