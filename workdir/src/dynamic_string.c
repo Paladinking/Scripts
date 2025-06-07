@@ -213,6 +213,25 @@ bool String_reserve(String* s, size_t count) {
     return true;
 }
 
+bool String_append_utf16_bytes(String* s, const wchar_t* str, size_t count) {
+    if (count == 0) {
+        return true;
+    }
+    UINT code_point = 65001;
+    DWORD size = WideCharToMultiByte(code_point, 0, str, count, NULL, 0, NULL, NULL);
+    if (!String_reserve(s, s->length + size)) {
+        return false;
+    }
+    size = WideCharToMultiByte(code_point, 0, str, count, s->buffer + s->length, size, NULL, NULL);
+    if (size == 0) {
+        return false;
+    }
+    s->length += size;
+    s->buffer[s->length] = L'\0';
+
+    return true;
+}
+
 bool String_from_utf16_bytes(String *dest, const wchar_t *s, size_t count) {
     if (count == 0) {
         String_clear(dest);

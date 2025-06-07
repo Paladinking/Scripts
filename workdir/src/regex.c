@@ -1603,6 +1603,44 @@ end:
     return cost;
 }
 
+bool dfa_casefold(DFABuilder* builder) {
+    uint8_t utf8[16];
+    for (uint32_t node_ix = 0; node_ix < builder->node_count; ++node_ix) {
+        for (uint32_t ix = 0; ix < 128; ++ix) {
+            if (builder->nodes[node_ix].ascii[ix] == 0) {
+                continue;
+            }
+            uint32_t dest = builder->nodes[node_ix].ascii_edges[builder->nodes[node_ix].ascii[ix]];
+            uint8_t in_ascii = ix;
+            uint32_t count = unicode_case_fold_utf8_rev(&in_ascii, 1, utf8);
+            uint8_t* utf8_ptr = utf8;
+            for (uint32_t i = 0; i < count; ++i) {
+                uint32_t len = utf8_len_table[utf8_ptr[0]];
+                if (!dfa_add_edge(builder, &builder->nodes[node_ix], &builder->builders[node_ix], utf8_ptr, dest)) {
+                    return false;
+                }
+                utf8_ptr += len;
+            }
+        }
+        for (uint32_t ix = 0; ix < builder->nodes[node_ix].utf8_edge_count; ++ix) {
+            Utf8Edge* edge = &builder->nodes[node_ix].utf8_edges[ix];
+            uint32_t dest = edge->node_ix;
+            uint32_t l = utf8_len_table[edge->bytes[0]];
+            uint32_t count = unicode_case_fold_utf8_rev(edge->bytes, l, utf8);
+            uint8_t* utf8_ptr = utf8;
+            for (uint32_t i = 0; i < count; ++i) {
+                uint32_t len = utf8_len_table[utf8_ptr[0]];
+                if (!dfa_add_edge(builder, &builder->nodes[node_ix], &builder->builders[node_ix], utf8_ptr, dest)) {
+                    return false;
+                }
+                utf8_ptr += len;
+            }
+        }
+    }
+
+    return true;
+}
+
 bool dfa_finalize(DFABuilder *builder) {
     builder->minlen = dfa_minlen(builder);
 
@@ -1792,7 +1830,8 @@ bool nfa_copy(NFA* in, NFA* out) {
 }
 
 RegexResult nfa_to_dfa(NFA *nfa, char *chars, NodeDFA **dfa,
-                       uint32_t* dfa_nodes, uint32_t* minlen) {
+                       uint32_t* dfa_nodes, uint32_t* minlen,
+                       bool casefold) {
     if (!nfa_split_literals(nfa, chars)) {
         return REGEX_ERROR;
     }
@@ -1875,6 +1914,14 @@ RegexResult nfa_to_dfa(NFA *nfa, char *chars, NodeDFA **dfa,
 
     // Add implicit start edge to count
     b.builders[0].in_edge_count += 1;
+
+    if (casefold) {
+        if (!dfa_casefold(&b)) {
+            dfa_builder_free(&b);
+            return REGEX_ERROR;
+        }
+    }
+
     if (!dfa_finalize(&b)) {
         return REGEX_ERROR;
     }
@@ -1905,9 +1952,9 @@ Regex* Regex_compile_with(const char* pattern, bool casefold) {
         const uint8_t* bytes = (const uint8_t*)pattern;
         for (uint64_t ix = 0; ix < len;) {
             uint32_t l = get_utf8_seq(bytes + ix, len - ix);
-            l = unicode_case_fold_utf8(bytes + ix, l, utf8);
+            uint32_t l1 = unicode_case_fold_utf8(bytes + ix, l, utf8);
             ix += l;
-            if (!String_append_count(&buf, (const char*)utf8, l)) {
+            if (!String_append_count(&buf, (const char*)utf8, l1)) {
                 String_free(&buf);
                 return NULL;
             }
@@ -1935,7 +1982,7 @@ Regex* Regex_compile_with(const char* pattern, bool casefold) {
     uint32_t minlen;
     uint32_t dfa_nodes;
     if (nfa_copy(&nfa, &nfa_cpy)) {
-        if (nfa_to_dfa(&nfa_cpy, ctx.pattern.buffer, &dfa, &dfa_nodes, &minlen) != REGEX_MATCH) {
+        if (nfa_to_dfa(&nfa_cpy, ctx.pattern.buffer, &dfa, &dfa_nodes, &minlen, casefold) != REGEX_MATCH) {
             dfa = NULL;
             minlen = UINT32_MAX;
             dfa_nodes = 0;
