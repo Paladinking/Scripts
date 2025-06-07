@@ -58,11 +58,7 @@ RegexResult Regex_fullmatch(Regex* regex, const char* str, uint64_t len);
 RegexResult Regex_anymatch(Regex* regex, const char* str, uint64_t len);
 
 void Regex_allmatch_init(Regex* regex, const char* str, uint64_t len, RegexAllCtx* ctx);
-// Set ctx->buffer to Mem_alloc:d buffer before calling, and set ctx->buffer_cap.
-void Regex_allmatch_init_nocase(Regex* regex, const char* str, uint64_t len, RegexAllCtx* ctx);
 
 RegexResult Regex_allmatch(RegexAllCtx* ctx, const char** match, uint64_t* len);
-
-RegexResult Regex_allmatch_nocase(RegexAllCtx* ctx, const char** match, uint64_t* len);
 
 #endif
