@@ -70,7 +70,7 @@ const wchar_t *HELP_MESSAGE =
     L"Recursion filters:\n"
     L"    --exclude=PATTERN      skip files and directories that match PATTERN\n"
     L"    --exclude-dir=PATTERN  skip directories that match PATTERN\n"
-    "     --include=PATTERN      include only files that match PATTERN\n"
+    L"    --include=PATTERN      include only files that match PATTERN\n"
     L"    --max-depth=N          do not recurse deeper than N levels\n";
 
 
