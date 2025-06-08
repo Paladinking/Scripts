@@ -391,6 +391,10 @@ char* ConsoleLineIter_next(LineCtx* ctx, uint64_t* len) {
 
     DWORD read;
     while (ctx->line.length == 0) {
+        if (ctx->eof) {
+            ctx->eof = false;
+            goto eol;
+        }
         if (!WString_reserve(&ctx->wbuffer, ctx->wbuffer.length + 4097)) {
             goto fail;
         }
@@ -400,6 +404,15 @@ char* ConsoleLineIter_next(LineCtx* ctx, uint64_t* len) {
         }
         uint64_t start = ctx->wbuffer.length;
         ctx->wbuffer.length += read;
+        
+        for (uint64_t i = start; i < ctx->wbuffer.length; ++i) {
+            if (ctx->wbuffer.buffer[i] == 0x1A) {
+                ctx->eof = true;
+                ctx->wbuffer.length = i;
+                CloseHandle(ctx->file);
+                break;
+            }
+        }
         uint64_t ix = ctx->wbuffer.length;
         uint64_t line_len = 0;
         do {

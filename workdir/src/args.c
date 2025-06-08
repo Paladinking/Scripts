@@ -138,8 +138,37 @@ BOOL parse_argument(LPWSTR val, FlagValue* valid, unsigned ix, ErrorInfo* err) {
     if (valid->type & FLAG_STRING) {
         valid->str = val;
         valid->has_value = 1;
+        valid->count = 1;
         return TRUE;
     }
+    if (valid->type & FLAG_STRING_MANY) {
+        if (valid->count == 0xffff) {
+            err->type = FLAG_OUTOFMEMORY;
+            err->ix = ix;
+            err->value = val;
+            return FALSE;
+        }
+        valid->count += 1;
+        if (valid->strlist == NULL) {
+            valid->strlist = Mem_alloc(4 * sizeof(wchar_t*));
+        } else if (valid->count > 4) {
+            wchar_t** s = Mem_realloc(valid->strlist, valid->count * sizeof(wchar_t*));
+            if (s == NULL) {
+                Mem_free(valid->strlist);
+            }
+            valid->strlist = s;
+        }
+        if (valid->strlist == NULL) {
+            err->type = FLAG_OUTOFMEMORY;
+            err->ix = ix;
+            err->value = val;
+            return FALSE;
+        }
+        valid->strlist[valid->count - 1] = val;
+        valid->has_value = 1;
+        return TRUE;
+    }
+
     if (valid->type & FLAG_INT) {
         if (!parse_sintw(val, &valid->sint, BASE_FROM_PREFIX)) {
             err->type = FLAG_INVALID_VALUE;
@@ -148,6 +177,7 @@ BOOL parse_argument(LPWSTR val, FlagValue* valid, unsigned ix, ErrorInfo* err) {
             return FALSE;
         }
         valid->has_value = 1;
+        valid->count = 1;
         return TRUE;
     }
     if (valid->type & FLAG_UINT) {
@@ -158,6 +188,7 @@ BOOL parse_argument(LPWSTR val, FlagValue* valid, unsigned ix, ErrorInfo* err) {
             return FALSE;
         }
         valid->has_value = 1;
+        valid->count = 1;
         return TRUE;
     }
     EnumValue* vals = valid->enum_values;
@@ -197,6 +228,7 @@ BOOL parse_argument(LPWSTR val, FlagValue* valid, unsigned ix, ErrorInfo* err) {
     }
     valid->has_value = 1;
     valid->uint = longest_ix;
+    valid->count = 1;
     return TRUE;
 }
 
@@ -382,6 +414,17 @@ BOOL find_flags(wchar_t** argv, int* argc, FlagInfo* flags, uint32_t flag_count,
 }
 
 wchar_t* format_error(ErrorInfo* err, FlagInfo* flags, uint32_t flag_count) {
+    for (uint32_t ix = 0; ix < flag_count; ++ix) {
+        if (flags[ix].value->type == FLAG_STRING_MANY) {
+            if (flags[ix].value->strlist != NULL) {
+                Mem_free(flags[ix].value->strlist);
+            }
+        }
+    }
+    if (err->type == FLAG_OUTOFMEMORY) {
+        return NULL; // At this point allocation will probably fail anyways.
+    } 
+
     uint32_t val_len = wcslen(err->value);
     wchar_t* str;
     if (err->type == FLAG_AMBIGUOS) {

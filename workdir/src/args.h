@@ -11,6 +11,7 @@
 //#define FLAG_DOUBLE 16
 #define FLAG_STRING 32
 #define FLAG_ENUM 64
+#define FLAG_STRING_MANY 128
 
 #define FLAG_AMBIGUOS 3
 #define FLAG_UNKOWN 4
@@ -18,6 +19,7 @@
 #define FLAG_INVALID_VALUE 6
 #define FLAG_AMBIGUOS_VALUE 7
 #define FLAG_UNEXPECTED_VALUE 8
+#define FLAG_OUTOFMEMORY 9
 
 typedef struct EnumValue {
     const wchar_t** values;
@@ -29,11 +31,13 @@ typedef struct FlagValue {
     EnumValue * enum_values; // Input
     unsigned enum_count; // Input
     char has_value; // Output
+    uint16_t count; // Output
     union { // Output
         wchar_t* str;
         uint64_t uint;
         int64_t sint;
         double real;
+        wchar_t** strlist;
     };
 } FlagValue;
 
