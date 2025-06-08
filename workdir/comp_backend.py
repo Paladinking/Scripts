@@ -6,7 +6,7 @@ import sys
 import shutil
 import argparse
 
-from typing import List, Optional, TextIO, Type, Union, Tuple, Dict
+from typing import Any, List, Optional, TextIO, Type, Union, Tuple, Dict
 
 BUILD_DIR: pathlib.Path
 BIN_DIR: pathlib.Path
@@ -58,6 +58,8 @@ class Obj:
         self.source = source
         self.cmp_flags=cmp_flags
         self.depends: List[str] = []
+        self.cmd = "<unkown>"
+        self.headers: Optional[Dict[str, None]] = None
         for dep in depends:
             if isinstance(dep, str):
                 self.depends.append(dep)
@@ -92,6 +94,7 @@ class Exe:
         self.name = name
         self.objs = objs
         self.cmds = cmds
+        self.cmd = '<unkown>'
         self.link_flags = link_flags
         self.dll = dll
 
@@ -122,6 +125,9 @@ class ZigCC(BackendBase):
     @property
     def clang(self) -> bool:
         return True
+
+    def handle_obj_line(self, obj: Obj, line: str) -> bool:
+        return False
 
     def compile_obj(self, obj: Obj) -> str:
         return f"zig.exe cc -c -o {obj.product} {obj.cmp_flags} {obj.source}"
@@ -163,12 +169,40 @@ class ZigCC(BackendBase):
 class Mingw(BackendBase):
     name = "mingw"
 
+    def __init__(self) -> None:
+        self._pending_line = False
+
     @property
     def mingw(self) -> bool:
         return True
+
+    def handle_obj_line(self, obj: Obj, line: str) -> bool:
+        if obj.headers is None:
+            obj.headers = dict()
+        pref = f"{obj.product}:"
+        offset = 0
+        if line.startswith(pref):
+            line = line[len(pref):]
+            offset = 1
+        elif not self._pending_line:
+            return False
+        self._pending_line = False
+
+        if line.endswith("\\"):
+            self._pending_line = True
+            line = line[:-2]
+
+        for h in line.split()[offset:]:
+            try:
+                header = str(pathlib.Path(h).resolve().relative_to(WORKDIR))
+                obj.headers[header] = None
+            except Exception:
+                pass
+
+        return True
     
     def compile_obj(self, obj: Obj) -> str:
-        return f"gcc.exe -c -o {obj.product} {obj.cmp_flags} {obj.source}"
+        return f"gcc.exe -MMD -MF - -c -o {obj.product} {obj.cmp_flags} {obj.source}"
 
     def find_headers(self, obj: Obj) -> List[str]:
         cmd = f"gcc.exe -MM {obj.cmp_flags} {obj.source}"
@@ -212,14 +246,28 @@ class Msvc(BackendBase):
     def msvc(self) -> bool:
         return True
 
+    def handle_obj_line(self, obj: Obj, line: str) ->  bool:
+        if obj.headers is None:
+            obj.headers = dict()
+        if line.startswith("Note: including file"):
+            path = pathlib.Path(line[21:].strip()).resolve()
+            try:
+                path = path.relative_to(WORKDIR)
+                obj.headers[str(path)] = None
+            except ValueError:
+                pass
+            return True
+        return False
+
     def compile_obj(self, obj: Obj) -> str:
-        return f"cl.exe /c /Fo:{obj.product} {obj.cmp_flags} {obj.source}"
+        return f"cl.exe /c /nologo /showIncludes /Fo:{obj.product} {obj.cmp_flags} {obj.source}"
 
     def find_headers(self, obj: Obj) -> List[str]:
         cl = shutil.which("cl.exe")
         if cl is None:
             raise RuntimeError("Failed to find cl.exe executable")
         cmd = f"{cl} /P /showIncludes /FiNUL {obj.cmp_flags} {obj.source}"
+        print(cmd)
         res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if res.returncode != 0:
             print(res, file=sys.stderr)
@@ -238,11 +286,11 @@ class Msvc(BackendBase):
     
     def link_exe(self, exe: Exe) -> str:
         row = " ".join([f"{obj.product}" for obj in exe.objs] + [f"{cmd.product}" for cmd in exe.cmds])
-        return f"link /OUT:{exe.product} {exe.link_flags} {row}"
+        return f"link /nologo /OUT:{exe.product} {exe.link_flags} {row}"
 
     def link_dll(self, exe: Exe) -> str:
         row = " ".join([f"{obj.product}" for obj in exe.objs] + [f"{cmd.product}" for cmd in exe.cmds])
-        return f"link /OUT:{exe.product} /DLL {exe.link_flags} {row}"
+        return f"link /nologo /OUT:{exe.product} /DLL {exe.link_flags} {row}"
 
     def include(self, directory: str) -> str:
         return f"/I{directory}"
@@ -392,17 +440,72 @@ BACKEND: Backend
 def define(key: str, val: Optional[str]=None) -> str:
     return BACKEND.define(key, val)
 
-def find_headers(obj: Obj) -> List[str]:
+COMPCACHE: Optional[dict[str, Any]] = None
+
+def comp_cache() -> dict[str, Any]:
+    global COMPCACHE
+    if COMPCACHE is not None:
+        return COMPCACHE
     import json
+    try:
+        with open(WORKDIR / 'comp_cache.json', 'r') as file:
+            COMPCACHE = json.load(file)
+    except Exception:
+        COMPCACHE = dict()
+    return COMPCACHE # type: ignore
+
+def write_comp_cache() -> None:
+    try:
+        import json
+        with open(WORKDIR / 'comp_cache.json', 'w') as file:
+            file.write(json.dumps(COMPCACHE, indent=4))
+    except Exception as e:
+        print(f"Failed writing cache: {e}", file=sys.stderr)
+
+def set_headers_and_last_cmd(obj: Obj) -> None:
+    try:
+        data = comp_cache()
+        if BACKEND.name not in data:
+            data[BACKEND.name] = dict()
+        if obj.name not in data[BACKEND.name]:
+            data[BACKEND.name][obj.name] = {"cmd": obj.cmd, "headers": obj.headers}
+        else:
+            data[BACKEND.name][obj.name]['cmd'] = obj.cmd
+            data[BACKEND.name][obj.name]['headers'] = obj.headers and list(obj.headers.keys())
+    except Exception as e:
+        print(f"Failed updating cache: {e}", file=sys.stderr)
+
+
+def set_last_cmd(obj: Product) -> None:
+    try:
+        data = comp_cache()
+        if BACKEND.name not in data:
+            data[BACKEND.name] = dict()
+        if obj.name not in data[BACKEND.name]:
+            data[BACKEND.name][obj.name] = {"cmd": obj.cmd}
+        else:
+            data[BACKEND.name][obj.name]['cmd'] = obj.cmd
+    except Exception as e:
+        print(f"Failed updating cache: {e}", file=sys.stderr)
+
+def last_cmd(prod: Product) -> Optional[str]:
+    try:
+        data = comp_cache()
+        cache = data[BACKEND.name][prod.name]
+        if isinstance(cache['cmd'], str):
+            return cache['cmd']
+    except Exception:
+        pass
+    return None
+
+def find_headers(obj: Obj) -> Optional[Dict[str, None]]:
     data = None
     try:
-        with open('comp_cache.json', 'r') as file:
-            data = json.load(file)
-            cache = data[BACKEND.name][obj.name]
-            assert 'stamp' in cache and isinstance(cache['stamp'], float)
-            assert 'headers' in cache and isinstance(cache['headers'], list)
-        if get_args().fast:
-            return cache['headers']
+        data = comp_cache()
+        cache = data[BACKEND.name][obj.name]
+        #assert 'stamp' in cache and isinstance(cache['stamp'], float)
+        assert 'headers' in cache and isinstance(cache['headers'], list)
+        return {h: None for h in cache['headers']}
         t = os.path.getmtime(obj.source)
         for header in cache['headers']:
             assert isinstance(header, str)
@@ -413,6 +516,7 @@ def find_headers(obj: Obj) -> List[str]:
             return cache['headers']
     except Exception:
         cache = None
+    return None
     created: List[pathlib.Path] = []
     for dep in obj.depends:
         path = pathlib.Path(dep)
@@ -492,21 +596,24 @@ def makefile(dest: TextIO = sys.stdout) -> None:
             bld_dir = str(BUILD_DIR / obj.namespace)
         else:
             bld_dir = str(BUILD_DIR)
-        headers = find_headers(obj)
+        if obj.headers is None or last_cmd(obj) != obj.cmd:
+            headers = [str(BUILD_DIR / "Makefile")]
+        else:
+            headers = list(obj.headers.keys())
         depends = " ".join([obj.source] + headers + [bld_dir] + obj.depends)
         print(f"{obj.product}: {depends}", file=dest)
-        print(f"\t{BACKEND.compile_obj(obj)}", file=dest)
+        print(f"\t{obj.cmd}", file=dest)
     print(file=dest)
     for key, exe in EXECUTABLES.items():
-        row = " ".join([f"{obj.product}" for obj in exe.objs] + [f"{cmd.product}" for cmd in exe.cmds])
+        row = " ".join([f"{obj.product}" for obj in exe.objs] + 
+                       [f"{cmd.product}" for cmd in exe.cmds] + 
+                       ([str(BUILD_DIR / "Makefile")] if last_cmd(exe) != exe.cmd else []))
         print(f"{exe.product}: {row} {exe.directory}", file=dest)
-        if exe.dll:
-            print(f"\t{BACKEND.link_dll(exe)}", file=dest)
-        else:
-            print(f"\t{BACKEND.link_exe(exe)}", file=dest)
+        print(f"\t{exe.cmd}", file=dest)
     print(file=dest)
     for key, cmd in CUSTOMS.items():
-        row = " ".join(cmd.depends + [cmd.dir])
+        row = " ".join(cmd.depends + [cmd.dir] + ([str(BUILD_DIR / "Makefile")] 
+                       if last_cmd(cmd) != cmd.cmd else []))
         print(f"{cmd.product}: {row}", file=dest)
         print(f"\t{cmd.cmd}", file=dest)
     print(file=dest)
@@ -610,7 +717,26 @@ def build(comp_file: str) -> None:
     comp_stamp = os.path.getmtime(pathlib.Path(comp_file))
     compiledb = WORKDIR / 'compile_commands.json'
     make = BUILD_DIR / 'Makefile'
+
+    cmd_map = dict()
+    
+    for obj in OBJECTS.values():
+        obj.headers = find_headers(obj)
+        obj.cmd = BACKEND.compile_obj(obj)
+        cmd_map[obj.cmd] = obj
+    for exe in EXECUTABLES.values():
+        if exe.dll:
+            exe.cmd = BACKEND.link_dll(exe)
+        else:
+            exe.cmd = BACKEND.link_exe(exe)
+        cmd_map[exe.cmd] = exe
+    for c in CUSTOMS.values():
+        cmd_map[c.cmd] = c
+
     try:
+        if not BUILD_DIR.exists():
+            os.mkdir(BUILD_DIR)
+
         if not compiledb.exists() or os.path.getmtime(compiledb) < comp_stamp or get_args().compiledb:
             file_open = False
             try:
@@ -622,6 +748,7 @@ def build(comp_file: str) -> None:
                     compiledb.unlink()
                 raise
         if not make.exists() or os.path.getmtime(make) < comp_stamp:
+            print("Regenerating Makefile")
             file_open = False
             try:
                 with open(make, 'w') as file:
@@ -636,7 +763,48 @@ def build(comp_file: str) -> None:
         exit(1)
 
     make_exe = get_make()
-    res = subprocess.run([make_exe, '-f', str(make), '/NOLOGO', get_args().target])
+    res = subprocess.Popen([make_exe, '-f', str(make), '/NOLOGO', get_args().target], bufsize=1,
+                           universal_newlines=True, stdout=subprocess.PIPE)
+    assert res.stdout is not None
+
+    cur_obj = None
+
+    change = False
+
+    for line in res.stdout:
+        l = line.strip()
+        if l in cmd_map:
+            cur_obj = cmd_map[l]
+            if not isinstance(cur_obj, Obj):
+                cur_obj = None
+            else:
+                cur_obj.headers = dict()
+        elif isinstance(cur_obj, Obj):
+            if BACKEND.handle_obj_line(cur_obj, l):
+                change = True
+                continue
+
+        print(line, end="")
+
+    res.wait()
+
+    if res.returncode == 0:
+        for obj in OBJECTS.values():
+            set_headers_and_last_cmd(obj)
+        for exe in EXECUTABLES.values():
+            set_last_cmd(exe)
+        for cmd in CUSTOMS.values():
+            set_last_cmd(cmd)
+
+        write_comp_cache()
+        
+        if change:
+            try:
+                with open(make, 'w') as file:
+                    file_open = True
+                    makefile(dest=file)
+            except Exception as e:
+                print(f"Failed generating makefile: {e}", file=sys.stderr)
 
     exit(res.returncode)
 
