@@ -26,9 +26,12 @@ bool is_directory(const wchar_t* str);
 
 bool make_absolute(const wchar_t* path, WString* dest);
 
+bool to_windows_path(const wchar_t* path, WString* s);
+
 typedef struct _Path {
     WString path;
     uint32_t name_len;
+    DWORD attrs;
     bool is_dir;
     bool is_link;
 } Path;

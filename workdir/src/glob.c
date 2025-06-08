@@ -157,16 +157,22 @@ bool find_file_relative(wchar_t* buf, size_t size, const wchar_t *filename, bool
 
 bool to_windows_path(const wchar_t* path, WString* s) {
     if (path[0] == L'/' && ((path[1] >= 'a' && path[1] <= 'z') || (path[1] >= 'A' && path[1] <= 'Z')) && (path[2] == L'\0' || path[2] == L'/' || path[2] == L'\\')) {
-        WString_append(s, path[1]);
-        WString_append(s, L':');
+        if (!WString_append(s, path[1]) || !WString_append(s, L':')) {
+            SetLastError(ERROR_OUTOFMEMORY);
+            return false;
+        }
         path += 2;
     }
-    WString_extend(s, path);
+    if (!WString_extend(s, path)) {
+        SetLastError(ERROR_OUTOFMEMORY);
+        return false;
+    }
     for (unsigned ix = 0; ix < s->length; ++ix) {
         if (s->buffer[ix] == L'/') {
             s->buffer[ix] = L'\\';
         }
         if (s->buffer[ix] == L'?' || s->buffer[ix] == L'*') {
+            SetLastError(ERROR_PATH_NOT_FOUND);
             return false;
         }
     }
@@ -206,7 +212,6 @@ DWORD get_file_attrs(const wchar_t* path) {
 
     if (!to_windows_path(path, &s)) {
         WString_free(&s);
-        SetLastError(ERROR_PATH_NOT_FOUND);
         return INVALID_FILE_ATTRIBUTES;
     }
     DWORD attrs = GetFileAttributesW(s.buffer);
@@ -845,6 +850,7 @@ bool Glob_next(GlobCtx* ctx, Path** path) {
                 if (!WString_extend(&p->path, data.cFileName)) {
                     goto fail;
                 }
+                p->attrs = data.dwFileAttributes;
                 p->is_dir = data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
                 p->is_link = data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT;
                 *path = p;
@@ -924,6 +930,7 @@ bool Glob_next(GlobCtx* ctx, Path** path) {
                         if (!WString_extend(&p->path, data.cFileName)) {
                             goto fail;
                         }
+                        p->attrs = data.dwFileAttributes;
                         p->is_dir = data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
                         p->is_link = data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT;
                         *path = p;
@@ -935,6 +942,7 @@ bool Glob_next(GlobCtx* ctx, Path** path) {
                     }
                     --ctx->stack_size;
                     Mem_free(n.pattern);
+                    p->attrs = data.dwFileAttributes;
                     p->is_dir = data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
                     p->is_link = data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT;
                     *path = p;
@@ -981,23 +989,39 @@ void Glob_abort(GlobCtx* ctx) {
 bool WalkDir_begin(WalkCtx* ctx, const wchar_t* dir, bool absolute_path) {
     WString* s = &ctx->p.path;
     ctx->absolute_path = absolute_path;
-    WString_create(s);
+    if (!WString_create(s)) {
+        SetLastError(ERROR_OUTOFMEMORY);
+    }
 
     if (!to_windows_path(dir, s)) {
+        DWORD err = GetLastError();
         ctx->handle = INVALID_HANDLE_VALUE;
         WString_free(s);
+        SetLastError(err);
         return false;
     }
 
     if (s->buffer[s->length - 1] != L'\\') {
-        WString_append(s, L'\\');
+        if (!WString_append(s, L'\\')) {
+            WString_free(s);
+            SetLastError(ERROR_OUTOFMEMORY);
+            ctx->handle = INVALID_HANDLE_VALUE;
+            return false;
+        }
     }
-    WString_append(s, L'*');
+    if (!WString_append(s, L'*')) {
+        WString_free(s);
+        SetLastError(ERROR_OUTOFMEMORY);
+        ctx->handle = INVALID_HANDLE_VALUE;
+        return false;
+    }
 
     WIN32_FIND_DATAW data;
     ctx->handle = FindFirstFileW(s->buffer, &data);
     if (ctx->handle == INVALID_HANDLE_VALUE) {
+        DWORD err = GetLastError();
         WString_free(s);
+        SetLastError(err);
         return false;
     }
     if (!ctx->absolute_path) {
@@ -1006,7 +1030,14 @@ bool WalkDir_begin(WalkCtx* ctx, const wchar_t* dir, bool absolute_path) {
         WString_pop(s, 1); // Remove '*'
     }
     ctx->p.name_len = wcslen(data.cFileName); 
-    WString_append_count(s, data.cFileName, ctx->p.name_len);
+    if (!WString_append_count(s, data.cFileName, ctx->p.name_len)) {
+        FindClose(ctx->handle);
+        WString_free(s);
+        SetLastError(ERROR_OUTOFMEMORY);
+        ctx->handle = INVALID_HANDLE_VALUE;
+        return false;
+    }
+    ctx->p.attrs = data.dwFileAttributes;
     ctx->p.is_dir = data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
     ctx->p.is_link = data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT;
     if (data.cFileName[0] == L'.' && (data.cFileName[1] == L'\0' || (
@@ -1031,10 +1062,12 @@ int WalkDir_next(WalkCtx* ctx, Path** path) {
     while (1) {
         WIN32_FIND_DATAW data;
         if (!FindNextFileW(ctx->handle, &data)) {
+            DWORD err = GetLastError();
             WString_free(&ctx->p.path);
             FindClose(ctx->handle);
             ctx->handle = INVALID_HANDLE_VALUE;
             *path = NULL;
+            SetLastError(err);
             return 0;
         }
         if (data.cFileName[0] == L'.' && (data.cFileName[1] == L'\0' || (
@@ -1048,7 +1081,12 @@ int WalkDir_next(WalkCtx* ctx, Path** path) {
         }
 
         ctx->p.name_len = wcslen(data.cFileName);
-        WString_append_count(&ctx->p.path, data.cFileName, ctx->p.name_len);
+        if (!WString_append_count(&ctx->p.path, data.cFileName, ctx->p.name_len)) {
+            WalkDir_abort(ctx);
+            SetLastError(ERROR_OUTOFMEMORY);
+            return 0;
+        }
+        ctx->p.attrs = data.dwFileAttributes;
         ctx->p.is_dir = data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
         ctx->p.is_link = data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT;
         *path = &ctx->p;
