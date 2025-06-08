@@ -27,7 +27,7 @@
 #define OPTION_MATCH_MASK (OPTION_INVERSE | OPTION_WHOLELINE)
 #define OPTION_NOCOLOR_MASK (OPTION_FILES_COUNT)
 
-// TODO: -q, -b, -s, -z, --version, -U, --label
+// TODO: -R -q, -b, -s, -z, --version, -U, --label
 
 #define OPTION_IF(opt, cond, flag)                                           \
     if (cond) {                                                              \
@@ -785,6 +785,7 @@ RegexResult Regex_fullmatch_ctx(RegexAllCtx* ctx, const char**match, uint64_t* l
     if (res == REGEX_NO_MATCH) {           \
         *len = 0;                          \
         *match = (const char*)ctx->str;    \
+        ctx->str = NULL;                   \
         return REGEX_MATCH;                \
     } else if (res == REGEX_MATCH) {       \
         return REGEX_NO_MATCH;             \
@@ -1187,10 +1188,11 @@ DWORD thread_entry(void* param) {
     uint64_t ix = data->ix;
     WString name = data->name;
     Condition_release(thread_cond);
+    bool console = GetFileType(GetStdHandle(STD_INPUT_HANDLE)) == FILE_TYPE_CHAR;
 
     while (1) {
         MatchResult res;
-        if (name.length == 1 && name.buffer[0] == L'-') {
+        if (console && name.length == 1 && name.buffer[0] == L'-') {
             res = iterate_console(reg, &name, &data->line_buf, opts, data->line_context, ix);
         } else {
             res = iterate_file_async(reg, &name, &data->line_buf, opts, data->line_context, ix);
@@ -1670,11 +1672,17 @@ MatchResult pattern_match(int argc, wchar_t** argv, uint32_t opts,
 
     MatchResult status = MATCH_NOMATCH;
 
+    bool console = GetFileType(GetStdHandle(STD_INPUT_HANDLE)) == FILE_TYPE_CHAR;
+
     uint64_t id = 0;
     if (argc < 3) {
         WString name;
         if (WString_create(&name) && WString_append(&name, L'-')) {
-            status = iterate_console(reg, &name, &line_buf, opts, line_ctx, id);
+            if (console) {
+                status = iterate_console(reg, &name, &line_buf, opts, line_ctx, id);
+            } else {
+                status = iterate_file_async(reg, &name, &line_buf, opts, line_ctx, id);
+            }
         } else {
             status = MATCH_ABORT;
         }
@@ -1689,7 +1697,7 @@ MatchResult pattern_match(int argc, wchar_t** argv, uint32_t opts,
         }
         WString_extend(&name, argv[ix]);
         MatchResult res;
-        if (name.length == 1 && name.buffer[0] == L'-') {
+        if (name.length == 1 && name.buffer[0] == L'-' && console) {
             res = iterate_console(reg, &name, &line_buf, opts, line_ctx, id);
         } else {
             res = iterate_file_async(reg, &name, &line_buf, opts, line_ctx, id);
