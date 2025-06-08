@@ -1,10 +1,6 @@
 @echo off
 :: Regedit HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Command Processor add key AutoRun pointing to this file
 doskey notepad++="{{NPP_PATH}}\notepad++.exe" $*
-doskey ls="{{GIT_PATH}}\usr\bin\ls.exe" --color $*
-doskey find="{{GIT_PATH}}\usr\bin\find.exe" $*
-doskey grep="{{GIT_PATH}}\usr\bin\grep.exe" $*
-doskey cat="{{GIT_PATH}}\usr\bin\cat.exe" $*
 doskey kill=taskkill /IM $*
 doskey fkill=taskkill /F /IM $*
 doskey path-set=path-add RESET $*
