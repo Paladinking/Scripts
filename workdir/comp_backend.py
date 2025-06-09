@@ -20,6 +20,8 @@ OBJECTS: Dict[str, 'Obj'] = dict()
 EXECUTABLES: Dict[str, 'Exe'] = dict()
 CUSTOMS: Dict[str, 'Cmd'] = dict()
 
+use_copyto = False
+
 CLFLAGS: str
 LINKFLAGS: str
 
@@ -82,6 +84,7 @@ class Cmd:
         self.name = name
         self.cmd = cmd
         self.dir = directory
+        self.rule: Optional[str] = None
 
     @property
     def product(self) -> str:
@@ -132,6 +135,16 @@ class ZigCC(BackendBase):
     def compile_obj(self, obj: Obj) -> str:
         return f"zig.exe cc -c -o {obj.product} {obj.cmp_flags} {obj.source}"
 
+    def compile_obj_ninja(self) -> str:
+        return "    deps = gcc\n    depfile = $out.d\n" + \
+               "    command = zig.exe cc -MMD -MF $out.d -c $in -o $out $cl_flags"
+
+    def link_exe_ninja(self) -> str:
+        return "    command = zig.exe cc -o $out $link_flags $in"
+
+    def link_dll_ninja(self) -> str:
+        return "    command = zig.exe cc -shared -o $out $link_flags $in"
+
     def find_headers(self, obj: Obj) -> List[str]:
         cmd = f"zig.exe cc -MM {obj.cmp_flags} {obj.source}"
         res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -159,12 +172,10 @@ class ZigCC(BackendBase):
 
     def import_lib_cmd(self, out: str, dll: str, symbols: List[str]) -> Cmd:
         def_path = BUILD_DIR / pathlib.PurePath(out).with_suffix(".def").name
+        def_file = Command(str(def_path), f"python comp.py --deffile {def_path} {' '.join(symbols)}")
         out_path = BUILD_DIR / out
-        cmd = f"echo EXPORTS > {def_path}\n"
-        for sym in symbols:
-            cmd += f"\techo {sym} >> {def_path}\n"
-        cmd += f"\tzig.exe dlltool -D {dll} -d {def_path} -l {out_path}"
-        return Command(out, cmd)
+        cmd = f"zig.exe dlltool -D {dll} -d {def_path} -l {out_path}"
+        return Command(out, cmd, def_file)
 
 class Mingw(BackendBase):
     name = "mingw"
@@ -203,6 +214,16 @@ class Mingw(BackendBase):
     
     def compile_obj(self, obj: Obj) -> str:
         return f"gcc.exe -MMD -MF - -c -o {obj.product} {obj.cmp_flags} {obj.source}"
+    
+    def compile_obj_ninja(self) -> str:
+        return "    deps = gcc\n    depfile = $out.d\n" + \
+               "    command = gcc.exe -MMD -MF $out.d -c $in -o $out $cl_flags"
+
+    def link_exe_ninja(self) -> str:
+        return "    command = gcc.exe -o $out $link_flags $in"
+
+    def link_dll_ninja(self) -> str:
+        return "    command = gcc.exe -shared -o $out $link_flags $in"
 
     def find_headers(self, obj: Obj) -> List[str]:
         cmd = f"gcc.exe -MM {obj.cmp_flags} {obj.source}"
@@ -231,12 +252,10 @@ class Mingw(BackendBase):
 
     def import_lib_cmd(self, out: str, dll: str, symbols: List[str]) -> Cmd:
         def_path = BUILD_DIR / pathlib.PurePath(out).with_suffix(".def").name
+        def_file = Command(str(def_path), f"python comp.py --deffile {def_path} {' '.join(symbols)}")
         out_path = BUILD_DIR / out
-        cmd = f"echo EXPORTS > {def_path}\n"
-        for sym in symbols:
-            cmd += f"\techo {sym} >> {def_path}\n"
-        cmd += f"\tdlltool --dllname {dll} --def {def_path} --output-lib {out_path}"
-        return Command(out, cmd)
+        cmd = f"dlltool.exe -D {dll} -d {def_path} -l {out_path}"
+        return Command(out, cmd, def_file)
 
 
 class Msvc(BackendBase):
@@ -261,6 +280,16 @@ class Msvc(BackendBase):
 
     def compile_obj(self, obj: Obj) -> str:
         return f"cl.exe /c /nologo /showIncludes /Fo:{obj.product} {obj.cmp_flags} {obj.source}"
+
+    def compile_obj_ninja(self) -> str:
+        return "    deps = msvc\n" + \
+        "    command = cl.exe /nologo /showIncludes /c $in /Fo:$out $cl_flags"
+
+    def link_exe_ninja(self) -> str:
+        return "    command = link.exe /nologo /OUT:$out $link_flags $in"
+
+    def link_dll_ninja(self) -> str:
+        return "    command = link.exe /nologo /OUT:$out /DLL $link_flags $in"
 
     def find_headers(self, obj: Obj) -> List[str]:
         cl = shutil.which("cl.exe")
@@ -422,12 +451,17 @@ def Command(name: str, cmd: str, *depends: Union[str, Product],
     return command
 
 def CopyToBin(*src: str) -> List[Cmd]:
+    global use_copyto
+    use_copyto = True
     res = []
     for file in src:
         f = pathlib.PurePath(file)
         name = pathlib.PurePath(file).name
-        res.append(Command(name, f"type {f} > {BIN_DIR}\\{name}", str(f),
-                           directory=str(BIN_DIR)))
+        dest = BIN_DIR / name
+        cmd = Command(name, f"python comp.py --copyto {f} {dest}", str(f),
+                      directory=str(BIN_DIR))
+        cmd.rule = "copyto"
+        res.append(cmd)
     return res
 
 
@@ -436,6 +470,7 @@ def ImportLib(lib: str, dll: str, symbols: List[str]) -> Cmd:
 
 Backend = Union[Msvc, Mingw, ZigCC]
 BACKEND: Backend
+ACTIVE_BACKEND: str
 
 def define(key: str, val: Optional[str]=None) -> str:
     return BACKEND.define(key, val)
@@ -557,8 +592,87 @@ def find_headers(obj: Obj) -> Optional[Dict[str, None]]:
     except Exception:
         pass
     return headers
+
+def resolve_dirs() -> None:
+    dirs = list(DIRECTORIES.keys())
+
+    while len(dirs) > 0:
+        d = dirs.pop()
+        path = pathlib.PurePath(d)
+        parents = [str(p) for p in path.parents[:-1]]
+        for parent in parents:
+            DIRECTORIES[parent] = None
+        dirs.extend(parents)
+
+def ninjafile(dest: TextIO = sys.stdout) -> None:
+    resolve_dirs()
+
+    def esc(s : Union[str, pathlib.Path]) -> str:
+        return str(s).replace(" ", "$ ")
+
+    print("ninja_required_version = 1.5", file=dest)
+    print(f"builddir = {esc(BACKEND.builddir)}\n", file=dest)
+    print(f"link_flags = {LINKFLAGS}\n", file=dest)
+
+
+    for group, targets in TARGET_GROUPS.items():
+        deps = " ".join(f'{esc(p.product)}' for p in targets)
+        print(f"build {group}: phony {deps}\n", file=dest)
+
+    if len(OBJECTS) > 0:
+        print(f"cl_flags = {CLFLAGS}", file=dest)
+        print(f"rule cl", file=dest)
+        print(BACKEND.compile_obj_ninja(), file=dest)
+
+    if len(EXECUTABLES) > 0:
+        print(f"link_flags = {LINKFLAGS}", file=dest)
+        print("rule link_exe", file=dest)
+        print(BACKEND.link_exe_ninja(), file=dest)
+        print("rule link_dll", file=dest)
+        print(BACKEND.link_dll_ninja(), file=dest)
+
+    if use_copyto:
+        print(f"rule copyto", file=dest)
+        print("    command = python comp.py --copyto $in $out", file=dest)
+    print(file=dest)
+
+
+    for key, obj in OBJECTS.items():
+        print(f"build {esc(obj.product)}: cl {esc(obj.source)}", end="", file=dest)
+        if obj.depends:
+            deps = ' '.join((esc(d) for d in obj.depends))
+            print(f" || {deps}", file=dest)
+        else:
+            print(file=dest)
+        if obj.cmp_flags != CLFLAGS:
+            print(f"    cl_flags = {obj.cmp_flags}", file=dest)
+    print(file=dest)
+    for key, exe in EXECUTABLES.items():
+        row = " ".join([f"{esc(obj.product)}" for obj in exe.objs] + 
+                       [f"{esc(cmd.product)}" for cmd in exe.cmds])
+        if exe.dll:
+            print(f"build {esc(exe.product)}: link_dll {row}", file=dest)
+        else:
+            print(f"build {esc(exe.product)}: link_exe {row}", file=dest)
+        if exe.link_flags != LINKFLAGS:
+            print(f"    link_flags = {exe.link_flags}", file=dest)
+    print(file=dest)
+    ix = 0
+    for key, obj in CUSTOMS.items():
+        if obj.rule is not None:
+            rule = obj.rule
+        else:
+            rule = f"custom_{ix}"
+            ix += 1
+            print(f"rule {rule}", file=dest)
+            print(f"    command = {obj.cmd}", file=dest)
+        deps = ' '.join(esc(d) for d in obj.depends)
+        print(f"build {esc(obj.product)}: {rule} {deps}", file=dest)
+
         
 def makefile(dest: TextIO = sys.stdout) -> None:
+    resolve_dirs()
+
     for obj in OBJECTS.values():
         p = pathlib.Path(obj.source).resolve()
         if not p.is_file():
@@ -570,16 +684,6 @@ def makefile(dest: TextIO = sys.stdout) -> None:
             print(" \\", file=dest)
             print(f"\t{prod.product}", end="", file=dest)
         print("\n", file=dest)
-
-    dirs = list(DIRECTORIES.keys())
-
-    while len(dirs) > 0:
-        d = dirs.pop()
-        path = pathlib.PurePath(d)
-        parents = [str(p) for p in path.parents[:-1]]
-        for parent in parents:
-            DIRECTORIES[parent] = None
-        dirs.extend(parents)
     for d in DIRECTORIES:
         path = pathlib.PurePath(d)
         parents = [str(p) for p in path.parents[:-1]]
@@ -650,6 +754,12 @@ def get_parser() -> 'argparse.ArgumentParser':
                             default="all")
         parser.add_argument("--fast", "-f", help="Speed up by not validating header cache", 
                             action="store_true", default=False)
+        parser.add_argument("--deffile", help="Generate a .def file", action="store",
+                            nargs="+", default=None)
+        parser.add_argument("--copyto", help="Copy file", action="store",
+                            nargs="+", default=None)
+        parser.add_argument("--make", help="Use nmake instead of ninja", action="store_true",
+                            default=False)
     return parser
 
 
@@ -675,7 +785,7 @@ def add_backend(name: str, backend_name: str, builddir: str, bindir: str,
 
 
 def set_backend(name: str) -> None:
-    global BUILD_DIR, BIN_DIR, WORKDIR, CLFLAGS, LINKFLAGS, BACKEND
+    global BUILD_DIR, BIN_DIR, WORKDIR, CLFLAGS, LINKFLAGS, BACKEND, ACTIVE_BACKEND
     backend = get_args().backend
     if backend is not None:
         name = backend
@@ -691,6 +801,7 @@ def set_backend(name: str) -> None:
     DIRECTORIES[str(BIN_DIR)] = None
     TARGET_GROUPS["all"] = []
     BACKEND = backend
+    ACTIVE_BACKEND = name
 
     return
 
@@ -707,31 +818,68 @@ def generate() -> None:
     else:
         makefile()
 
-def get_make() -> str:
-    make = shutil.which('nmake.exe')
+def get_make() -> Tuple[str, List[str]]:
+    if get_args().make:
+        s = 'nmake.exe'
+        args = ['/NOLOGO', get_args().target]
+    else:
+        s = 'ninja.exe'
+        if get_args().target == 'clean':
+            args = ['-t', 'clean']
+        else:
+            args = [get_args().target]
+    make = shutil.which(s)
     if make is None:
-        raise RuntimeError("Could not find nmake exe")
-    return make
+        raise RuntimeError(f"Could not find {s}")
+    return make, args
 
 def build(comp_file: str) -> None:
+    run = True
+    if get_args().deffile:
+        run = False
+        args = get_args().deffile
+        dest = args[0]
+        with open(dest, 'w') as file:
+            print("EXPORTS", file=file)
+            for arg in args[1:]:
+                print(arg, file=file)
+        return
+
+    if get_args().copyto:
+        run = False
+        args = get_args().copyto
+        if len(args) != 2:
+            print("Invalid copyto args", file=sys.stderr)
+            exit(1)
+        shutil.copy2(args[0], args[1])
+
+    if not run:
+        return
+
     comp_stamp = os.path.getmtime(pathlib.Path(comp_file))
     compiledb = WORKDIR / 'compile_commands.json'
-    make = BUILD_DIR / 'Makefile'
+
+    if get_args().make:
+        make = BUILD_DIR / 'Makefile'
+    else:
+        make = BUILD_DIR / 'build.ninja'
+
 
     cmd_map = dict()
     
-    for obj in OBJECTS.values():
-        obj.headers = find_headers(obj)
-        obj.cmd = BACKEND.compile_obj(obj)
-        cmd_map[obj.cmd] = obj
-    for exe in EXECUTABLES.values():
-        if exe.dll:
-            exe.cmd = BACKEND.link_dll(exe)
-        else:
-            exe.cmd = BACKEND.link_exe(exe)
-        cmd_map[exe.cmd] = exe
-    for c in CUSTOMS.values():
-        cmd_map[c.cmd] = c
+    if get_args().make:
+        for obj in OBJECTS.values():
+            obj.headers = find_headers(obj)
+            obj.cmd = BACKEND.compile_obj(obj)
+            cmd_map[obj.cmd] = obj
+        for exe in EXECUTABLES.values():
+            if exe.dll:
+                exe.cmd = BACKEND.link_dll(exe)
+            else:
+                exe.cmd = BACKEND.link_exe(exe)
+            cmd_map[exe.cmd] = exe
+        for c in CUSTOMS.values():
+            cmd_map[c.cmd] = c
 
     try:
         if not BUILD_DIR.exists():
@@ -753,7 +901,10 @@ def build(comp_file: str) -> None:
             try:
                 with open(make, 'w') as file:
                     file_open = True
-                    makefile(dest=file)
+                    if get_args().make:
+                        makefile(dest=file)
+                    else:
+                        ninjafile(dest=file)
             except:
                 if file_open:
                     make.unlink()
@@ -762,8 +913,11 @@ def build(comp_file: str) -> None:
         print(f"Failed building: {e}", file=sys.stderr)
         exit(1)
 
-    make_exe = get_make()
-    res = subprocess.Popen([make_exe, '-f', str(make), '/NOLOGO', get_args().target], bufsize=1,
+    make_exe, args = get_make()
+    if not get_args().make:
+        res = subprocess.run([make_exe, '-f', str(make), *args])
+        exit(res.returncode)
+    res = subprocess.Popen([make_exe, '-f', str(make), *args], bufsize=1,
                            universal_newlines=True, stdout=subprocess.PIPE)
     assert res.stdout is not None
 
