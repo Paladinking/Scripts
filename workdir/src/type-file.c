@@ -437,7 +437,7 @@ fail:
 
 const wchar_t *HELP_MESSAGE =
     L"Usage: %s [OPTION]... DIR\n"
-    L"Recursivly list files in a directory\n\n"
+    L"Type the content of a file to stdout\n\n"
     L"-b, --number-nonblank             number nonempty lines, overrides -n\n"
     L"-E, --show-ends                   display $ at end of each line\n"
     L"-h, --help                        display this message and exit\n"
@@ -447,7 +447,7 @@ const wchar_t *HELP_MESSAGE =
 int main() {
     wchar_t* args = GetCommandLineW();
     int argc;
-    wchar_t** argv = parse_command_line(args, &argc);
+    wchar_t** argv = glob_command_line(args, &argc);
 
     FlagInfo flags[] = {
         {L'n', L"number"},
