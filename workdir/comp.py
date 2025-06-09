@@ -139,13 +139,12 @@ def main():
 
     Executable("remove-file.exe", "src/remove-file.c", "src/glob.c", *arg_src, ntdll)
 
+    Executable("reset.exe", "src/reset.c")
+
     CopyToBin("autocmp.json", "script/err.exe", "script/2to3.bat",
               "script/cal.bat", "script/ports.bat", "script/short.bat",
               "script/wget.bat", "script/xkcd.bat", "script/xkcd-keywords.txt",
               "script/xkcd-titles.txt", "script/vcvarsall.ps1")
-    Command("translations", "@echo File script\\translations missing\n\t"
-            "@echo The following keys are needed: NPP_PATH, PASS_PATH"
-            ", GIT_PATH, and VCVARS_PATH", directory="script")
     translate("cmdrc.bat", "password.bat", "vcvarsall.bat")
 
     with Context(group="tests", directory=f"{bin_dir()}/tests",
@@ -157,7 +156,6 @@ def main():
         Executable("parser.exe", "src/compiler/parser.c", "src/printf.c", hashmap,
                    "src/dynamic_string.c", "src/args.c", "src/arena.c", ntdll)
     
-    #generate()
     build(__file__)
 
 
