@@ -6,6 +6,7 @@
 #define OPTION_INVALID 0
 #define OPTION_VALID 1
 #define OPTION_ABSOLUTE 2
+#define OPTION_SHOWSIZE  4
 #define OPTION_HELP 8192
 
 #define OPTION_IF(opt, cond, flag)                                             \
@@ -24,6 +25,7 @@ const wchar_t *HELP_MESSAGE =
     L"    --max-depth=DEPTH        specify max depth to search\n"
     L"-n, --name=NAME              specify name glob pattern to match\n"
     L"-s, --substring              specify that -n and -w match if pattern is \n"
+    L"    --size                   list file sizes as well as name\n"
     L"                             a substring of the filename, not a glob match.\n"
     L"-w, --whole-name             specify glob pattern for path to match\n"
     L"-q, --quit                   quit after first match, same as --count=1\n";
@@ -55,7 +57,8 @@ uint32_t parse_options(int* argc, wchar_t** argv, Filter* filter) {
         {L'c', L"count", &count},
         {L'q', L"quit", NULL},
         {L'w', L"whole-name", &wholename_pattern},
-        {L's', L"substring", NULL}
+        {L's', L"substring", NULL},
+        {L'\0', L"size", NULL}
     };
     const uint32_t flag_count = sizeof(flags) / sizeof(FlagInfo);
     ErrorInfo err;
@@ -104,6 +107,7 @@ uint32_t parse_options(int* argc, wchar_t** argv, Filter* filter) {
 
     uint32_t opts = OPTION_VALID;
     OPTION_IF(opts, flags[0].count > 0, OPTION_ABSOLUTE);
+    OPTION_IF(opts, flags[10].count > 0, OPTION_SHOWSIZE);
 
     return opts;
 }
@@ -155,7 +159,49 @@ bool matches_filter(Path* path, Filter* filter) {
     return matches_name && matches_path;
 }
 
-int find(Path* dir, Filter* filter) {
+void format_file_with_size(const wchar_t* filename, bool is_dir) {
+    LARGE_INTEGER sz;
+    uint64_t size = 0;
+    if (!is_dir) {
+        DWORD flags = FILE_FLAG_OPEN_REPARSE_POINT;
+        HANDLE f =
+            CreateFileW(filename, GENERIC_READ, 
+                FILE_SHARE_READ | FILE_SHARE_WRITE, 
+                NULL, OPEN_EXISTING, flags, NULL);
+
+        if (f != INVALID_HANDLE_VALUE) {
+            if (GetFileSizeEx(f, &sz)) {
+                size = sz.QuadPart;
+            }
+            CloseHandle(f);
+        }
+    }
+
+    if (size >= 1024) {
+        uint64_t rem = size;
+        uint32_t teir = 0;
+        while (size > 1024 && teir < 4) {
+            rem = size % 1024;
+            size = size / 1024;
+            ++teir;
+        }
+        const wchar_t teirs[] = {L'\0', L'K', L'M', L'G', L'T', L'P'};
+        if (size < 10) {
+            _wprintf(L"%s %llu.%llu%c\n", filename, size, 
+                     rem * 10 / 1024, teirs[teir]);
+        } else {
+            if (rem > 0) {
+                ++size;
+            }
+            _wprintf(L"%s %llu%c\n", filename, size, teirs[teir]);
+        }
+    } else {
+        _wprintf(L"%s %llu\n", filename, size);
+    }
+}
+
+
+int find(Path* dir, Filter* filter, uint32_t opts) {
     uint32_t stack_size = 0;
     uint32_t stack_cap = 16;
     if (filter->max_count == 0) {
@@ -175,7 +221,11 @@ int find(Path* dir, Filter* filter) {
 
     uint64_t matches = 0;
     if (matches_filter(dir, filter)) {
-        _wprintf(L"%s\n", dir->path.buffer);
+        if (opts & OPTION_SHOWSIZE) {
+            format_file_with_size(dir->path.buffer, dir->is_dir);
+        } else {
+            _wprintf(L"%s\n", dir->path.buffer);
+        }
         ++matches;
     }
     if (filter->max_depth == 0 || filter->max_count == matches) {
@@ -189,7 +239,11 @@ int find(Path* dir, Filter* filter) {
         Path* path;
         if (WalkDir_next(&elem->ctx, &path)) {
             if (matches_filter(path, filter)) {
-                _wprintf(L"%s\n", path->path.buffer);
+                if (opts & OPTION_SHOWSIZE) {
+                    format_file_with_size(path->path.buffer, path->is_dir);
+                } else {
+                    _wprintf(L"%s\n", path->path.buffer);
+                }
                 ++matches;
                 if (filter->max_count == matches) {
                     break;
@@ -262,7 +316,7 @@ int find_file(int argc, wchar_t** argv) {
         path.name_len = path.path.length;
     }
 
-    int status = find(&path, &filter);
+    int status = find(&path, &filter, opts);
     WString_free(&path.path);
     return status;
 }
