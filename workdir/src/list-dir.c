@@ -771,13 +771,13 @@ uint32_t parse_options(wchar_t **argv, int *argc, unsigned *width,
     EnumValue color_options[] = {
         {yes_options, 3}, {no_options, 3}, {auto_options, 3}};
     FlagValue color = {FLAG_OPTONAL_VALUE | FLAG_ENUM, color_options, 3};
-    FlagValue width_arg = {FLAG_REQUIRED_VALUE | FLAG_UINT};
+    FlagValue width_arg = {FLAG_UINT};
     const wchar_t *across[] = {L"across", L"horizontal"},
                   *commas[] = {L"commas"}, *list[] = {L"long", L"verbose"},
                   *single[] = {L"single-column"}, *vertical[] = {L"vertical"};
     EnumValue foramt_options[] = {
         {across, 2}, {commas, 1}, {list, 2}, {single, 1}, {vertical, 1}};
-    FlagValue format_arg = {FLAG_REQUIRED_VALUE | FLAG_ENUM, foramt_options, 5};
+    FlagValue format_arg = {FLAG_ENUM, foramt_options, 5};
 
     FlagInfo flags[] = {
         {L'a', L"all", NULL},            // 0

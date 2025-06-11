@@ -34,7 +34,7 @@ uint32_t parse_options(int* argc, wchar_t** argv, FILETIME* accesstime, FILETIME
         return OPTION_INVALID;
     }
 
-    FlagValue ref_val = {FLAG_REQUIRED_VALUE | FLAG_STRING};
+    FlagValue ref_val = {FLAG_STRING};
 
     FlagInfo flags[] = {
         {L'a', NULL, NULL},

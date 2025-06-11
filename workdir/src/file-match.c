@@ -101,7 +101,7 @@ uint32_t parse_options(int* argc, wchar_t** argv, uint32_t* before, uint32_t* af
     const wchar_t *bin_text[] = {L"text"};
     const wchar_t *bin_nomatch[] = {L"without-match"};
     EnumValue bin_enum[] = {{bin_binary, 1}, {bin_text, 1}, {bin_nomatch, 1}};
-    FlagValue bin_val = {FLAG_REQUIRED_VALUE | FLAG_ENUM, bin_enum, 3};
+    FlagValue bin_val = {FLAG_ENUM, bin_enum, 3};
 
     const wchar_t *color_always[] = {L"always"};
     const wchar_t *color_never[] = {L"never"};
@@ -109,15 +109,15 @@ uint32_t parse_options(int* argc, wchar_t** argv, uint32_t* before, uint32_t* af
     EnumValue color_enum[] = {{color_always, 1}, {color_never, 1}, {color_auto, 1}};
     FlagValue color_val = {FLAG_OPTONAL_VALUE | FLAG_ENUM, color_enum, 3};
 
-    FlagValue before_ctx = {FLAG_REQUIRED_VALUE | FLAG_UINT};
-    FlagValue after_ctx = {FLAG_REQUIRED_VALUE | FLAG_UINT};
-    FlagValue full_ctx = {FLAG_REQUIRED_VALUE | FLAG_UINT};
-    FlagValue max = {FLAG_REQUIRED_VALUE | FLAG_UINT};
+    FlagValue before_ctx = {FLAG_UINT};
+    FlagValue after_ctx = {FLAG_UINT};
+    FlagValue full_ctx = {FLAG_UINT};
+    FlagValue max = {FLAG_UINT};
 
-    FlagValue excdir_val = {FLAG_REQUIRED_VALUE | FLAG_STRING_MANY};
-    FlagValue exc_val = {FLAG_REQUIRED_VALUE | FLAG_STRING_MANY};
-    FlagValue inc_val = {FLAG_REQUIRED_VALUE | FLAG_STRING_MANY};
-    FlagValue max_depth_val = {FLAG_REQUIRED_VALUE | FLAG_UINT};
+    FlagValue excdir_val = {FLAG_STRING_MANY};
+    FlagValue exc_val = {FLAG_STRING_MANY};
+    FlagValue inc_val = {FLAG_STRING_MANY};
+    FlagValue max_depth_val = {FLAG_UINT};
 
     FlagInfo flags[] = {
         {L'n', L"line-number", NULL},           // 0
@@ -155,7 +155,6 @@ uint32_t parse_options(int* argc, wchar_t** argv, uint32_t* before, uint32_t* af
         }
         return OPTION_INVALID;
     }
-
     if (flags[19].count > 0) {
         filter->exclude = exc_val.strlist;
         filter->exclude_count = exc_val.count;
@@ -1722,22 +1721,6 @@ MatchResult pattern_match(int argc, wchar_t** argv, uint32_t opts,
     return status;
 }
 
-#ifdef PENTER
-extern void Trace_display();
-#endif
-
-void free_filter(FileFilter* filter) {
-    if (filter->exclude_dir != NULL) {
-        Mem_free(filter->exclude_dir);
-    }
-    if (filter->exclude != NULL) {
-        Mem_free(filter->exclude);
-    }
-    if (filter->include != NULL) {
-        Mem_free(filter->include);
-    }
-}
-
 int main() {
     wchar_t* args = GetCommandLineW();
     int argc;
@@ -1748,18 +1731,15 @@ int main() {
     FileFilter filter;
     uint32_t opts = parse_options(&argc, argv, &before, &after, &max_count, &filter);
     if (opts == OPTION_INVALID) {
-        free_filter(&filter);
         Mem_free(argv);
         ExitProcess(1);
     }
     if (opts == OPTION_HELP) {
-        free_filter(&filter);
         Mem_free(argv);
         ExitProcess(0);
     }
 
     MatchResult res = pattern_match(argc, argv, opts, before, after, max_count, &filter);
-    free_filter(&filter);
     Mem_free(argv);
     int status;
     if (res == MATCH_OK) {
@@ -1770,8 +1750,5 @@ int main() {
         status = (int)res;
     }
 
-#ifdef PENTER
-    Trace_display();
-#endif
     ExitProcess(status);
 }
