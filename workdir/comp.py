@@ -141,6 +141,8 @@ def main():
 
     Executable("reset.exe", "src/reset.c")
 
+    Executable("tap-file.exe", "src/tap-file.c", "src/glob.c", *arg_src, ntdll)
+
     CopyToBin("autocmp.json", "script/err.exe", "script/2to3.bat",
               "script/cal.bat", "script/ports.bat", "script/short.bat",
               "script/wget.bat", "script/xkcd.bat", "script/xkcd-keywords.txt",
