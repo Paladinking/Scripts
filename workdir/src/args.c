@@ -134,7 +134,8 @@ uint32_t prefix_len(const wchar_t* str, const wchar_t* full, BOOL has_val) {
     return 0;
 }
 
-BOOL parse_argument(LPWSTR val, FlagValue* valid, unsigned ix, ErrorInfo* err) {
+BOOL parse_argument(LPWSTR val, FlagValue* valid, unsigned ix, ErrorInfo* err, wchar_t** slot,
+                    FlagInfo* flags, uint32_t flag_count) {
     if (valid->type & FLAG_STRING) {
         valid->str = val;
         valid->has_value = 1;
@@ -142,31 +143,38 @@ BOOL parse_argument(LPWSTR val, FlagValue* valid, unsigned ix, ErrorInfo* err) {
         return TRUE;
     }
     if (valid->type & FLAG_STRING_MANY) {
-        if (valid->count == 0xffff) {
-            err->type = FLAG_OUTOFMEMORY;
-            err->ix = ix;
-            err->value = val;
-            return FALSE;
+        valid->has_value  = 1;
+        if (valid->count == 0) {
+            valid->count = 1;
+            slot[0] = val;
+            valid->strlist = slot;
+            return TRUE;
         }
-        valid->count += 1;
-        if (valid->strlist == NULL) {
-            valid->strlist = Mem_alloc(4 * sizeof(wchar_t*));
-        } else if (valid->count > 4) {
-            wchar_t** s = Mem_realloc(valid->strlist, valid->count * sizeof(wchar_t*));
-            if (s == NULL) {
-                Mem_free(valid->strlist);
+        wchar_t** s = slot + 1;
+        while (1) {
+            int flag_add = 1;
+            for (uint32_t i = 0; i < flag_count; ++i) {
+                if (flags[i].value == NULL || !(flags[i].value->type & FLAG_STRING_MANY) ||
+                    flags[i].value->count == 0) {
+                    continue;
+                }
+                if (flags[i].value->strlist == s) {
+                    for (uint32_t j = 0; j < flags[i].value->count; ++j) {
+                        s[-1] = s[0];
+                        ++s;
+                    }
+                    flags[i].value->strlist = flags[i].value->strlist - 1;
+                    if (i == ix) {
+                        s[-1] = val;
+                        valid->count += 1;
+                        return TRUE;
+                    }
+                    flag_add = 0;
+                    break;
+                }
             }
-            valid->strlist = s;
+            s = s + flag_add;
         }
-        if (valid->strlist == NULL) {
-            err->type = FLAG_OUTOFMEMORY;
-            err->ix = ix;
-            err->value = val;
-            return FALSE;
-        }
-        valid->strlist[valid->count - 1] = val;
-        valid->has_value = 1;
-        return TRUE;
     }
 
     if (valid->type & FLAG_INT) {
@@ -233,6 +241,13 @@ BOOL parse_argument(LPWSTR val, FlagValue* valid, unsigned ix, ErrorInfo* err) {
 }
 
 BOOL find_flags(wchar_t** argv, int* argc, FlagInfo* flags, uint32_t flag_count, ErrorInfo* err) {
+    if (argv == NULL) {
+        err->type = FLAG_NULL_ARGV;
+        err->ix = 0;
+        err->long_flag = FALSE;
+        err->value = NULL;
+        return FALSE;
+    }
     DWORD order = 1;
     err->long_flag = FALSE;
     for (DWORD ix = 0; ix < flag_count; ++ix) {
@@ -262,15 +277,17 @@ BOOL find_flags(wchar_t** argv, int* argc, FlagInfo* flags, uint32_t flag_count,
     }
 
     for (int ix = 0; ix < *argc; ++ix) {
-        if (argv[ix][0] != L'-') {
+        if (argv[ix][0] != L'-' || argv[ix][1] == L'\0') {
             continue;
         }
-        if (argv[ix][1] == L'-') {
-            if (argv[ix][2] == L'\0') {
-                for (int j = ix + 1; j < *argc; ++j) {
-                    argv[j - 1] = argv[j];
-                }
-                --(*argc);
+        wchar_t* arg = argv[ix];
+        for (int j = ix + 1; j < *argc; ++j) {
+            argv[j - 1] = argv[j];
+        }
+        --ix;
+        --(*argc);
+        if (arg[1] == L'-') {
+            if (arg[2] == L'\0') {
                 return TRUE;
             }
             unsigned char found = 0;
@@ -278,23 +295,23 @@ BOOL find_flags(wchar_t** argv, int* argc, FlagInfo* flags, uint32_t flag_count,
                 if (flags[j].long_name == NULL) {
                     continue;
                 }
-                uint32_t len = prefix_len(argv[ix] + 2, flags[j].long_name, TRUE);
+                uint32_t len = prefix_len(arg + 2, flags[j].long_name, TRUE);
                 if (len == 0) {
                     continue;
                 }
                 if (len <= flags[j].shared &&
                     len != wcslen(flags[j].long_name)) {
                     err->type = FLAG_AMBIGUOS;
-                    err->value = argv[ix];
-                    if (argv[ix][len + 2] == L'=') {
-                        argv[ix][len + 2] = L'\0';
+                    err->value = arg;
+                    if (arg[len + 2] == L'=') {
+                        arg[len + 2] = L'\0';
                     }
                     err->ix = j;
                     err->long_flag = TRUE;
                     return FALSE;
                 }
                 if (flags[j].value != NULL) {
-                    if (argv[ix][len + 2] == L'\0') {
+                    if (arg[len + 2] == L'\0') {
                         ++flags[j].count;
                         flags[j].ord = order++;
                         found = 1;
@@ -302,27 +319,31 @@ BOOL find_flags(wchar_t** argv, int* argc, FlagInfo* flags, uint32_t flag_count,
                             flags[j].value->has_value = 0;
                             break;
                         }
+                        // arg is in pos ix + 1
                         if (ix + 1 < *argc) {
-                            for (int j = ix + 1; j < *argc; ++j) {
-                                argv[j - 1] = argv[j];
+                            wchar_t* val = argv[ix + 1];
+                            for (int j = ix + 1; j + 1 < *argc; ++j) {
+                                argv[j] = argv[j + 1];
                             }
                             --(*argc);
-                            if (!parse_argument(argv[ix], flags[j].value, j, err)) {
+                            if (!parse_argument(val, flags[j].value, j, err, argv + *argc,
+                                                flags, flag_count)) {
                                 err->long_flag = TRUE;
                                 return FALSE;
                             }
                         } else {
                             err->type = FLAG_MISSING_VALUE;
-                            err->value = argv[ix];
+                            err->value = arg;
                             err->ix = j;
                             err->long_flag = TRUE;
                             return FALSE;
                         }
-                    } else if (argv[ix][len + 2] == L'=') {
+                    } else if (arg[len + 2] == L'=') {
                         ++flags[j].count;
                         flags[j].ord = order++;
                         found = 1;
-                        if (!parse_argument(argv[ix] + len + 3, flags[j].value, j, err)) {
+                        if (!parse_argument(arg + len + 3, flags[j].value, j, err, argv + *argc,
+                                            flags, flag_count)) {
                             err->long_flag = TRUE;
                             return FALSE;
                         }
@@ -331,12 +352,12 @@ BOOL find_flags(wchar_t** argv, int* argc, FlagInfo* flags, uint32_t flag_count,
                     }
                     break;
                 } else {
-                    if (argv[ix][len + 2] == L'=') {
+                    if (arg[len + 2] == L'=') {
                         err->type = FLAG_UNEXPECTED_VALUE;
                         err->ix = j;
-                        err->value = argv[ix];
+                        err->value = arg;
                         err->long_flag = TRUE;
-                        argv[ix][len + 2] = L'\0';
+                        arg[len + 2] = L'\0';
                         return FALSE;
                     }
                     ++flags[j].count;
@@ -347,19 +368,17 @@ BOOL find_flags(wchar_t** argv, int* argc, FlagInfo* flags, uint32_t flag_count,
             }
             if (!found) {
                 err->type = FLAG_UNKOWN;
-                err->value = argv[ix];
+                err->value = arg;
                 err->ix = flag_count;
                 err->long_flag = TRUE;
                 return FALSE;
             }
-        } else if (argv[ix][1] == L'\0') {
-            continue;
         } else {
-            for (int i = 1; argv[ix][i] != L'\0'; ++i) {
+            for (int i = 1; arg[i] != L'\0'; ++i) {
                 unsigned char found = 0;
                 DWORD j = 0;
                 for (; j < flag_count; ++j) {
-                    if (flags[j].short_name == argv[ix][i]) {
+                    if (flags[j].short_name == arg[i]) {
                         ++flags[j].count;
                         flags[j].ord = order++;
                         found = 1;
@@ -368,35 +387,38 @@ BOOL find_flags(wchar_t** argv, int* argc, FlagInfo* flags, uint32_t flag_count,
                 }
                 if (!found) {
                     err->type = FLAG_UNKOWN;
-                    err->value = argv[ix];
+                    err->value = arg;
                     err->ix = flag_count;
-                    argv[ix][0] = argv[ix][i];
-                    argv[ix][1] = L'\0';
+                    arg[0] = arg[i];
+                    arg[1] = L'\0';
                     return FALSE;
                 } else if (flags[j].value != NULL) {
-                    if (argv[ix][i + 1] == L'\0') {
+                    if (arg[i + 1] == L'\0') {
                         if (ix + 1 == *argc)  {
-                            if (flags[j].value->type & FLAG_REQUIRED_VALUE) {
+                            if (!(flags[j].value->type & FLAG_OPTONAL_VALUE)) {
                                 err->type = FLAG_MISSING_VALUE;
-                                err->value = argv[ix];
+                                err->value = arg;
                                 err->ix = j;
-                                argv[ix][0] = argv[ix][i];
-                                argv[ix][1] = L'\0';
+                                arg[0] = arg[i];
+                                arg[1] = L'\0';
                                 return FALSE;
                             }
-                            flags[j].value = NULL;
+                            flags[j].value->has_value = 0;
                         } else {
-                            for (int j = ix + 1; j < *argc; ++j) {
-                                argv[j - 1] = argv[j];
+                            wchar_t* val = argv[ix + 1];
+                            for (int j = ix + 1; j + 1 < *argc; ++j) {
+                                argv[j] = argv[j + 1];
                             }
                             --(*argc);
-                            if (!parse_argument(argv[ix], flags[j].value, j, err)) {
+                            if (!parse_argument(val, flags[j].value, j, err, argv + *argc,
+                                                flags, flag_count)) {
                                 return FALSE;
                             }
                             break;
                         }
                     } else {
-                        if (!parse_argument(argv[ix] + i + 1, flags[j].value, j, err)) {
+                        if (!parse_argument(arg + i + 1, flags[j].value, j, err, argv + *argc,
+                                            flags, flag_count)) {
                             return FALSE;
                         }
                         break;
@@ -404,29 +426,23 @@ BOOL find_flags(wchar_t** argv, int* argc, FlagInfo* flags, uint32_t flag_count,
                 }
             }
         }
-        for (int j = ix + 1; j < *argc; ++j) {
-            argv[j - 1] = argv[j];
-        }
-        --(*argc);
-        --ix;
     }
     return TRUE;
 }
 
 wchar_t* format_error(ErrorInfo* err, FlagInfo* flags, uint32_t flag_count) {
-    for (uint32_t i = 0; i < flag_count; ++i) {
-        if (flags[i].value != NULL && flags[i].value->type == FLAG_STRING_MANY) {
-            if (flags[i].value->strlist != NULL) {
-                Mem_free(flags[i].value->strlist);
-            }
+    wchar_t* str;
+    if (err->type == FLAG_NULL_ARGV) {
+        str = Mem_alloc(23 * sizeof(wchar_t));
+        if (str == NULL) {
+            return NULL;
         }
+        memcpy(str, L"argument list was NULL", 22 * sizeof(wchar_t));
+        str[22] = L'\0';
+        return str;
     }
-    if (err->type == FLAG_OUTOFMEMORY) {
-        return NULL; // At this point allocation will probably fail anyways.
-    } 
 
     uint32_t val_len = wcslen(err->value);
-    wchar_t* str;
     if (err->type == FLAG_AMBIGUOS) {
         uint32_t len = 8 + val_len + 31;
         for (uint32_t ix = 0; ix < flag_count; ++ix) {

@@ -5,7 +5,6 @@
 
 #define FLAG_NO_VALUE 0
 #define FLAG_OPTONAL_VALUE 1
-#define FLAG_REQUIRED_VALUE 2
 #define FLAG_INT 4
 #define FLAG_UINT 8
 //#define FLAG_DOUBLE 16
@@ -19,7 +18,7 @@
 #define FLAG_INVALID_VALUE 6
 #define FLAG_AMBIGUOS_VALUE 7
 #define FLAG_UNEXPECTED_VALUE 8
-#define FLAG_OUTOFMEMORY 9
+#define FLAG_NULL_ARGV 9
 
 typedef struct EnumValue {
     const wchar_t** values;

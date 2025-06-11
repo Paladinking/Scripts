@@ -43,10 +43,10 @@ typedef struct Filter {
 
 
 uint32_t parse_options(int* argc, wchar_t** argv, Filter* filter) {
-    FlagValue max_depth_val = {FLAG_REQUIRED_VALUE | FLAG_UINT};
-    FlagValue name_pattern = {FLAG_REQUIRED_VALUE | FLAG_STRING};
-    FlagValue wholename_pattern = {FLAG_REQUIRED_VALUE | FLAG_STRING};
-    FlagValue count = {FLAG_REQUIRED_VALUE | FLAG_UINT};
+    FlagValue max_depth_val = {FLAG_UINT};
+    FlagValue name_pattern = {FLAG_STRING};
+    FlagValue wholename_pattern = {FLAG_STRING};
+    FlagValue count = {FLAG_UINT};
     FlagInfo flags[] = {
         {L'a', L"absolute", NULL},
         {L'h', L"help", NULL},
