@@ -414,10 +414,10 @@ BOOL find_flags(wchar_t** argv, int* argc, FlagInfo* flags, uint32_t flag_count,
 }
 
 wchar_t* format_error(ErrorInfo* err, FlagInfo* flags, uint32_t flag_count) {
-    for (uint32_t ix = 0; ix < flag_count; ++ix) {
-        if (flags[ix].value->type == FLAG_STRING_MANY) {
-            if (flags[ix].value->strlist != NULL) {
-                Mem_free(flags[ix].value->strlist);
+    for (uint32_t i = 0; i < flag_count; ++i) {
+        if (flags[i].value != NULL && flags[i].value->type == FLAG_STRING_MANY) {
+            if (flags[i].value->strlist != NULL) {
+                Mem_free(flags[i].value->strlist);
             }
         }
     }
