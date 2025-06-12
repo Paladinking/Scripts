@@ -199,6 +199,13 @@ BOOL parse_argument(LPWSTR val, FlagValue* valid, unsigned ix, ErrorInfo* err, w
         valid->count = 1;
         return TRUE;
     }
+    if (!(valid->type & FLAG_ENUM)) {
+        err->type = FLAG_INVALID_VALUE;
+        err->ix = ix;
+        err->value = val;
+        return FALSE;
+    }
+
     EnumValue* vals = valid->enum_values;
     unsigned count = valid->enum_count;
 
