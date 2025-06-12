@@ -792,21 +792,14 @@ bool Glob_begin(const wchar_t* pattern, GlobCtx* ctx) {
         offset = 2;
     }
 
-    bool has_glob = false;
     for (; pattern[offset] != L'\0'; ++offset) {
         if (pattern[offset] == L'/') {
             s[offset] = L'\\';
         } else {
             s[offset] = pattern[offset];
         }
-        if (s[offset] == L'*' || s[offset] == L'?') {
-            has_glob = true;
-        }
     }
     s[offset] = L'\0';
-    if (!has_glob) {
-        goto fail;
-    }
     if (!WString_create_capacity(&ctx->p.path, offset)) {
         goto fail;
     }
@@ -882,7 +875,7 @@ bool Glob_next(GlobCtx* ctx, Path** path) {
                     if (!(data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
                         continue;
                     }
-                    if (!matches_glob(n.pattern + n.pattern_offset, data.cFileName)) {
+                    if (!matches_glob(n.pattern + ctx->last_segment, data.cFileName)) {
                         continue;
                     }
                     if (ctx->stack_size == ctx->stack_capacity) {
