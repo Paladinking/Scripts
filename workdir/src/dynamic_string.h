@@ -1,4 +1,5 @@
-#pragma once
+#ifndef DYNAMIC_STRING_H_00
+#define DYNAMIC_STRING_H_00
 #include <stdbool.h>
 #include "mem.h"
 #include <stdint.h>
@@ -139,4 +140,6 @@ bool WString_from_utf8_str(WString* dest, const char* s);
 bool WString_format(WString* dest, const wchar_t* fmt, ...);
 
 bool WString_format_append(WString* dest, const wchar_t* fmt, ...);
+#endif
+
 #endif
