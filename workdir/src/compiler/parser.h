@@ -3,6 +3,14 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <arena.h>
+#include "log.h"
+
+#ifdef _MSC_VER
+#include <printf.h>
+#define assert(e) if (!(e)) { _wprintf_e(L"Assertion failed: '%s' at %S:%u", L#e, __FILE__, __LINE__); ExitProcess(1); }
+#else
+#include <assert.h>
+#endif
 
 #define pinned
 
@@ -10,7 +18,7 @@ typedef struct Expression Expression;
 typedef struct Statement Statement;
 typedef struct FunctionDef FunctionDef;
 
-enum ExpressionType {
+enum ExpressionKind {
     EXPRESSION_VARIABLE,
     EXPRESSION_BINOP, 
     EXPRESSION_UNOP, 
@@ -18,8 +26,10 @@ enum ExpressionType {
     EXPRESSION_LITERAL_UINT,
     EXPRESSION_LITERAL_FLOAT,
     EXPRESSION_LITERAL_STRING,
+    EXPRESSION_LITERAL_BOOL,
     EXPRESSION_CALL,
     EXPRESSION_ARRAY_INDEX,
+    EXPRESSION_CAST,
     EXPRESSION_INVALID
 };
 
@@ -47,7 +57,9 @@ typedef uint64_t type_id;
 #define TYPE_ID_INT64 1
 #define TYPE_ID_FLOAT64 2
 #define TYPE_ID_CSTRING 3
-#define TYPE_ID_BUILTIN_COUNT 4
+#define TYPE_ID_NONE 4
+#define TYPE_ID_BOOL 5
+#define TYPE_ID_BUILTIN_COUNT 6
 // Index into name_table
 typedef uint64_t name_id;
 #define NAME_ID_INVALID ((name_id) -1)
@@ -56,6 +68,11 @@ typedef uint64_t name_id;
 #define NAME_ID_IF 2
 #define NAME_ID_WHILE 3
 #define NAME_ID_ELSE 4
+#define NAME_ID_RETURN 5
+
+// Index into var_table (part of quads)
+typedef uint64_t var_id;
+#define VAR_ID_INVALID ((var_id) -1)
 
 // Index into hash table
 typedef uint32_t hash_id;
@@ -104,8 +121,17 @@ typedef struct LiteralExpr {
     };
 } LiteralExpr;
 
+typedef struct CastExpr {
+    type_id type;
+    Expression* e;
+} CastExpr;
+
 struct Expression pinned {
-    enum ExpressionType type;
+    enum ExpressionKind kind;
+    union {
+        type_id type; // set by typechecker
+        var_id var; // set by quads
+    };
     LineInfo line;
     union {
         VariableExpr variable;
@@ -114,13 +140,14 @@ struct Expression pinned {
         LiteralExpr literal;
         CallExpr call;
         ArrayIndexExpr array_index;
+        CastExpr cast;
     };
 };
 
 struct Statement pinned {
     enum {
         STATEMENT_ASSIGN, STATEMENT_EXPRESSION,
-        STATEMENT_IF, STATEMENT_WHILE,
+        STATEMENT_IF, STATEMENT_WHILE, STATEMENT_RETURN,
         STATEMET_INVALID
     } type;
     union {
@@ -140,12 +167,16 @@ struct Statement pinned {
             uint64_t statement_count;
             Statement** statements;
         } while_;
+        struct {
+            Expression* return_value;
+        } return_;
     };
     LineInfo line;
 };
 
 typedef struct CallArg pinned {
     name_id name;
+    type_id type;
     LineInfo line;
 } CallArg;
 
@@ -160,7 +191,7 @@ typedef struct FunctionDef pinned {
 } FunctionDef;
 
 typedef struct StructDef pinned {
-    const char *name;
+    name_id name;
     uint64_t field_count;
     type_id* fields;
     LineInfo line;
@@ -168,7 +199,8 @@ typedef struct StructDef pinned {
 
 enum TypeDefKind {
     TYPEDEF_UINT64, TYPEDEF_INT64, TYPEDEF_FLOAT64,
-    TYPEDEF_CSTRING, TYPEDEF_STRUCT,
+    TYPEDEF_CSTRING, TYPEDEF_NONE, TYPEDEF_BOOL,
+    TYPEDEF_STRUCT,
     TYPEDEF_FUNCTION
 };
 
@@ -176,7 +208,8 @@ typedef struct TypeDef pinned {
     enum TypeDefKind kind;
     union {
         StructDef struct_; // Only valid if kind is TYPEDEF_STRUCT
-        FunctionDef* func; // TYPEDEF_FUNCTION
+        FunctionDef* func; // Only valid if kind is TYPEDEF_FUNCTION
+        name_id name;      // Valid otherwise
     };
 } TypeDef;
 
@@ -232,6 +265,8 @@ typedef struct NameData {
         TypeDef* type_def;
         // Used when kind == NAME_VARIABLE and type is array
         ArraySize* array_size;
+        // Used when kind == NAME_VARIABLE after var_table is created.
+        var_id variable;
     };
     // For NAME_KEYWORD: TYPE_ID_INVALID
     // For NAME_VARIABLE: Type of variable
@@ -262,7 +297,10 @@ enum ParseErrorKind {
     PARSE_ERROR_INVALID_LITERAL = 8,
     PARSE_ERROR_REDEFINITION = 9,
     PARSE_ERROR_BAD_ARRAY_SIZE = 10,
-    PARSE_ERROR_INTERNAL = 11
+    PARSE_ERROR_INTERNAL = 11,
+    TYPE_ERROR_ILLEGAL_TYPE = 12,
+    TYPE_ERROR_ILLEGAL_CAST = 13,
+    TYPE_ERROR_WRONG_ARG_COUNT = 14
 };
 
 typedef struct ParseError {
@@ -294,5 +332,28 @@ typedef struct Parser {
 } Parser;
 
 bool Parser_create(Parser* parser);
+
+Expression* parse_expression(Parser* parser);
+
+Statement** parse_statements(Parser* parser, uint64_t* count);
+
+bool parse_program(Parser* parser);
+
+// TODO: move?
+
+void find_row_col(const Parser* parser, uint64_t pos, uint64_t* row, uint64_t* col);
+
+type_id type_of(Parser* parser, name_id name);
+
+type_id array_of(Parser* parser, type_id id);
+
+void fatal_error_cb(Parser* parser, enum ParseErrorKind error, LineInfo info,
+                    const char* file, uint64_t line);
+
+void error_cb(Parser* parser, enum ParseErrorKind error, LineInfo line,
+        const char* file, uint64_t iline);
+
+#define fatal_error(p, e, l) fatal_error_cb(p, e, l, __FILE__, __LINE__)
+#define add_error(p, e, l) do { LOG_INFO("Adding error %d at %llu", e, p->pos); error_cb(p, e, l, __FILE__, __LINE__); } while(0);
 
 #endif

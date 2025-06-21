@@ -1,0 +1,21 @@
+
+fn x(int64 a, uint64 b, float64 c) -> uint64 {
+uint64 a = 10;
+int64 __bee1 = 2 * 2;
+a >> __bee1;
+if (a > __bee1 || (__bee1 == 0 && a == 0)) { 
+	float64 x = 10; 
+}
+else if (__bee1 >= a) { float64 x = 11; while (x != 0.0) { x = x - 1; } } else { a = 5; return a; }
+           uint64[10] array; array[0] = 123; }
+
+fn c(int64 a) -> int64 {
+    return x(a, 2, 3);
+}
+
+fn hello_world() {
+    int64 x = 10;
+    while (c(x) < 100 || c(x) > 200) {
+        x = x + 1;
+    }
+}
