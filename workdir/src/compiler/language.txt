@@ -1,0 +1,7 @@
+
+
+
+
+fn x(int64 a, uint64 b, float64 c) -> int64 {
+    return a + b + c;
+}

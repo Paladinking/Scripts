@@ -1,4 +1,7 @@
 #include "parser.h"
+#include "log.h"
+#include "format.h"
+#include "glob.h"
 #include <printf.h>
 #include <dynamic_string.h>
 #include <mem.h>
@@ -15,7 +18,7 @@ static hash_id hash(const uint8_t* str, uint32_t len) {
 }
 
 
-void find_row_col(Parser* parser, uint64_t pos, uint64_t* row, uint64_t* col) {
+void find_row_col(const Parser* parser, uint64_t pos, uint64_t* row, uint64_t* col) {
     uint64_t ix = 0;
     *row = 0;
     *col = 0;
@@ -66,8 +69,6 @@ void fatal_error_cb(Parser* parser, enum ParseErrorKind error, LineInfo info,
     ExitProcess(1);
 }
 
-#define fatal_error(p, e, l) fatal_error_cb(p, e, l, __FILE__, __LINE__)
-
 void error_cb(Parser* parser, enum ParseErrorKind error, LineInfo line,
         const char* file, uint64_t iline) {
     ParseError* e = Arena_alloc_type(&parser->arena, ParseError);
@@ -84,8 +85,6 @@ void error_cb(Parser* parser, enum ParseErrorKind error, LineInfo line,
         parser->last_error = e;
     }
 }
-
-#define add_error(p, e, l) error_cb(p, e, l, __FILE__, __LINE__)
 
 void parser_out_of_memory(void* ctx) {
     Parser* parser = ctx;
@@ -122,12 +121,14 @@ name_id insert_name(Parser* parser, const uint8_t* name, uint32_t len, type_id t
             if (n_id > parser->scope_stack[parser->scope_count - 1] ||
                 n_id <= parser->scope_stack[0]) {
                 // Name already taken in this scope, or in builtin scope
+                LOG_DEBUG("insert_name: Name '%.*s' already taken", len, name);
                 return NAME_ID_INVALID;
             }
         }
         n_id = parser->name_table.data[n_id].parent;
     }
     n_id = parser->name_table.size;
+    LOG_DEBUG("insert_name: Inserted name '%.*s', id %llu", len, name, n_id);
     uint8_t* name_ptr = Arena_alloc(&parser->arena, len, 1);
     memcpy(name_ptr, name, len);
     if (parser->name_table.size == parser->name_table.capacity) {
@@ -185,6 +186,13 @@ type_id create_type_id(Parser* parser) {
     parser->type_table.size += 1;
     return parser->type_table.size - 1;
 }
+
+type_id type_of(Parser* parser, name_id name) {
+    if (name == NAME_ID_INVALID) {
+        return TYPE_ID_INVALID;
+    }
+    return parser->name_table.data[name].type;
+} 
 
 type_id array_of(Parser* parser, type_id id) {
     if (parser->type_table.data[id].array_type == TYPE_ID_INVALID) {
@@ -285,7 +293,8 @@ void parser_add_builtin(Parser* parser, type_id id, enum TypeDefKind kind,
     parser->type_table.data[id].parent = TYPE_ID_INVALID;
     parser->type_table.data[id].type_def = def;
 
-    insert_type_name(parser, (const uint8_t*)name, strlen(name), id, def);
+    name_id n = insert_type_name(parser, (const uint8_t*)name, strlen(name), id, def);
+    def->name = n;
 }
 
 static inline bool eof(Parser* parser) {
@@ -315,7 +324,13 @@ uint8_t expect_data(Parser* parser) {
 
 bool expect_char(Parser* parser, uint8_t c) {
     skip_spaces(parser);
-    if (expect_data(parser) != c) {
+    if (eof(parser)) {
+        LOG_DEBUG("expect_char: expected '%c', got eof", c);
+        add_error(parser, PARSE_ERROR_INVALID_CHAR, current_pos(parser));
+        return false;
+    }
+    if (parser->indata[parser->pos] != c) {
+        LOG_DEBUG("expect_char: expected '%c', got '%c'", c, parser->indata[parser->pos]);
         add_error(parser, PARSE_ERROR_INVALID_CHAR, current_pos(parser));
         return false;
     }
@@ -435,6 +450,7 @@ const uint8_t* parse_name(Parser* parser, uint32_t* len) {
     const uint8_t* base = parser->indata + parser->pos;
 
     if (!is_identifier_start(expect_data(parser))) {
+        LOG_DEBUG("parse_name: '%c' is not identifier start", expect_data(parser));
         add_error(parser, PARSE_ERROR_INVALID_CHAR, current_pos(parser));
         return NULL;
     }
@@ -467,9 +483,11 @@ name_id parse_known_name(Parser* parser) {
     name_id name = find_name(parser, base, len);
     if (name == NAME_ID_INVALID) {
         LineInfo l = {true, base - parser->indata, parser->pos};
+        LOG_INFO("parse_known_name: parsed unkown '%.*s'", len, base);
         add_error(parser, PARSE_ERROR_BAD_NAME, l);
         return NAME_ID_INVALID;
     }
+    LOG_DEBUG("parse_known_name: parsed '%.*s'", len, base);
     return name;
 }
 
@@ -664,7 +682,7 @@ bool parse_number_literal(Parser* parser, uint64_t* i, double* d, bool* is_int) 
         }
     } else if (c == '0'){
         c = parser->indata[parser->pos];
-        if (c >= '0' || c <= '9') {
+        if (c >= '0' && c <= '9') {
             return false;
         }
     }
@@ -743,7 +761,7 @@ type_id parse_known_type(Parser* parser) {
         return TYPE_ID_INVALID;
     }
 
-    // TOTO: Array types...
+    // TODO: Array types...
 
     return parser->name_table.data[name].type;
 }
@@ -754,8 +772,12 @@ uint64_t count_args(Parser* parser, uint64_t* pos) {
     uint64_t open_par = 0;
     uint64_t open_bra = 0;
     uint64_t open_cur = 0;
+    skip_spaces(parser);
     uint8_t c1 = expect_data(parser);
     if (c1 == ')' || c1 == '}' || c1 == ']') {
+        if (pos != NULL) {
+            *pos = parser->pos;
+        }
         return 0;
     }
     for (uint64_t ix = parser->pos; ix < parser->input_size; ++ix) {
@@ -856,7 +878,8 @@ start:
     uint8_t c = parser->indata[parser->pos];
     if (c == '[') {
         Expression* n = Arena_alloc_type(&parser->arena, Expression);
-        n->type = EXPRESSION_ARRAY_INDEX;
+        n->kind = EXPRESSION_ARRAY_INDEX;
+        n->type = TYPE_ID_INVALID;
         n->array_index.array = e;
         n->array_index.index = NULL;
         n->line = i;
@@ -870,7 +893,7 @@ start:
         uint64_t count = count_args(parser, NULL);
         if (count == 0) {
             *n = *e;
-            e->type = EXPRESSION_CALL;
+            e->kind = EXPRESSION_CALL;
             e->call.function = n;
             e->call.arg_count = 0;
             e->call.args = NULL;
@@ -879,7 +902,8 @@ start:
             e->line.end = parser->pos;
             goto start;
         }
-        n->type = EXPRESSION_CALL;
+        n->kind = EXPRESSION_CALL;
+        n->type = TYPE_ID_INVALID;
         n->call.function = e;
         n->call.arg_count = 0;
         n->line = i;
@@ -960,7 +984,8 @@ start:
         return false;
     }
     Expression* n = Arena_alloc_type(&parser->arena, Expression);
-    n->type = EXPRESSION_BINOP;
+    n->kind = EXPRESSION_BINOP;
+    n->type = TYPE_ID_INVALID;
     n->binop.op = op;
     n->binop.lhs = e;
     n->binop.rhs = NULL;
@@ -990,7 +1015,7 @@ bool prefix_operation(Expression* e, Parser* parser, LineInfo i) {
     } else {
         return false;
     }
-    e->type = EXPRESSION_UNOP;
+    e->kind = EXPRESSION_UNOP;
     e->unop.op = op;
     e->unop.expr = NULL;
     e->line = i;
@@ -1000,6 +1025,7 @@ bool prefix_operation(Expression* e, Parser* parser, LineInfo i) {
 
 // pos will be first char not part of expression after
 Expression* parse_expression(Parser* parser) {
+    LOG_DEBUG("Parsing expression at %llu", parser->pos);
     struct Node {
         Expression* e;
     };
@@ -1014,6 +1040,7 @@ Expression* parse_expression(Parser* parser) {
 
     while (1) {
 loop:
+        LOG_DEBUG("Expression parse loop at %llu", parser->pos);
         if (stack_size == stack_cap) {
             stack_cap *= 2;
             struct Node* n = Mem_realloc(stack,
@@ -1030,6 +1057,7 @@ loop:
         uint8_t c = parser->indata[parser->pos];
         LineInfo i = {true, parser->pos, 0};
         Expression* e = Arena_alloc_type(&parser->arena, Expression);
+        e->type = TYPE_ID_INVALID;
         if (prefix_operation(e, parser, i)) {
             stack[stack_size].e = e;
             ++stack_size;
@@ -1041,21 +1069,21 @@ loop:
             e->line = i;
             if (!parse_number_literal(parser, &u, &d, &is_int)) {
                 add_error(parser, PARSE_ERROR_INVALID_LITERAL, current_pos(parser));
-                e->type = EXPRESSION_INVALID;
+                e->kind = EXPRESSION_INVALID;
                 Mem_free(stack);
                 return e;
             } else if (is_int) {
-                e->type = EXPRESSION_LITERAL_UINT;
+                e->kind = EXPRESSION_LITERAL_UINT;
                 e->literal.uint = u;
             } else {
-                e->type = EXPRESSION_LITERAL_FLOAT;
+                e->kind = EXPRESSION_LITERAL_FLOAT;
                 e->literal.float64 = d;
             }
             e->line.end = parser->pos;
         } else if (c == '"') {
             uint64_t len;
             uint8_t* s = parse_string_literal(parser, &len);
-            e->type = EXPRESSION_LITERAL_STRING;
+            e->kind = EXPRESSION_LITERAL_STRING;
             e->line = i;
             e->line.end = parser->pos;
             e->literal.string.bytes = s;
@@ -1063,11 +1091,11 @@ loop:
         } else {
             name_id name = parse_variable_name(parser);
             if (name == NAME_ID_INVALID) {
-                e->type = EXPRESSION_INVALID;
+                e->kind = EXPRESSION_INVALID;
                 Mem_free(stack);
                 return e;
             } else {
-                e->type = EXPRESSION_VARIABLE;
+                e->kind = EXPRESSION_VARIABLE;
                 e->line = i;
                 e->line.end = parser->pos;
                 e->variable.ix = name;
@@ -1086,21 +1114,21 @@ loop:
             Expression* n = stack[stack_size - 1].e;
             --stack_size;
             bool check_postfix = false;
-            if (n->type == EXPRESSION_UNOP) {
+            if (n->kind == EXPRESSION_UNOP) {
                 n->unop.expr = e;
                 n->line.end = parser->pos;
                 if (n->unop.op == UNOP_PAREN) {
                     uint8_t c = expect_data(parser);
                     if (c != ')') {
                         add_error(parser, PARSE_ERROR_INVALID_CHAR, current_pos(parser));
-                        e->type = EXPRESSION_INVALID;
+                        e->kind = EXPRESSION_INVALID;
                         Mem_free(stack);
                         return e;
                     }
                     parser->pos += 1;
                     n->line.end += 1;
                     check_postfix =  true;
-                } else if (n->unop.expr->type == EXPRESSION_BINOP) {
+                } else if (n->unop.expr->kind == EXPRESSION_BINOP) {
                     Expression* node = n;
                     Expression* bin = node->unop.expr;
                     n = node->unop.expr;
@@ -1109,7 +1137,7 @@ loop:
                     node->line.end = node->unop.expr->line.end;
                     bin->line.start = bin->binop.lhs->line.start;
                     Expression* parent = n;
-                    while (node->unop.expr->type == EXPRESSION_BINOP) {
+                    while (node->unop.expr->kind == EXPRESSION_BINOP) {
                         bin = node->unop.expr;
                         node->unop.expr = bin->binop.lhs;
                         bin->binop.lhs = node;
@@ -1119,14 +1147,14 @@ loop:
                         parent = bin;
                     }
                 }
-            } else if (n->type == EXPRESSION_BINOP) {
+            } else if (n->kind == EXPRESSION_BINOP) {
                 n->binop.rhs = e;
                 n->line.end = parser->pos;
                 n->line.end = parser->pos;
                 Expression* node = n;
                 uint32_t prio = binop_precedence(n->binop.op);
 
-                if (e->type == EXPRESSION_BINOP &&
+                if (e->kind == EXPRESSION_BINOP &&
                     prio < binop_precedence(e->binop.op)) {
                     Expression* lhs = e->binop.lhs;
                     e->line.start = node->line.start;
@@ -1136,7 +1164,7 @@ loop:
                     n = e;
 
                     Expression* parent = n;
-                    while (node->binop.rhs->type == EXPRESSION_BINOP &&
+                    while (node->binop.rhs->kind == EXPRESSION_BINOP &&
                            prio < binop_precedence(node->binop.rhs->binop.op)) {
                         Expression* lhs = node->binop.rhs->binop.lhs;
                         node->binop.rhs->binop.lhs = node;
@@ -1147,11 +1175,11 @@ loop:
                         node->line.end = node->binop.rhs->line.end;
                     }
                 } 
-            } else if (n->type == EXPRESSION_ARRAY_INDEX) {
+            } else if (n->kind == EXPRESSION_ARRAY_INDEX) {
                 uint8_t c = expect_data(parser);
                 if (c != ']') {
                     add_error(parser, PARSE_ERROR_INVALID_CHAR, current_pos(parser));
-                    e->type = EXPRESSION_INVALID;
+                    e->kind = EXPRESSION_INVALID;
                     Mem_free(stack);
                     return e;
                 }
@@ -1159,7 +1187,7 @@ loop:
                 check_postfix =  true;
                 n->line.end = parser->pos;
                 n->array_index.index = e;
-            } else if (n->type == EXPRESSION_CALL) {
+            } else if (n->kind == EXPRESSION_CALL) {
                 uint8_t c = expect_data(parser);
                 uint64_t count = n->call.arg_count & 0xffffffff;
                 uint64_t max_count = n->call.arg_count >> 32;
@@ -1174,7 +1202,7 @@ loop:
                     goto loop;
                 } else if (c != ')') {
                     add_error(parser, PARSE_ERROR_INVALID_CHAR, current_pos(parser));
-                    e->type = EXPRESSION_INVALID;
+                    e->kind = EXPRESSION_INVALID;
                     Mem_free(stack);
                     return e;
                 }
@@ -1289,7 +1317,7 @@ Statement** parse_statements(Parser* parser, uint64_t* count) {
                                 continue;
                             }
                             cond = parse_expression(parser);
-                            if (cond->type == EXPRESSION_INVALID ||
+                            if (cond->kind == EXPRESSION_INVALID ||
                                 !expect_char(parser, ')')) {
                                 skip_statement(parser);
                                 continue;
@@ -1337,12 +1365,33 @@ Statement** parse_statements(Parser* parser, uint64_t* count) {
             NameTable* names = &parser->name_table;
             if (names->data[name].kind == NAME_KEYWORD) {
                 Statement* s; 
+                if (name == NAME_ID_RETURN) {
+                    Expression* e = parse_expression(parser);
+                    if (e->kind == EXPRESSION_INVALID) {
+                        skip_statement(parser);
+                        continue;
+                    }
+                    if (!expect_char(parser, ';')) {
+                        skip_statement(parser);
+                        continue;
+                    }
+                    s = Arena_alloc_type(&parser->arena, Statement);
+                    s->type = STATEMENT_RETURN;
+                    s->return_.return_value = e;
+                    s->line.start = pos;
+                    s->line.end = parser->pos;
+                    stack[stack_size].statement = s;
+                    ++stack_size;
+                    ++top_count;
+                    continue;
+                }
+
                 if (!expect_char(parser, '(')) {
                     skip_statement(parser);
                     continue;
                 }
                 Expression* e = parse_expression(parser);
-                if (e->type == EXPRESSION_INVALID) {
+                if (e->kind == EXPRESSION_INVALID) {
                     skip_statement(parser);
                     continue;
                 }
@@ -1428,7 +1477,7 @@ Statement** parse_statements(Parser* parser, uint64_t* count) {
                 if (c == '=') {
                     parser->pos += 1;
                     Expression* e = parse_expression(parser);
-                    if (e->type == EXPRESSION_INVALID) {
+                    if (e->kind == EXPRESSION_INVALID) {
                         skip_statement(parser);
                         continue;
                     }
@@ -1439,7 +1488,8 @@ Statement** parse_statements(Parser* parser, uint64_t* count) {
                     Statement* s = Arena_alloc_type(&parser->arena, Statement);
                     s->type = STATEMENT_ASSIGN;
                     Expression* lhs = Arena_alloc_type(&parser->arena, Expression);
-                    lhs->type = EXPRESSION_VARIABLE;
+                    lhs->kind = EXPRESSION_VARIABLE;
+                    lhs->type = TYPE_ID_INVALID;
                     lhs->variable.ix = n;
                     lhs->line.start = name_start;
                     lhs->line.end = name_end;
@@ -1465,7 +1515,7 @@ Statement** parse_statements(Parser* parser, uint64_t* count) {
         }
 
         Expression* e = parse_expression(parser);
-        if (e->type == EXPRESSION_INVALID) {
+        if (e->kind == EXPRESSION_INVALID) {
             skip_statement(parser);
             continue;
         }
@@ -1475,7 +1525,7 @@ Statement** parse_statements(Parser* parser, uint64_t* count) {
         if (c == '=') {
             parser->pos += 1;
             Expression* rhs = parse_expression(parser);
-            if (rhs->type == EXPRESSION_INVALID) {
+            if (rhs->kind == EXPRESSION_INVALID) {
                 skip_statement(parser);
                 continue;
             }
@@ -1507,6 +1557,7 @@ Statement** parse_statements(Parser* parser, uint64_t* count) {
 
 // 'fn' is already consumed
 bool scan_function(Parser* parser) {
+    LOG_DEBUG("Scanning function at %llu", parser->pos);
     uint64_t pos = parser->pos - 2;
     skip_spaces(parser);
     uint32_t len;
@@ -1514,16 +1565,26 @@ bool scan_function(Parser* parser) {
     if (name == NULL) {
         return false;
     }
+    LOG_DEBUG("Found fn name '%.*s' at %llu", len, name, parser->pos);
     if (!expect_char(parser, '(')) {
+        LOG_DEBUG("Missing '(' at %llu", parser->pos);
         return false;
     }
 
-    uint64_t skip;
+    uint64_t skip = 0;
     uint64_t arg_count = count_args(parser, &skip);
     parser->pos = skip;
-    if (!expect_char(parser, ')') || !expect_char(parser, '-') || 
-        expect_data(parser) != '>') {
+    LOG_DEBUG("Skip %llu", skip);
+    if (!expect_char(parser, ')')) {
         return false;
+    }
+    skip_spaces(parser);
+    if (expect_data(parser) == '-') {
+        parser->pos += 1;
+        if (expect_data(parser) != '>') {
+            return false;
+        }
+        parser->pos += 1;
     }
 
     skip_statement(parser);
@@ -1547,6 +1608,7 @@ bool scan_function(Parser* parser) {
 
 
 FunctionDef* parse_function(Parser* parser) {
+    LOG_DEBUG("parse_function: parsing function");
     skip_spaces(parser);
     name_id name = parse_known_name(parser);
     if (name == NAME_ID_INVALID) {
@@ -1565,6 +1627,11 @@ FunctionDef* parse_function(Parser* parser) {
     }
     f->args = args;
     begin_scope(parser);
+    LOG_DEBUG("parse_function: parsing %lu arguments", f->arg_count);
+    if (f->arg_count == 0 && !expect_char(parser, ')')) {
+        LOG_DEBUG("parse_function: expected ')' for no argument function");
+        return NULL;
+    }
     for (uint64_t ix = 0; ix < f->arg_count; ++ix) {
         uint8_t end = ix == f->arg_count - 1 ? ')' : ',';
         skip_spaces(parser);
@@ -1589,23 +1656,50 @@ FunctionDef* parse_function(Parser* parser) {
         args[ix].name = var_id;
         args[ix].line.start = p;
         args[ix].line.end = parser->pos;
+        args[ix].type = var_type;
         expect_char(parser, end);
     }
+    skip_spaces(parser);
+    uint8_t c = expect_data(parser);
+    if (c == '-') {
+        LOG_DEBUG("parse_function: found return type");
+        parser->pos += 1;
+        if (expect_data(parser) != '>') {
+            add_error(parser, PARSE_ERROR_INVALID_CHAR, current_pos(parser));
+            end_scope(parser);
+            return NULL;
+        }
+        parser->pos += 1;
+        skip_spaces(parser);
+        type_id ret_type = parse_known_type(parser);
+        if (ret_type == TYPE_ID_INVALID) {
+            end_scope(parser);
+            return NULL;
+        }
+        f->return_type = ret_type;
+    } else {
+        f->return_type = TYPE_ID_NONE;
+    }
+
     if (!expect_char(parser, '{')) {
+        LOG_DEBUG("parse_function: Missing '{'");
         end_scope(parser);
         return NULL;
     }
 
     uint64_t statement_count;
+    LOG_DEBUG("parse_function: parsing statements");
     Statement** statements = parse_statements(parser, &statement_count);
     f->statements = statements;
     f->statement_count = statement_count;
+    end_scope(parser);
 
     return f;
 }
 
 
 bool parse_program(Parser* parser) {
+    uint64_t pos = parser->pos;
     while (1) {
         skip_spaces(parser);
         if (eof(parser)) {
@@ -1623,12 +1717,55 @@ bool parse_program(Parser* parser) {
             skip_statement(parser);
             continue;
         }
-        scan_function(parser);
+        if (!scan_function(parser)) {
+            LOG_DEBUG("Failed scan_function at %llu", parser->pos);
+            skip_statement(parser);
+            continue;
+        }
     }
+    LOG_INFO("parse_program: Done scanning");
+    parser->pos = pos;
+    while (1) {
+        skip_spaces(parser);
+        if (eof(parser)) {
+            break;
+        }
+        uint64_t pos = parser->pos;
+        name_id id = parse_known_name(parser);
+        if (id == NAME_ID_INVALID) {
+            skip_statement(parser);
+            continue;
+        } else if (id != NAME_ID_FN) {
+            LineInfo l = {true, pos, parser->pos};
+            add_error(parser, PARSE_ERROR_BAD_NAME, l);
+            skip_statement(parser);
+            continue;
+        }
+        FunctionDef* func = parse_function(parser);
+        if (func == NULL) {
+            skip_statement(parser);
+            continue;
+        }
+        if (parser->function_table.size == parser->function_table.capacity) {
+            parser->function_table.capacity *= 2;
+            FunctionDef** funcs = Mem_realloc(parser->function_table.data,
+                    parser->function_table.capacity * sizeof(FunctionDef*));
+            if (funcs == NULL) {
+                fatal_error(parser, PARSE_ERROR_OUTOFMEMORY, current_pos(parser));
+                return false;
+            }
+            parser->function_table.data = funcs;
+        }
+        parser->function_table.data[parser->function_table.size] = func;
+        parser->function_table.size += 1;
+    }
+
+    return true;
 }
 
 
 bool Parser_create(Parser* parser) {
+    LOG_DEBUG("Creating parser");
     if (!Arena_create(&parser->arena, 0x7fffffff, parser_out_of_memory,
                       parser)) {
         return false;
@@ -1691,485 +1828,18 @@ bool Parser_create(Parser* parser) {
     insert_keyword(parser, "if", NAME_ID_IF);
     insert_keyword(parser, "while", NAME_ID_WHILE);
     insert_keyword(parser, "else", NAME_ID_ELSE);
+    insert_keyword(parser, "return", NAME_ID_RETURN);
 
     parser_add_builtin(parser, TYPE_ID_UINT64, TYPEDEF_UINT64, "uint64");
     parser_add_builtin(parser, TYPE_ID_INT64, TYPEDEF_INT64, "int64");
     parser_add_builtin(parser, TYPE_ID_FLOAT64, TYPEDEF_FLOAT64, "float64");
     parser_add_builtin(parser, TYPE_ID_CSTRING, TYPEDEF_CSTRING, "<String Type>");
+    parser_add_builtin(parser, TYPE_ID_NONE, TYPEDEF_NONE, "<None Type>");
+    parser_add_builtin(parser, TYPE_ID_BOOL, TYPEDEF_BOOL, "bool");
 
     parser->scope_stack[0] = parser->name_table.size - 1;
 
     return true;
 }
-
-void fmt_errors(Parser* parser, WString* dest) {
-    ParseError* err = parser->first_error;
-    while (err != NULL) {
-        if (err->kind == PARSE_ERROR_NONE) {
-            continue;
-        }
-        switch (err->kind) {
-        case PARSE_ERROR_NONE:
-            break;
-        case PARSE_ERROR_EOF:
-            WString_format_append(dest, L"Error: unexpecetd end of file");
-            break;
-        case PARSE_ERROR_OUTOFMEMORY:
-            WString_format_append(dest, L"Error: Out of memory");
-            break;
-        case PARSE_ERROR_INVALID_ESCAPE:
-            WString_format_append(dest, L"Error: invalid escape code");
-            break;
-        case PARSE_ERROR_INVALID_CHAR:
-            WString_format_append(dest, L"Error: bad character");
-            break;
-        case PARSE_ERROR_RESERVED_NAME:
-            WString_format_append(dest, L"Error: illegal name");
-            break;
-        case PARSE_ERROR_BAD_NAME:
-            WString_format_append(dest, L"Error: bad identifier");
-            break;
-        case PARSE_ERROR_INVALID_LITERAL:
-            WString_format_append(dest, L"Error: invalid literal");
-            break;
-        case PARSE_ERROR_REDEFINITION:
-            WString_format_append(dest, L"Error: redefinition");
-            break;
-        case PARSE_ERROR_BAD_ARRAY_SIZE:
-            WString_format_append(dest, L"Error: Bad array size");
-            break;
-        case PARSE_ERROR_INTERNAL:
-            WString_format_append(dest, L"Internal compiler error");
-            break;
-        }
-        uint64_t row, col;
-        find_row_col(parser, err->pos.start, &row, &col);
-        WString_format_append(dest, L" at row %llu collum %llu [%S:%llu]\n",
-                              row, col, err->file, err->internal_line);
-        err = err->next;
-    }
-}
-
-void fmt_unary_operator(enum UnaryOperator op, WString *dest) {
-    switch(op) {
-    case UNOP_BITNOT:
-        WString_append(dest, '~');
-        return;
-    case UNOP_BOOLNOT:
-        WString_append(dest, '!');
-        return;
-    case UNOP_NEGATVIE:
-        WString_append(dest, '-');
-        return;
-    case UNOP_POSITIVE:
-        WString_append(dest, '+');
-        return;
-    case UNOP_PAREN:
-        return;
-    }
-}
-
-void fmt_binary_operator(enum BinaryOperator op, WString* dest) {
-    switch (op) {
-        case BINOP_DIV:
-            WString_append(dest, L'/');
-            return;
-        case BINOP_MUL:
-            WString_append(dest, L'*');
-            return;
-        case BINOP_MOD:
-            WString_append(dest, L'%');
-            return;
-        case BINOP_SUB:
-            WString_append(dest, L'-');
-            return;
-        case BINOP_ADD:
-            WString_append(dest, L'+');
-            return;
-        case BINOP_BIT_LSHIFT:
-            WString_append_count(dest, L"<<", 2);
-            return;
-        case BINOP_BIT_RSHIFT:
-            WString_append_count(dest, L">>", 2);
-            return;
-        case BINOP_CMP_LE:
-            WString_append_count(dest, L"<=", 2);
-            return;
-        case BINOP_CMP_GE:
-            WString_append_count(dest, L">=", 2);
-            return;
-        case BINOP_CMP_G:
-            WString_append(dest, L'>');
-            return;
-        case BINOP_CMP_L:
-            WString_append(dest, L'<');
-            return;
-        case BINOP_CMP_EQ:
-            WString_append_count(dest, L"==", 2);
-            return;
-        case BINOP_CMP_NEQ:
-            WString_append_count(dest, L"!=", 2);
-            return;
-        case BINOP_BIT_XOR:
-            WString_append(dest, L'^');
-            return;
-        case BINOP_BOOL_AND:
-            WString_append(dest, L'&');
-        case BINOP_BIT_AND:
-            WString_append(dest, L'&');
-            return;
-        case BINOP_BOOL_OR:
-            WString_append(dest, L'|');
-        case BINOP_BIT_OR:
-            WString_append(dest, L'|');
-            return;
-    }
-}
-
-void fmt_double(double d, WString* dest) {
-    bool negative = d < 0;
-    if (d < 0) {
-        d = -d;
-    }
-    int64_t exponent = 0;
-    if (d < 0.000001) {
-        while (d < 1.0) {
-            d *= 10.0;
-            --exponent;
-        }
-    } else if (d > 1000000) {
-        while (d > 10.0) {
-            d /= 10.0;
-            ++exponent;
-        }
-    }
-    uint64_t whole_part = (uint64_t)d;
-    d = d - whole_part;
-    uint64_t leading_zeroes = 0;
-    uint64_t frac_part = 0;
-    while (d > 0.000000000001 && d < 0.1) {
-        ++leading_zeroes;
-        d *= 10;
-    }
-    if (d >= 0.1) {
-        for (uint64_t j = 0; j < 12; ++j) {
-            d = d * 10;
-            uint64_t i = (uint64_t) d;
-            frac_part = frac_part * 10 + i;
-            d = d - i;
-        }
-        if (d > 0.5) {
-            frac_part += 1;
-        }
-        while (frac_part % 10 == 0) {
-            frac_part = frac_part / 10;
-        }
-    }
-    if (negative) {
-        WString_append(dest, L'-');
-    }
-    WString_format_append(dest, L"%llu.", whole_part);
-    for (uint64_t i = 0; i < leading_zeroes; ++i) {
-        WString_append(dest, L'0');
-    }
-    WString_format_append(dest, L"%llu", frac_part);
-    if (exponent != 0) {
-        WString_format_append(dest, L"e%lld", exponent);
-    }
-}
-
-void fmt_expression(Expression* expr, Parser* parser, WString* dest) {
-    switch (expr->type) {
-        case EXPRESSION_CALL:
-            WString_append(dest, L'(');
-            fmt_expression(expr->call.function, parser, dest);
-            WString_append(dest, L'(');
-            for (uint64_t ix = 0; ix < expr->call.arg_count; ++ix) {
-                fmt_expression(expr->call.args[ix], parser, dest);
-                if (ix < expr->call.arg_count - 1) {
-                    WString_append_count(dest, L", ", 2);
-                }
-            }
-            WString_append_count(dest, L"))", 2);
-            return;
-        case EXPRESSION_BINOP:
-            WString_append(dest, L'(');
-            fmt_expression(expr->binop.lhs, parser, dest);
-            WString_append(dest, L' ');
-            fmt_binary_operator(expr->binop.op, dest);
-            WString_append(dest, L' ');
-            fmt_expression(expr->binop.rhs, parser, dest);
-            WString_append(dest, L')');
-            return;
-        case EXPRESSION_UNOP:
-            WString_append(dest, L'(');
-            fmt_unary_operator(expr->unop.op, dest);
-            fmt_expression(expr->unop.expr, parser, dest);
-            WString_append(dest, L')');
-            return;
-        case EXPRESSION_LITERAL_INT:
-            WString_format_append(dest, L"{%lld}", expr->literal.iint);
-            return;
-        case EXPRESSION_LITERAL_UINT:
-            WString_format_append(dest, L"{%llu}", expr->literal.uint);
-            return;
-        case EXPRESSION_LITERAL_FLOAT:
-            WString_append(dest, L'{');
-            fmt_double(expr->literal.float64, dest);
-            WString_append(dest, L'}');
-            return;
-        case EXPRESSION_LITERAL_STRING:
-            WString s;
-            WString_append(dest, '"');
-            if (WString_create(&s)) {
-                if (WString_from_utf8_bytes(&s, (char*)expr->literal.string.bytes,
-                                        expr->literal.string.len)) {
-                    WString_append_count(dest, s.buffer, s.length);
-                }
-                WString_free(&s);
-            }
-            WString_append(dest, '"');
-            return;
-        case EXPRESSION_VARIABLE:
-            char* n = (char*)parser->name_table.data[expr->variable.ix].name;
-            uint64_t len = parser->name_table.data[expr->variable.ix].name_len;
-            if (WString_create(&s)) {
-                if (WString_from_utf8_bytes(&s, n, len)) {
-                    WString_append_count(dest, s.buffer, s.length);
-                }
-                WString_free(&s);
-            }
-            return;
-        case EXPRESSION_ARRAY_INDEX:
-            WString_append(dest, '(');
-            fmt_expression(expr->array_index.array, parser, dest);
-            WString_append(dest, '[');
-            fmt_expression(expr->array_index.index, parser, dest);
-            WString_append(dest, ']');
-            WString_append(dest, ')');
-            return;
-        default:
-            WString_extend(dest, L"UNKOWN");
-            return;
-    }
-}
-
-void fmt_statement(Statement* statement, Parser* parser, WString* dest) {
-    switch (statement->type) {
-    case STATEMENT_ASSIGN:
-        fmt_expression(statement->assignment.lhs, parser, dest);
-        WString_extend(dest, L" = ");
-        fmt_expression(statement->assignment.rhs, parser, dest);
-        WString_append(dest, L';');
-        WString_append(dest, L'\n');
-        return;
-    case STATEMENT_EXPRESSION:
-        fmt_expression(statement->expression, parser, dest);
-        WString_append(dest, L';');
-        WString_append(dest, L'\n');
-        return;
-    case STATEMENT_IF:
-        if (statement->if_.condition) {
-            WString_extend(dest, L"if ");
-            fmt_expression(statement->if_.condition, parser, dest);
-            WString_append(dest, L' ');
-        }
-        WString_extend(dest, L"{\n");
-        for (uint64_t ix = 0; ix < statement->if_.statement_count; ++ix) {
-            fmt_statement(statement->if_.statements[ix], parser, dest);
-        }
-        WString_extend(dest, L"}");
-        if (statement->if_.else_branch != NULL) {
-            WString_extend(dest, L" else ");
-            fmt_statement(statement->if_.else_branch, parser, dest);
-        } else {
-            WString_append(dest, '\n');
-        }
-        return;
-    case STATEMENT_WHILE:
-        WString_extend(dest, L"while ");
-        fmt_expression(statement->if_.condition, parser, dest);
-        WString_extend(dest, L" {\n");
-        for (uint64_t ix = 0; ix < statement->if_.statement_count; ++ix) {
-            fmt_statement(statement->if_.statements[ix], parser, dest);
-        }
-        WString_extend(dest, L"}\n");
-        return;
-    case STATEMET_INVALID:
-        WString_extend(dest, L"BAD STATEMENT");
-        break;
-    }
-}
-
-void fmt_statements(Statement** s, uint64_t count, Parser* parser, WString* dest) {
-    for (uint64_t ix = 0; ix < count; ++ix) {
-        fmt_statement(s[ix], parser, dest);
-    }
-}
-
-void dump_errors(Parser* parser) {
-    WString s;
-    WString_create(&s);
-    fmt_errors(parser, &s);
-    _wprintf_e(L"%s", s.buffer);
-    parser->first_error = NULL;
-    parser->last_error = NULL;
-    WString_free(&s);
-}
-
-#define abs(a) ((a) < 0 ? (a) : (-a))
-#ifdef _MSC_VER
-#define assert(e) if (!(e)) { _wprintf_e(L"Assertion failed: '%s' at %S:%u", L#e, __FILE__, __LINE__); ExitProcess(1); }
-#else
-#include <assert.h>
-#endif
-
-int main() {
-    Parser parser;
-    if (!Parser_create(&parser)) {
-        _wprintf_e(L"Failed creating parser\n");
-        return 1;
-    }
-
-    //                   (1 && (2 - (3 / 4)))
-    const char * data = "1 && 2 - 3 / 4";
-    parser.indata = (uint8_t*)data;
-    parser.input_size = strlen(data);
-    Expression* expr = parse_expression(&parser);
-    WString output;
-    WString_create(&output);
-    fmt_expression(expr, &parser, &output);
-
-    assert(expr->type == EXPRESSION_BINOP);
-    assert(expr->binop.op == BINOP_BOOL_AND);
-    assert(expr->line.start == 0);
-    assert(expr->line.end == 14);
-
-    assert(expr->binop.lhs->type == EXPRESSION_LITERAL_UINT);
-    assert(expr->binop.lhs->literal.uint == 1);
-    assert(expr->binop.lhs->line.start == 0);
-    assert(expr->binop.lhs->line.end == 1);
-
-    assert(expr->binop.rhs->type == EXPRESSION_BINOP);
-    assert(expr->binop.rhs->binop.op == BINOP_SUB);
-    assert(expr->binop.rhs->line.start == 5);
-    assert(expr->binop.rhs->line.end == 14);
-
-    assert(expr->binop.rhs->binop.lhs->type == EXPRESSION_LITERAL_UINT);
-    assert(expr->binop.rhs->binop.lhs->literal.uint == 2);
-    assert(expr->binop.rhs->binop.lhs->line.start == 5);
-    assert(expr->binop.rhs->binop.lhs->line.end == 6);
-
-    assert(expr->binop.rhs->binop.rhs->type == EXPRESSION_BINOP);
-    assert(expr->binop.rhs->binop.rhs->binop.op == BINOP_DIV);
-    assert(expr->binop.rhs->binop.rhs->line.start == 9);
-    assert(expr->binop.rhs->binop.rhs->line.end == 14);
-
-    assert(expr->binop.rhs->binop.rhs->binop.lhs->type == EXPRESSION_LITERAL_UINT);
-    assert(expr->binop.rhs->binop.rhs->binop.lhs->literal.uint == 3);
-    assert(expr->binop.rhs->binop.rhs->binop.lhs->line.start == 9);
-    assert(expr->binop.rhs->binop.rhs->binop.lhs->line.end == 10);
-
-    assert(expr->binop.rhs->binop.rhs->binop.rhs->type == EXPRESSION_LITERAL_UINT);
-    assert(expr->binop.rhs->binop.rhs->binop.rhs->literal.uint == 4);
-    assert(expr->binop.rhs->binop.rhs->binop.rhs->line.start == 13);
-    assert(expr->binop.rhs->binop.rhs->binop.rhs->line.end == 14);
-
-    // ((1 - 2) && (3 / 4))
-    data = "1.2e-4 - .2e20 && 3e1 / 4";
-    parser.indata = (uint8_t*)data;
-    parser.input_size = strlen(data);
-    parser.pos = 0;
-    expr = parse_expression(&parser);
-    WString_clear(&output);
-    fmt_expression(expr, &parser, &output);
-
-    if (parser.first_error != NULL) {
-        _wprintf_e(L"Error: %d: %S line %llu\n", parser.first_error->kind,
-                parser.first_error->file, parser.first_error->internal_line);
-    }
-
-
-    assert(expr->type == EXPRESSION_BINOP);
-    assert(expr->binop.op == BINOP_BOOL_AND);
-    assert(expr->line.start == 0);
-    assert(expr->line.end == 25);
-
-    assert(expr->binop.lhs->type == EXPRESSION_BINOP);
-    assert(expr->binop.lhs->binop.op == BINOP_SUB);
-    assert(expr->binop.lhs->line.start == 0);
-    assert(expr->binop.lhs->line.end == 14);
-
-    assert(expr->binop.lhs->binop.lhs->type == EXPRESSION_LITERAL_FLOAT);
-    assert(abs(expr->binop.lhs->binop.lhs->literal.float64 - 1.2e-4) < 1e-20);
-    assert(expr->binop.lhs->binop.lhs->line.start == 0);
-    assert(expr->binop.lhs->binop.lhs->line.end == 6);
-
-    assert(expr->binop.lhs->binop.rhs->type == EXPRESSION_LITERAL_FLOAT);
-    assert(abs(expr->binop.lhs->binop.rhs->literal.float64 - .2e20) < 1e-20);
-    assert(expr->binop.lhs->binop.rhs->line.start == 9);
-    assert(expr->binop.lhs->binop.rhs->line.end == 14);
-
-    assert(expr->binop.rhs->type == EXPRESSION_BINOP);
-    assert(expr->binop.rhs->binop.op == BINOP_DIV);
-    assert(expr->binop.rhs->line.start == 18);
-    assert(expr->binop.rhs->line.end == 25);
-
-    assert(expr->binop.rhs->binop.lhs->type == EXPRESSION_LITERAL_FLOAT);
-    assert(abs(expr->binop.rhs->binop.lhs->literal.float64 - 3e1) < 1e-20);
-    assert(expr->binop.rhs->binop.lhs->line.start == 18);
-    assert(expr->binop.rhs->binop.lhs->line.end == 21);
-
-    assert(expr->binop.rhs->binop.rhs->type == EXPRESSION_LITERAL_UINT);
-    assert(expr->binop.rhs->binop.rhs->literal.uint == 4);
-    assert(expr->binop.rhs->binop.rhs->line.start == 24);
-    assert(expr->binop.rhs->binop.rhs->line.end == 25);
-
-    // (((1 / 2) - 3) && 4)
-    data = "1 / 2 - 3 && 4";
-    parser.indata = (uint8_t*)data;
-    parser.input_size = strlen(data);
-    parser.pos = 0;
-    expr = parse_expression(&parser);
-    WString_clear(&output);
-    fmt_expression(expr, &parser, &output);
-    assert(WString_equals_str(&output, L"((({1} / {2}) - {3}) && {4})"));
-
-    data = "1() / 2(\"a\", \"b\\x3b\\\"c\") - 3() && 4()";
-    parser.indata = (uint8_t*)data;
-    parser.input_size = strlen(data);
-    parser.pos = 0;
-    expr = parse_expression(&parser);
-    WString_clear(&output);
-    fmt_expression(expr, &parser, &output);
-    assert(WString_equals_str(&output, L"(((({1}()) / ({2}(\"a\", \"b;\"c\"))) - ({3}())) && ({4}()))"));
-
-    data = "1() / 2(\"a\", \"b\") - 3(!!!5 + +-6[1+-5] + ~!7) && 4()";
-    parser.indata = (uint8_t*)data;
-    parser.input_size = strlen(data);
-    parser.pos = 0;
-    expr = parse_expression(&parser);
-    WString_clear(&output);
-    fmt_expression(expr, &parser, &output);
-    assert(WString_equals_str(&output, L"(((({1}()) / ({2}(\"a\", \"b\"))) - ({3}(((!(!(!{5}))) + ((+(-({6}[({1} + (-{5}))]))) + (~(!{7}))))))) && ({4}()))"));
-
-    dump_errors(&parser);
-
-    uint64_t count;
-    data = "uint64 a = 10; uint64 b = 2 * 2; a + b; if (a > b) { float64 x = 10; }"
-           "else if (b > a) { float64 x = 11; while (x > 0) { x = x - 1; } } else { a = 5; }"
-           "uint64[10] array; array[0] = 123; }";
-    parser.indata = (uint8_t*)data;
-    parser.input_size = strlen(data);
-    parser.pos = 0;
-    Statement** statements = parse_statements(&parser, &count);
-    dump_errors(&parser);
-    WString_clear(&output);
-    fmt_statements(statements, count, &parser, &output);
-    _wprintf_e(L"%s", output.buffer);
-
-    return 0;
-}
-
 
 
