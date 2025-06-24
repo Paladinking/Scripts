@@ -13,8 +13,8 @@ BUILD_DIR = "build"
 BIN_DIR = "bin"
 
 
-CLFLAGS_DBG = "-g -Og -march=native"
-LINKFLAGS_DBG = "-g -Og -march=native"
+CLFLAGS_DBG = "-g -Og -O0 -march=native"
+LINKFLAGS_DBG = "-g -Og -O0 -march=native"
 
 BUILD_DIR_DBG = "build-gcc"
 BIN_DIR_DBG = "bin-gcc"
@@ -54,7 +54,7 @@ def main():
                  "_vsnprintf", "_vsnwprintf", "_vscprintf", "memset", 
                  "wcscmp", "strcmp", "_fltused", "wcschr", "wcsrchr", 
                  "strtol", "wcsncmp", "memcmp", "tolower", "strncmp",
-                 "strnlen", "wcsstr", "_snprintf", "memchr", "qsort"]
+                 "strnlen", "wcsstr", "_snprintf", "memchr", "qsort", "_vsnprintf_s"]
     tablesymbos = ["RtlInitializeGenericTable", "RtlInsertElementGenericTable",
                    "RtlDeleteElementGenericTable", "RtlLookupElementGenericTable"]
     kernelbasesymbols = ["PathMatchSpecW"]
@@ -155,8 +155,17 @@ def main():
                    "src/printf.c", "src/dynamic_string.c", "src/args.c", ntdll)
 
     with Context(group="compiler", includes=["src"], namespace="compiler"):
-        Executable("parser.exe", "src/compiler/parser.c", "src/printf.c", hashmap,
-                   "src/dynamic_string.c", "src/args.c", "src/arena.c", ntdll)
+        link = "WS2_32.lib" if backend().name == "msvc" else "-lws2_32"
+        comp_src = ["src/compiler/parser.c", "src/compiler/format.c",
+                    "src/compiler/quads.c", "src/compiler/utils.c",
+                    "src/compiler/code_generation.c", "src/compiler/amd64_asm.c",
+                    "src/compiler/log.c", "src/compiler/type_checker.c",
+                    "src/printf.c", "src/dynamic_string.c", "src/args.c",
+                    "src/glob.c", "src/arena.c", ntdll]
+        Executable("parser.exe", "src/compiler/compiler.c", *comp_src,
+                   extra_link_flags=link)
+        Executable("tests/test_parser.exe", "src/compiler/tests/test_parser.c", *comp_src,
+                   extra_link_flags=link)
     
     build(__file__)
 

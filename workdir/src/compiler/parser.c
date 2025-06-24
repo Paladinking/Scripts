@@ -66,6 +66,7 @@ void fatal_error_cb(Parser* parser, enum ParseErrorKind error, LineInfo info,
             _wprintf_e(L"Fatal error: internal error at %S line %llu\n", file, line);
             break;
     }
+    Log_Shutdown();
     ExitProcess(1);
 }
 
@@ -84,13 +85,6 @@ void error_cb(Parser* parser, enum ParseErrorKind error, LineInfo line,
         parser->last_error->next = e;
         parser->last_error = e;
     }
-}
-
-void parser_out_of_memory(void* ctx) {
-    Parser* parser = ctx;
-    LineInfo i;
-    i.real = false;
-    fatal_error(parser, PARSE_ERROR_OUTOFMEMORY, i);
 }
 
 LineInfo current_pos(Parser* parser) {
@@ -136,7 +130,7 @@ name_id insert_name(Parser* parser, const uint8_t* name, uint32_t len, type_id t
         NameData* new_nd = Mem_realloc(parser->name_table.data,
                                        new_cap * sizeof(NameData));
         if (new_nd == NULL) {
-            parser_out_of_memory(parser);
+            out_of_memory(parser);
             return NAME_ID_INVALID;
         }
         parser->name_table.data = new_nd;
@@ -144,6 +138,7 @@ name_id insert_name(Parser* parser, const uint8_t* name, uint32_t len, type_id t
     }
     parser->name_table.size += 1;
     parser->name_table.data[n_id].kind = kind;
+    parser->name_table.data[n_id].has_var = false;
     parser->name_table.data[n_id].parent = id;
     parser->name_table.data[n_id].hash_link = h;
     parser->name_table.data[n_id].name = name_ptr;
@@ -178,13 +173,49 @@ type_id create_type_id(Parser* parser) {
         TypeData* d = Mem_realloc(parser->type_table.data,
                 parser->type_table.capacity * 2 * sizeof(TypeData));
         if (d == NULL) {
-            parser_out_of_memory(parser);
+            out_of_memory(parser);
         }
         parser->type_table.data = d;
         parser->type_table.capacity *= 2;
     }
     parser->type_table.size += 1;
     return parser->type_table.size - 1;
+}
+
+AllocInfo allocation_of_type(Parser* parser, TypeDef* def) {
+    if (def->kind == TYPEDEF_UINT64 || def->kind == TYPEDEF_INT64 || def->kind == TYPEDEF_FLOAT64) {
+        return (AllocInfo){8, 8};
+    } 
+    if (def->kind == TYPEDEF_BOOL) {
+        return (AllocInfo){1, 1};
+    }
+    if (def->kind == TYPEDEF_NONE || def->kind == TYPEDEF_FUNCTION) {
+        return (AllocInfo){0, 1};
+    }
+    if (def->kind == TYPEDEF_CSTRING) {
+        return (AllocInfo){PTR_SIZE, PTR_SIZE};
+    }
+    // TODO: struct
+    LineInfo l = {0, 0, false};
+    LOG_ERROR("Unkown typedef %d", def->kind);
+    fatal_error(parser, PARSE_ERROR_INTERNAL, l);
+    return (AllocInfo){0, 0};
+}
+
+AllocInfo allocation_of(Parser* parser, type_id id) {
+    assert(id != TYPE_ID_INVALID);
+    TypeDef* def = parser->type_table.data[id].type_def;
+    if (parser->type_table.data[id].kind == TYPE_NORMAL) {
+        return allocation_of_type(parser, def);
+    } else {
+        AllocInfo root = allocation_of_type(parser, def);
+        uint64_t scale = parser->type_table.data[id].array_size;
+        // For now...
+        assert(parser->type_table.data[parser->type_table.data[id].parent].kind == TYPE_NORMAL);
+
+        root.size *= scale;
+        return root;
+    }
 }
 
 type_id type_of(Parser* parser, name_id name) {
@@ -194,16 +225,14 @@ type_id type_of(Parser* parser, name_id name) {
     return parser->name_table.data[name].type;
 } 
 
-type_id array_of(Parser* parser, type_id id) {
-    if (parser->type_table.data[id].array_type == TYPE_ID_INVALID) {
-        type_id t = create_type_id(parser);
-        parser->type_table.data[t].kind = TYPE_ARRAY;
-        parser->type_table.data[t].type_def = parser->type_table.data[id].type_def;
-        parser->type_table.data[t].parent = id;
-        parser->type_table.data[t].array_type = TYPE_ID_INVALID;
-        parser->type_table.data[id].array_type = t;
-    }
-    return parser->type_table.data[id].array_type;
+type_id array_of(Parser* parser, type_id id, uint64_t size) {
+    type_id t = create_type_id(parser);
+    parser->type_table.data[t].kind = TYPE_ARRAY;
+    parser->type_table.data[t].type_def = parser->type_table.data[id].type_def;
+    parser->type_table.data[t].parent = id;
+    parser->type_table.data[t].array_size = size;
+
+    return t;
 }
 
 // Also creates unique function type
@@ -217,7 +246,7 @@ name_id insert_function_name(Parser* parser, const uint8_t* name, uint32_t name_
     TypeData* d = &parser->type_table.data[t];
     d->parent = TYPE_ID_INVALID;
     d->kind = TYPE_NORMAL;
-    d->array_type = TYPE_ID_INVALID;
+    d->array_size = 0;
     d->type_def = Arena_alloc_type(&parser->arena, TypeDef);
     d->type_def->kind = TYPEDEF_FUNCTION;
     d->type_def->func = def;
@@ -240,9 +269,11 @@ name_id find_name(Parser* parser, const uint8_t* name, uint32_t len) {
     return id;
 }
 
-name_id insert_variable_name(Parser* parser, const uint8_t* name, uint32_t name_len, type_id t, uint64_t pos) {
+name_id insert_variable_name(Parser* parser, const uint8_t* name, uint32_t name_len, type_id t, uint64_t pos,
+                             func_id func_id) {
     name_id id = insert_name(parser, name, name_len,
                              t, NAME_VARIABLE);
+    parser->name_table.data[id].function = func_id;
     if (id == NAME_ID_INVALID) {
         name_id prev = find_name(parser, name, name_len);
         LineInfo l = {true, pos, pos};
@@ -263,7 +294,7 @@ void begin_scope(Parser* parser) {
         uint64_t c = parser->scope_capacity * 2;
         name_id* n = Mem_realloc(parser->scope_stack, c * sizeof(name_id));
         if (n == NULL) {
-            parser_out_of_memory(parser);
+            out_of_memory(parser);
             return;
         }
         parser->scope_stack = n;
@@ -289,7 +320,7 @@ void parser_add_builtin(Parser* parser, type_id id, enum TypeDefKind kind,
     TypeDef* def = Arena_alloc_type(&parser->arena, TypeDef);
     def->kind = kind;
     parser->type_table.data[id].kind = TYPE_NORMAL;
-    parser->type_table.data[id].array_type = TYPE_ID_INVALID;
+    parser->type_table.data[id].array_size = 0;
     parser->type_table.data[id].parent = TYPE_ID_INVALID;
     parser->type_table.data[id].type_def = def;
 
@@ -1034,7 +1065,7 @@ Expression* parse_expression(Parser* parser) {
     uint64_t stack_cap = 8;
     struct Node* stack = Mem_alloc(8 * sizeof(struct Node));
     if (stack == NULL) {
-        parser_out_of_memory(parser);
+        out_of_memory(parser);
         return NULL;
     }
 
@@ -1046,7 +1077,7 @@ loop:
             struct Node* n = Mem_realloc(stack,
                     stack_cap * sizeof(struct Node));
             if (n == NULL) {
-                parser_out_of_memory(parser);
+                out_of_memory(parser);
                 Mem_free(stack);
                 return NULL;
             }
@@ -1256,7 +1287,7 @@ void skip_statement(Parser* parser) {
     }
 }
 
-Statement** parse_statements(Parser* parser, uint64_t* count) {
+Statement** parse_statements(Parser* parser, uint64_t* count, func_id function) {
 
     struct Node {
         Statement* statement;
@@ -1429,8 +1460,6 @@ Statement** parse_statements(Parser* parser, uint64_t* count) {
                 skip_spaces(parser);
                 uint32_t len;
                 uint8_t c = expect_data(parser);
-                ArraySize* array_size = NULL;
-                ArraySize* last_array_size = NULL;
                 while (c == '[') {
                     parser->pos += 1;
                     uint64_t size;
@@ -1447,29 +1476,19 @@ Statement** parse_statements(Parser* parser, uint64_t* count) {
                         skip_statement(parser);
                         continue;
                     }
-                    t = array_of(parser, t);
+                    t = array_of(parser, t, size);
                     skip_spaces(parser);
                     c = expect_data(parser);
-                    if (array_size == NULL) {
-                        array_size = Arena_alloc_type(&parser->arena, ArraySize);
-                        last_array_size = array_size;
-                    } else {
-                        last_array_size->next = Arena_alloc_type(&parser->arena, ArraySize);
-                        last_array_size = last_array_size->next;
-                    }
-                    last_array_size->size = size;
-                    last_array_size->next = NULL;
                 }
 
                 uint64_t name_start = parser->pos;
                 const uint8_t* name = parse_name(parser, &len);
                 name_id n;
                 if (name == NULL || 
-                    (n = insert_variable_name(parser, name, len, t, pos)) == NAME_ID_INVALID) {
+                    (n = insert_variable_name(parser, name, len, t, pos, function)) == NAME_ID_INVALID) {
                     skip_statement(parser);
                     continue;
                 }
-                parser->name_table.data[n].array_size = array_size;
                 uint64_t name_end = parser->pos;
 
                 skip_spaces(parser);
@@ -1620,6 +1639,7 @@ FunctionDef* parse_function(Parser* parser) {
     }
 
     FunctionDef* f = parser->name_table.data[name].func_def;
+    func_id id = parser->function_table.size;
 
     CallArg* args = Arena_alloc_count(&parser->arena, CallArg, f->arg_count);
     if (!expect_char(parser, '(')) {
@@ -1652,7 +1672,7 @@ FunctionDef* parse_function(Parser* parser) {
             args[ix].line.real = false;
             continue;
         }
-        name_id var_id = insert_variable_name(parser, var_name, len, var_type, p);
+        name_id var_id = insert_variable_name(parser, var_name, len, var_type, p, id);
         args[ix].name = var_id;
         args[ix].line.start = p;
         args[ix].line.end = parser->pos;
@@ -1689,7 +1709,7 @@ FunctionDef* parse_function(Parser* parser) {
 
     uint64_t statement_count;
     LOG_DEBUG("parse_function: parsing statements");
-    Statement** statements = parse_statements(parser, &statement_count);
+    Statement** statements = parse_statements(parser, &statement_count, id);
     f->statements = statements;
     f->statement_count = statement_count;
     end_scope(parser);
@@ -1766,7 +1786,7 @@ bool parse_program(Parser* parser) {
 
 bool Parser_create(Parser* parser) {
     LOG_DEBUG("Creating parser");
-    if (!Arena_create(&parser->arena, 0x7fffffff, parser_out_of_memory,
+    if (!Arena_create(&parser->arena, 0x7fffffff, out_of_memory,
                       parser)) {
         return false;
     }

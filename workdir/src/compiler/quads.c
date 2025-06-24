@@ -1,67 +1,94 @@
 #include "quads.h"
 #include "mem.h"
 
-static void out_of_memory(void* ctx) {
-    Parser* parser = ctx;
-    LineInfo i;
-    i.real = false;
-    fatal_error(parser, PARSE_ERROR_OUTOFMEMORY, i);
-}
-
 
 typedef struct QuadList {
-    Quad* quads;
+    Quad* head;
+    Quad* tail;
     uint64_t quad_count;
-    uint64_t var_count;
-    uint64_t quad_cap;
+    uint64_t label_count;
     Arena* arena;
+
+    VarList vars;
 } QuadList;
 
 Quad* QuadList_addquad(QuadList* quads, uint64_t type, var_id dest) {
-    if (quads->quad_count == quads->quad_cap) {
-        quads->quad_cap += 256;
-        Arena_alloc_count(quads->arena, Quad, 256);
+    Quad* q = Arena_alloc_type(quads->arena, Quad);
+    if (quads->head == NULL) {
+        q->last_quad = NULL;
+        q->next_quad = NULL;
+        quads->head = q;
+        quads->tail = q;
+    } else {
+        quads->tail->next_quad = q;
+        q->last_quad = quads->tail;
+        q->next_quad = NULL;
+        quads->tail = q;
     }
-    quads->quads[quads->quad_count].type = type;
-    quads->quads[quads->quad_count].dest = dest;
+    q->type = type;
+    q->dest = dest;
     quads->quad_count += 1;
-    return quads->quads + quads->quad_count - 1;
+    return q;
 }
 
-var_id QuadList_addvar(QuadList* quads, name_id name, type_id type) {
-    if (quads->var_count == quads->quad_cap) {
-        quads->quad_cap += 256;
-        Arena_alloc_count(quads->arena, Quad, 256);
+void QuadList_mark_arg(QuadList* quads, var_id id) {
+    quads->vars.data[id].kind = VAR_CALLARG;
+}
+
+var_id QuadList_addvar(QuadList* quads, name_id name, type_id type, Parser* parser) {
+    if (quads->vars.size == quads->vars.cap) {
+        uint64_t c = quads->vars.cap * 2;
+        VarData* data = Mem_realloc(quads->vars.data, c * sizeof(VarData));
+        if (data == NULL) {
+            out_of_memory(NULL);
+        }
+        quads->vars.data = data;
+        quads->vars.cap = c;
     }
-    quads->quads[quads->var_count].var_entry.name = name;
-    quads->quads[quads->var_count].var_entry.type = type;
-    quads->quads[quads->var_count].var_entry.reads = 0;
-    quads->quads[quads->var_count].var_entry.writes = 0;
-    quads->quads[quads->var_count].var_entry.array_size = NULL;
-    quads->var_count += 1;
-    return quads->var_count - 1;
-}
-
-label_id QuadList_addlabel(QuadList* quads, quad_id dest) {
-    if (quads->var_count == quads->quad_cap) {
-        quads->quad_cap += 256;
-        Arena_alloc_count(quads->arena, Quad, 256);
+    var_id id = quads->vars.size;
+    quads->vars.data[id].name = name;
+    quads->vars.data[id].type = type;
+    quads->vars.data[id].alloc_type = ALLOC_NONE;
+    quads->vars.data[id].reads = 0;
+    quads->vars.data[id].writes = 0;
+    if (parser->type_table.data[type].type_def->kind == TYPEDEF_FUNCTION) {
+        quads->vars.data[id].kind = VAR_FUNCTION;
+        if (name != NAME_ID_INVALID) {
+            LOG_DEBUG("Function '%.*s' is %llu", parser->name_table.data[name].name_len, 
+                      parser->name_table.data[name].name, id);
+        }
+    } else if (name == NAME_ID_INVALID) {
+        quads->vars.data[id].kind = VAR_TEMP;
+    } else {
+        func_id func = parser->name_table.data[name].function;
+        if (parser->type_table.data[type].kind == TYPE_ARRAY) {
+            quads->vars.data[id].kind = VAR_ARRAY;
+        } else if (func == FUNC_ID_GLOBAL) {
+            quads->vars.data[id].kind = VAR_GLOBAL;
+        } else {
+            quads->vars.data[id].kind = VAR_LOCAL;
+        }
+        quads->vars.data[id].function = func;
+        parser->name_table.data[name].has_var = true;
+        parser->name_table.data[name].variable = id;
+        LOG_DEBUG("'%.*s' is %llu", parser->name_table.data[name].name_len, 
+                  parser->name_table.data[name].name, id);
     }
-    quads->quads[quads->var_count].label = dest;
-    quads->var_count += 1;
-    return quads->var_count - 1;
+    AllocInfo alloc = allocation_of(parser, type);
+    quads->vars.data[id].alignment = alloc.allignment;
+    quads->vars.data[id].byte_size = alloc.size;
+
+    quads->vars.size += 1;
+    return id;
 }
 
-void QuadList_setlabel(QuadList* quads, label_id label_id, quad_id label) {
-    quads->quads[label_id].label = label;
-}
-
-quad_id QuadList_getlabel(QuadList* quads, label_id label_id) {
-    return quads->quads[label_id].label;
+label_id QuadList_addlabel(QuadList* quads) {
+    quads->label_count += 1;
+    return quads->label_count - 1;
 }
 
 VarData* QuadList_getvar(QuadList* quads, var_id id) {
-    return &quads->quads[id].var_entry;
+    return &quads->vars.data[id];
 }
 
 
@@ -144,7 +171,7 @@ var_id quads_unop(Parser* parser, Expression* expr, QuadList* quads,
             // Positive and paren is a no-op if no move is needed
             return v;
         }
-        dest = QuadList_addvar(quads, NAME_ID_INVALID, expr->type);
+        dest = QuadList_addvar(quads, NAME_ID_INVALID, expr->type, parser);
     }
 
     switch (expr->unop.op) {
@@ -173,21 +200,20 @@ var_id quads_unop(Parser* parser, Expression* expr, QuadList* quads,
 var_id quads_binop(Parser* parser, Expression* expr, QuadList* quads,
                    var_id dest, label_id label) {
     if (dest == VAR_ID_INVALID) {
-        dest = QuadList_addvar(quads, NAME_ID_INVALID, expr->type);
+        dest = QuadList_addvar(quads, NAME_ID_INVALID, expr->type, parser);
     }
     if (expr->binop.op == BINOP_BOOL_AND || expr->binop.op == BINOP_BOOL_OR) {
         assert(QuadList_getvar(quads, dest)->type == TYPE_ID_BOOL);
         if (label != LABEL_ID_INVALID) {
             Quad* qw = QuadList_addquad(quads, QUAD_LABEL, VAR_ID_INVALID);
             qw->op1.label = label;
-            quad_id q = quads->quad_count - 1;
-            QuadList_setlabel(quads, label, q);
         }
         return dest;
     }
     assert(label == LABEL_ID_INVALID);
     var_id lhs = expr->binop.lhs->var;
     var_id rhs = expr->binop.rhs->var;
+    assert(QuadList_getvar(quads, lhs)->type == QuadList_getvar(quads, rhs)->type);
     uint64_t quad = quad_datatype(parser, QuadList_getvar(quads, lhs)->type);
 
     switch (expr->binop.op) {
@@ -256,7 +282,7 @@ var_id quads_cast(Parser* parser, Expression* expr, QuadList* quads,
             // cast to same type: no-op
             return expr->cast.e->var;
         }
-        dest = QuadList_addvar(quads, NAME_ID_INVALID, expr->type);
+        dest = QuadList_addvar(quads, NAME_ID_INVALID, expr->type, parser);
     }
     uint64_t datatype = quad_datatype(parser, src_type);
 
@@ -282,7 +308,7 @@ var_id quads_cast(Parser* parser, Expression* expr, QuadList* quads,
 var_id quads_arrayindex(Parser* parser, Expression* expr, QuadList* quads,
                         var_id dest) {
     if (dest == VAR_ID_INVALID) {
-        dest = QuadList_addvar(quads, NAME_ID_INVALID, expr->type);
+        dest = QuadList_addvar(quads, NAME_ID_INVALID, expr->type, parser);
     }
     var_id ix = expr->array_index.index->var;
     type_id ix_type = QuadList_getvar(quads, ix)->type;
@@ -299,7 +325,7 @@ var_id quads_call(Parser* parser, Expression* expr, QuadList* quads,
                   var_id dest) {
 
     if (dest == VAR_ID_INVALID) {
-        dest = QuadList_addvar(quads, NAME_ID_INVALID, expr->type);
+        dest = QuadList_addvar(quads, NAME_ID_INVALID, expr->type, parser);
     }
 
     for (uint64_t ix = 0; ix < expr->call.arg_count; ++ix) {
@@ -307,7 +333,8 @@ var_id quads_call(Parser* parser, Expression* expr, QuadList* quads,
         type_id t = QuadList_getvar(quads, v)->type;
         uint64_t quad = quad_datatype(parser, t);
         Quad* q = QuadList_addquad(quads, QUAD_PUT_ARG | quad, VAR_ID_INVALID);
-        q->op1.var = v;
+        q->op1.uint64 = ix;
+        q->op2 = v;
     }
 
     var_id f = expr->call.function->var;
@@ -320,21 +347,6 @@ var_id quads_call(Parser* parser, Expression* expr, QuadList* quads,
     return dest;
 }
 
-void reserve(Parser* parser, void** ptr, uint64_t size, uint64_t* cap) {
-    if (*cap >= size) {
-        return;
-    }
-    while (size > *cap) {
-        (*cap) *= 2;
-    }
-    void* n = Mem_realloc(*ptr, *cap);
-    if (n == NULL) {
-        out_of_memory(parser);
-    }
-    *ptr = n;
-}
-
-#define RESERVE(p, ptr, size, cap) reserve(p, (void**)(&ptr), size, &cap)
 
 
 
@@ -361,7 +373,7 @@ var_id quads_expression(Parser* parser, Expression* expr, QuadList* quads,
 
     while (1) {
 loop:
-        RESERVE(parser, stack, stack_size + 1, stack_cap);
+        RESERVE(stack, stack_size + 1, stack_cap);
         Expression* subexpr = get_subexpr(e, 0);
         if (subexpr != NULL) {
             stack[stack_size] = (struct Node){e, 1, jmp_label, jmp_quad, 
@@ -371,25 +383,25 @@ loop:
             if (e->kind == EXPRESSION_BINOP && (
              e->binop.op == BINOP_BOOL_AND || e->binop.op == BINOP_BOOL_OR)) {
                 if (needs_var && dest == VAR_ID_INVALID) {
-                    dest = QuadList_addvar(quads, NAME_ID_INVALID, e->type);
+                    dest = QuadList_addvar(quads, NAME_ID_INVALID, e->type, parser);
                     stack[stack_size - 1].dest = dest;
                 }
                 if (jmp_quad == QUAD_JMP_FALSE) {
                     assert(!needs_var);
                     if (e->binop.op == BINOP_BOOL_OR) {
                         jmp_quad = QUAD_JMP_TRUE;
-                        jmp_label = QuadList_addlabel(quads, QUAD_ID_INVALID);
+                        jmp_label = QuadList_addlabel(quads);
                         stack[stack_size - 1].lbl = jmp_label;
                     }
                 } else if (jmp_quad == QUAD_JMP_TRUE) {
                     assert(!needs_var);
                     if (e->binop.op == BINOP_BOOL_AND) {
                         jmp_quad = QUAD_JMP_FALSE;
-                        jmp_label = QuadList_addlabel(quads, QUAD_ID_INVALID);
+                        jmp_label = QuadList_addlabel(quads);
                         stack[stack_size - 1].lbl = jmp_label;
                     }
                 } else {
-                    jmp_label = QuadList_addlabel(quads, QUAD_ID_INVALID);
+                    jmp_label = QuadList_addlabel(quads);
                     stack[stack_size - 1].lbl = jmp_label;
                     if (e->binop.op == BINOP_BOOL_OR) {
                         jmp_quad = QUAD_JMP_TRUE;
@@ -410,7 +422,7 @@ loop:
         if (e->kind != EXPRESSION_VARIABLE) {
             uint64_t datatype = quad_datatype(parser, e->type);
             if (dest == VAR_ID_INVALID) {
-                dest = QuadList_addvar(quads, NAME_ID_INVALID, e->type);
+                dest = QuadList_addvar(quads, NAME_ID_INVALID, e->type, parser);
             }
             Quad* q;
             switch(e->kind) {
@@ -436,7 +448,14 @@ loop:
                 break;
             }
         } else {
-            var_id id = parser->name_table.data[e->variable.ix].variable;
+            name_id name = e->variable.ix;
+            type_id type = parser->name_table.data[name].type;
+            var_id id;
+            if (!parser->name_table.data[name].has_var) {
+                id =  QuadList_addvar(quads, name, type, parser);
+            } else {
+                id = parser->name_table.data[name].variable;
+            }
             if (dest == VAR_ID_INVALID) {
                 dest = id;
             } else {
@@ -450,7 +469,8 @@ loop:
         if (jmp_quad == QUAD_JMP_TRUE || jmp_quad == QUAD_JMP_FALSE) {
             assert(jmp_label != LABEL_ID_INVALID);
             assert(QuadList_getvar(quads, dest)->type == TYPE_ID_BOOL);
-            Quad* q = QuadList_addquad(quads, jmp_quad, VAR_ID_INVALID);
+            Quad* q = QuadList_addquad(quads, jmp_quad | QUAD_BOOL | QUAD_8_BIT, 
+                                       VAR_ID_INVALID);
             q->op1.label = jmp_label;
             q->op2 = dest;
         }
@@ -501,7 +521,8 @@ loop:
             if (jmp_quad != 0) {
                 assert(lbl == LABEL_ID_INVALID);
                 assert(jmp_label != LABEL_ID_INVALID);
-                Quad* q = QuadList_addquad(quads, jmp_quad, VAR_ID_INVALID);
+                Quad* q = QuadList_addquad(quads, jmp_quad | QUAD_BOOL | QUAD_8_BIT, 
+                                           VAR_ID_INVALID);
                 q->op1.label = jmp_label;
                 q->op2 = dest;
             }
@@ -541,10 +562,10 @@ void quads_statements(Parser* parser, QuadList* quads, Statement** statements,
         --stack_size;
         if (s->type == STATEMENT_WHILE) {
             if (ix == 0) {
-                label_id label = QuadList_addlabel(quads, quads->quad_count);
+                label_id label = QuadList_addlabel(quads);
                 Quad* q = QuadList_addquad(quads, QUAD_LABEL, VAR_ID_INVALID);
                 q->op1.label = label;
-                label_id l2 = QuadList_addlabel(quads, QUAD_ID_INVALID);
+                label_id l2 = QuadList_addlabel(quads);
                 quads_expression(parser, s->while_.condition, quads, l2, 
                                  QUAD_JMP_FALSE, VAR_ID_INVALID, false);
                 ++stack_size;
@@ -552,7 +573,7 @@ void quads_statements(Parser* parser, QuadList* quads, Statement** statements,
                 stack[stack_size - 1].l1 = label;
                 stack[stack_size - 1].l2 = l2;
                 uint64_t c = s->while_.statement_count;
-                RESERVE(parser, stack, stack_size + c, stack_cap);
+                RESERVE(stack, stack_size + c, stack_cap);
                 for (uint64_t ix = 0; ix < c; ++ix) {
                     stack[stack_size + ix] = (struct Node) 
                         {s->while_.statements[c - ix - 1], 0,
@@ -562,7 +583,6 @@ void quads_statements(Parser* parser, QuadList* quads, Statement** statements,
             } else {
                 Quad* q = QuadList_addquad(quads, QUAD_JMP, VAR_ID_INVALID);
                 q->op1.label = l1;
-                QuadList_setlabel(quads, l2, quads->quad_count);
                 q = QuadList_addquad(quads, QUAD_LABEL, VAR_ID_INVALID);
                 q->op1.label = l2;
             }
@@ -570,10 +590,10 @@ void quads_statements(Parser* parser, QuadList* quads, Statement** statements,
         } else if (s->type == STATEMENT_IF) {
             if (ix == 0) {
                 assert(s->if_.condition != NULL);
-                label_id l1 = QuadList_addlabel(quads, QUAD_ID_INVALID);
+                label_id l1 = QuadList_addlabel(quads);
                 label_id l2 = l1;
                 if (s->if_.else_branch != NULL) {
-                    l2 = QuadList_addlabel(quads, QUAD_ID_INVALID);
+                    l2 = QuadList_addlabel(quads);
                 }
                 quads_expression(parser, s->if_.condition, quads, l2,
                                  QUAD_JMP_FALSE, VAR_ID_INVALID, false);
@@ -582,7 +602,7 @@ void quads_statements(Parser* parser, QuadList* quads, Statement** statements,
                 stack[stack_size - 1].l1 = l1;
                 stack[stack_size - 1].l2 = l2;
                 uint64_t c = s->if_.statement_count;
-                RESERVE(parser, stack, stack_size + c, stack_cap);
+                RESERVE(stack, stack_size + c, stack_cap);
                 for (uint64_t ix = 0; ix < c; ++ix) {
                     stack[stack_size + ix] = (struct Node) 
                         {s->if_.statements[c - ix - 1], 0,
@@ -591,7 +611,6 @@ void quads_statements(Parser* parser, QuadList* quads, Statement** statements,
                 stack_size += c;
             } else {
                 if (s->if_.else_branch == NULL) {
-                    QuadList_setlabel(quads, l1, quads->quad_count);
                     Quad* q = QuadList_addquad(quads, QUAD_LABEL, 
                             VAR_ID_INVALID);
                     q->op1.label = l1;
@@ -599,13 +618,12 @@ void quads_statements(Parser* parser, QuadList* quads, Statement** statements,
                 }
                 Quad* q = QuadList_addquad(quads, QUAD_JMP, VAR_ID_INVALID);
                 q->op1.label = l1;
-                QuadList_setlabel(quads, l2, quads->quad_count);
                 q = QuadList_addquad(quads, QUAD_LABEL, VAR_ID_INVALID);
                 q->op1.label = l2;
                 s = s->if_.else_branch;
                 l2 = l1;
                 if (s->if_.else_branch != NULL) {
-                    l2 = QuadList_addlabel(quads, QUAD_ID_INVALID);
+                    l2 = QuadList_addlabel(quads);
                 }
                 if (s->if_.condition != NULL) {
                     quads_expression(parser, s->if_.condition, quads, l2,
@@ -615,7 +633,7 @@ void quads_statements(Parser* parser, QuadList* quads, Statement** statements,
                 stack[stack_size - 1].s = s;
                 stack[stack_size - 1].l2 = l2;
                 uint64_t c = s->if_.statement_count;
-                RESERVE(parser, stack, stack_size + c, stack_cap);
+                RESERVE(stack, stack_size + c, stack_cap);
                 for (uint64_t ix = 0; ix < c; ++ix) {
                     stack[stack_size + ix] = (struct Node) 
                         {s->if_.statements[c - ix - 1], 0,
@@ -630,7 +648,11 @@ void quads_statements(Parser* parser, QuadList* quads, Statement** statements,
             Expression* lhs = s->assignment.lhs;
             Expression* rhs = s->assignment.rhs;
             if (lhs->kind == EXPRESSION_VARIABLE) {
+                if (!parser->name_table.data[lhs->variable.ix].has_var) {
+                    QuadList_addvar(quads, lhs->variable.ix, lhs->type, parser);
+                }
                 var_id v = parser->name_table.data[lhs->variable.ix].variable;
+                lhs->var = v;
                 quads_expression(parser, rhs, quads, LABEL_ID_INVALID, 
                                  0, v, true);
             } else if (lhs->kind == EXPRESSION_ARRAY_INDEX) {
@@ -647,7 +669,8 @@ void quads_statements(Parser* parser, QuadList* quads, Statement** statements,
                                  lhs->array_index.array, quads, 
                                  LABEL_ID_INVALID, 0, VAR_ID_INVALID, true);
                 var_id a = QuadList_addvar(quads, NAME_ID_INVALID, 
-                                           arr_type);
+                                           arr_type, parser);
+                rhs->var = a;
                 uint64_t datatype = quad_datatype(parser, ix_type);
                 datatype |= quad_scale(parser, rhs_type);
                 Quad* q = QuadList_addquad(quads, QUAD_CALC_ADDR | datatype, a);
@@ -658,6 +681,9 @@ void quads_statements(Parser* parser, QuadList* quads, Statement** statements,
                                      VAR_ID_INVALID);
                 q->op1.var = a;
                 q->op2 = v;
+            } else {
+                LineInfo l = {0, 0, false};
+                fatal_error(parser, PARSE_ERROR_INTERNAL, l);
             }
             continue;
         } else if (s->type == STATEMENT_EXPRESSION) {
@@ -677,28 +703,224 @@ void quads_statements(Parser* parser, QuadList* quads, Statement** statements,
     }
 }
 
-void Quad_GenerateQuads(Parser* parser, Quads* quads, Arena* arena) {
-    QuadList list = {NULL, 0, 0, 256, arena};
-    list.quads = Arena_alloc_count(arena, Quad, 256);
-    for (name_id ix = 0; ix < parser->name_table.size; ++ix) {
-        NameData* data = &parser->name_table.data[ix];
-        if (data->kind != NAME_VARIABLE && data->kind != NAME_FUNCTION) {
-            continue;
+
+void Quad_update_live(const Quad* q, VarSet* live) {
+    enum QuadType type = q->type & QUAD_TYPE_MASK;
+    switch (type) {
+    case QUAD_DIV:
+    case QUAD_MUL:
+    case QUAD_MOD:
+    case QUAD_SUB:
+    case QUAD_ADD:
+    case QUAD_RSHIFT:
+    case QUAD_LSHIFT:
+    case QUAD_CMP_EQ:
+    case QUAD_CMP_NEQ:
+    case QUAD_CMP_G:
+    case QUAD_CMP_L:
+    case QUAD_CMP_GE:
+    case QUAD_CMP_LE:
+    case QUAD_BOOL_AND:
+    case QUAD_BOOL_OR:
+    case QUAD_BIT_AND:
+    case QUAD_BIT_OR:
+    case QUAD_BIT_XOR:
+    case QUAD_GET_ADDR:
+    case QUAD_CALC_ADDR:
+        VarSet_clear(live, q->dest);
+        VarSet_set(live, q->op1.var);
+        VarSet_set(live, q->op2);
+        break;
+    case QUAD_JMP:
+    case QUAD_LABEL:
+        break;
+    case QUAD_JMP_FALSE:
+    case QUAD_JMP_TRUE:
+    case QUAD_PUT_ARG:
+        VarSet_set(live, q->op2);
+        break;
+    case QUAD_RETURN:
+        VarSet_set(live, q->op1.var);
+        break;
+    case QUAD_CALL:
+        break;
+    case QUAD_GET_RET:
+    case QUAD_GET_ARG:
+        VarSet_clear(live, q->dest);
+        break;
+    case QUAD_SET_ADDR:
+        VarSet_set(live, q->op1.var);
+        VarSet_set(live, q->op2);
+        break;
+    case QUAD_CREATE:
+        VarSet_clear(live, q->dest);
+        break;
+    case QUAD_NEGATE:
+    case QUAD_BOOL_NOT:
+    case QUAD_BIT_NOT:
+    case QUAD_CAST_TO_FLOAT64:
+    case QUAD_CAST_TO_INT64:
+    case QUAD_CAST_TO_UINT64:
+    case QUAD_CAST_TO_BOOL:
+    case QUAD_MOVE:
+        VarSet_clear(live, q->dest);
+        VarSet_set(live, q->op1.var);
+        break;
+    }
+}
+
+void Quad_add_usages(const Quad* q, VarSet* use, VarSet* define, VarList* vars) {
+    enum QuadType type = q->type & QUAD_TYPE_MASK;
+    switch (type) {
+    case QUAD_DIV:
+    case QUAD_MUL:
+    case QUAD_MOD:
+    case QUAD_SUB:
+    case QUAD_ADD:
+    case QUAD_RSHIFT:
+    case QUAD_LSHIFT:
+    case QUAD_CMP_EQ:
+    case QUAD_CMP_NEQ:
+    case QUAD_CMP_G:
+    case QUAD_CMP_L:
+    case QUAD_CMP_GE:
+    case QUAD_CMP_LE:
+    case QUAD_BOOL_AND:
+    case QUAD_BOOL_OR:
+    case QUAD_BIT_AND:
+    case QUAD_BIT_OR:
+    case QUAD_BIT_XOR:
+    case QUAD_GET_ADDR:
+    case QUAD_CALC_ADDR:
+        ++vars->data[q->op1.var].reads;
+        ++vars->data[q->op2].reads;
+        ++vars->data[q->dest].writes;
+        if (!VarSet_contains(define, q->op1.var)) {
+            VarSet_set(use, q->op1.var);
         }
-        var_id id = QuadList_addvar(&list, ix, data->type);
-        LOG_DEBUG("'%.*s' is %llu", data->name_len, data->name, id);
-        QuadList_getvar(&list, id)->array_size = data->array_size;
-        data->variable = id;
+        if (!VarSet_contains(define, q->op2)) {
+            VarSet_set(use, q->op2);
+        }
+        VarSet_set(define, q->dest);
+        break;
+    case QUAD_JMP:
+    case QUAD_LABEL:
+        break;
+    case QUAD_JMP_FALSE:
+    case QUAD_JMP_TRUE:
+    case QUAD_PUT_ARG:
+        ++vars->data[q->op2].reads;
+        if (!VarSet_contains(define, q->op2)) {
+            VarSet_set(use, q->op2);
+        }
+        break;
+    case QUAD_RETURN:
+        ++vars->data[q->op1.var].reads;
+        if (!VarSet_contains(define, q->op1.var)) {
+            VarSet_set(use, q->op1.var);
+        }
+        break;
+    case QUAD_CALL:
+        break;
+    case QUAD_GET_RET:
+    case QUAD_GET_ARG:
+        ++vars->data[q->dest].writes;
+        VarSet_set(define, q->dest);
+        break;
+    case QUAD_SET_ADDR:
+        ++vars->data[q->op1.var].reads;
+        ++vars->data[q->op2].reads;
+        if (!VarSet_contains(define, q->op1.var)) {
+            VarSet_set(use, q->op1.var);
+        }
+        if (!VarSet_contains(define, q->op2)) {
+            VarSet_set(use, q->op2);
+        }
+        break;
+    case QUAD_CREATE:
+        ++vars->data[q->dest].writes;
+        VarSet_set(define, q->dest);
+        break;
+    case QUAD_NEGATE:
+    case QUAD_BOOL_NOT:
+    case QUAD_BIT_NOT:
+    case QUAD_CAST_TO_FLOAT64:
+    case QUAD_CAST_TO_INT64:
+    case QUAD_CAST_TO_UINT64:
+    case QUAD_CAST_TO_BOOL:
+    case QUAD_MOVE:
+        ++vars->data[q->op1.var].reads;
+        ++vars->data[q->dest].writes;
+        if (!VarSet_contains(define, q->op1.var)) {
+            VarSet_set(use, q->op1.var);
+        }
+        VarSet_set(define, q->dest);
+        break;
     }
+}
 
-    for (uint64_t ix = 0; ix < parser->function_table.size; ++ix) {
+void Quad_GenerateQuads(Parser* parser, Quads* quads, Arena* arena) {
+    VarList v = {0, 8, Mem_alloc(8 * sizeof(VarData))};
+
+    QuadList list = {NULL, NULL, 0, 0, arena, v};
+    if (v.data == NULL) {
+        out_of_memory(parser);
+    }
+    assert(parser->scope_count);
+
+
+    for (func_id ix = 0; ix < parser->function_table.size; ++ix) {
         FunctionDef* def = parser->function_table.data[ix];
-        label_id l = QuadList_addlabel(&list, list.quad_count);
+        type_id t = parser->name_table.data[def->name].type;
+        QuadList_addvar(&list, def->name, t, parser);
+    }
+    // TODO: add other global variables
+
+    uint64_t global_count = list.vars.size;
+
+    for (func_id ix = 0; ix < parser->function_table.size; ++ix) {
+        FunctionDef* def = parser->function_table.data[ix];
+
+        label_id l = QuadList_addlabel(&list);
         Quad* q = QuadList_addquad(&list, QUAD_LABEL, VAR_ID_INVALID);
+        def->quad_start = q;
         q->op1.label = l;
+
+        for (uint64_t i = 0; i < def->arg_count; ++i) {
+            // Add all arguments
+            type_id var_t = parser->name_table.data[def->args[i].name].type;
+            assert(!parser->name_table.data[def->args[i].name].has_var);
+            var_id var = QuadList_addvar(&list, def->args[i].name, var_t, parser);
+            QuadList_mark_arg(&list, var);
+
+            uint64_t datatype = quad_datatype(parser, var_t);
+            Quad* q = QuadList_addquad(&list, QUAD_GET_ARG | datatype, var);
+            q->op1.uint64 = i;
+        }
+        var_id start = list.vars.size;
         quads_statements(parser, &list, def->statements, def->statement_count);
+        def->quad_end = list.tail;
+
+        // Mark all created temporary variables as a part of this function
+        for (var_id v = start; v < list.vars.size; ++v) {
+            if (list.vars.data[v].kind == VAR_TEMP) {
+                list.vars.data[v].function = ix;
+            }
+        }
+
+        // Move all variables to function, duplicate global vars
+        def->vars = list.vars;
+        list.vars.data = Mem_alloc(list.vars.cap * sizeof(VarData));
+        if (list.vars.data == NULL) {
+            out_of_memory(parser);
+        }
+        list.vars.size = global_count;
+        memcpy(list.vars.data, def->vars.data, global_count * sizeof(VarData));
     }
 
-    quads->quads = list.quads;
+    quads->head = list.head;
+    quads->tail = list.tail;
     quads->quads_count = list.quad_count;
+    quads->label_count = list.label_count;
+    quads->globals = list.vars;
 }

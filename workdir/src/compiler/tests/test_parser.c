@@ -144,7 +144,7 @@ int main() {
     parser.indata = (uint8_t*)data;
     parser.input_size = strlen(data);
     parser.pos = 0;
-    Statement** statements = parse_statements(&parser, &count);
+    Statement** statements = parse_statements(&parser, &count, 0);
     WString_clear(&output);
     assert(parser.first_error == NULL);
     assert(statements != NULL);
@@ -277,7 +277,9 @@ int main() {
     assert(arr != x);
     assert(arr != x2);
     type_id t = type_of(&parser, arr);
-    assert(t == array_of(&parser, TYPE_ID_UINT64));
+    assert(parser.type_table.data[t].parent == TYPE_ID_UINT64);
+    assert(parser.type_table.data[t].kind == TYPE_ARRAY);
+    assert(parser.type_table.data[t].array_size == 10);
     name = parser.name_table.data[arr].name;
     len = parser.name_table.data[arr].name_len;
     assert(len == 5);
@@ -286,9 +288,6 @@ int main() {
     assert(parser.type_table.data[t].kind == TYPE_ARRAY);
     assert(parser.type_table.data[t].type_def->kind == TYPEDEF_UINT64);
     assert(parser.type_table.data[t].parent == TYPE_ID_UINT64);
-    assert(parser.name_table.data[arr].array_size != NULL);
-    assert(parser.name_table.data[arr].array_size->size == 10);
-    assert(parser.name_table.data[arr].array_size->next == NULL);
     assert(statements[4]->assignment.rhs->kind == EXPRESSION_LITERAL_UINT);
     assert(statements[4]->assignment.rhs->literal.uint == 123);
     _wprintf_e(L"All tests passed\n");
