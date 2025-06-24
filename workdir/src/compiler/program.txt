@@ -1,21 +1,40 @@
 
-fn x(int64 a, uint64 b, float64 c) -> uint64 {
-uint64 a = 10;
-int64 __bee1 = 2 * 2;
-a >> __bee1;
-if (a > __bee1 || (__bee1 == 0 && a == 0)) { 
-	float64 x = 10; 
+fn x(int64 a, uint64 b) -> uint64 {
+    uint64 a = 10;
+    uint64 __bee1 = 2 * 2;
+    b = __bee1 * 3;
+    a >> __bee1;
+    hello_world();
+    if (a > __bee1 || (__bee1 == 0 && a == 0)) { 
+	int64 x = 10; 
+    } else if (__bee1 >= a) { 
+        int64 x = 11; 
+        while (x != 0) { 
+            x = x - 1; 
+        }
+    } else { 
+        a = 5; 
+        return a / 2;
+    }
+    uint64[10] array;
+    array[0] = __bee1 + b; 
 }
-else if (__bee1 >= a) { float64 x = 11; while (x != 0.0) { x = x - 1; } } else { a = 5; return a; }
-           uint64[10] array; array[0] = 123; }
 
 fn c(int64 a) -> int64 {
-    return x(a, 2, 3);
+    return x(a, 2);
 }
 
 fn hello_world() {
     int64 x = 10;
     while (c(x) < 100 || c(x) > 200) {
-        x = x + 1;
+        x = x + 1 % 1024;
     }
+
+    bool a = x > 10 && x < 100;
+    if (a) {
+        x = 20;
+    } else {
+        x = 30;
+    }
+    int64 b = x + 1;
 }

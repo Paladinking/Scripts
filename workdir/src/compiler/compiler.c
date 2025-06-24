@@ -2,6 +2,7 @@
 #include "format.h"
 #include "type_checker.h"
 #include "quads.h"
+#include "code_generation.h"
 #include "log.h"
 #include <glob.h>
 #include <printf.h>
@@ -81,6 +82,8 @@ int main() {
         outputw(out.buffer, out.length);
         WString_free(&out);
     }
+
+    Generate_code(&q, &parser.function_table, &parser.name_table, &parser.arena);
 
     Log_Shutdown();
 }

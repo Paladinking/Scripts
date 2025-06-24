@@ -4,6 +4,7 @@
 #include <arena.h>
 
 #include "parser.h"
+#include "varset.h"
 
 
 #define QUAD_64_BIT 0x010000
@@ -72,10 +73,11 @@ enum QuadType {
     QUAD_CAST_TO_UINT64, // <val>, x -> <dest>
     QUAD_CAST_TO_BOOL, // <val>, x -> <dest>
     
-    QUAD_PUT_ARG, // <val>, x -> x
+    QUAD_PUT_ARG, // [argNr], <var> -> x
     QUAD_CALL, // $func, x -> x
     QUAD_RETURN, // <val>, x -> x
     QUAD_GET_RET, // x, x -> <dest>
+    QUAD_GET_ARG, // [argNr], x -> <dest>
 
     QUAD_MOVE, // <val>, x -> <dest>
     QUAD_GET_ADDR, // <ptr>, <offset> -> <dest>
@@ -84,19 +86,6 @@ enum QuadType {
 
     QUAD_CREATE // [val], x -> <dest>
 };
-
-typedef var_id label_id;
-#define LABEL_ID_INVALID ((label_id) -1)
-typedef uint64_t quad_id;
-#define QUAD_ID_INVALID ((quad_id) -1)
-
-typedef struct VarData {
-    name_id name; // NAME_ID_INVALID for unnamed / temporary variables.
-    type_id type;
-    ArraySize* array_size;
-    uint32_t reads;
-    uint32_t writes;
-} VarData;
 
 typedef struct Quad {
     uint64_t type; // Bitwise or of QuadType, Data size and Data type
@@ -110,17 +99,23 @@ typedef struct Quad {
     var_id op2;
     var_id dest;
 
-    // Entry in var_table, might be invalid
-    union {
-        VarData var_entry;
-        quad_id label;
-    };
+    struct Quad* last_quad;
+    struct Quad* next_quad;
 } Quad;
 
 typedef struct Quads {
-    Quad* quads;
+    Quad* head;
+    Quad* tail;
     uint64_t quads_count;
+    uint64_t label_count;
+    VarList globals;
 } Quads;
+
+// Adds op1 and op2 vars to <use>, unless already part of define
+// Adds dest to define
+void Quad_add_usages(const Quad* q, VarSet* use, VarSet* define, VarList* vars);
+
+void Quad_update_live(const Quad* q, VarSet* live);
 
 void Quad_GenerateQuads(Parser* parser, Quads* quads, Arena* arena);
 

@@ -9,13 +9,13 @@ const static wchar_t* quadnames[] = {
     L"QBIT_AND", L"QBIT_OR", L"QBIT_XOR", L"QBIT_NOT",
     L"QCAST_TO_FLOAT64", L"QCAST_TO_INT64", L"QCAST_TO_UINT64",
     L"QCAST_TO_BOOL", L"QPUT_ARG",  L"QCALL", L"QRETURN",
-    L"QGET_RET", L"QMOVE", L"QGET_ADDR", L"QCALC_ADDR",
+    L"QGET_RET", L"QGET_ARG", L"QMOVE", L"QGET_ADDR", L"QCALC_ADDR",
     L"QSET_ADDR", L"QCREATE"
 };
 
 void fmt_quad(const Quad* quad, WString* dest) {
     enum QuadType type = quad->type & QUAD_TYPE_MASK;
-    if (type >= 0 && type < 38) {
+    if (type >= 0 && type < 39) {
         WString_extend(dest, quadnames[type]);
     } else {
         WString_extend(dest, L"QUNKOWN");
@@ -43,32 +43,35 @@ void fmt_quad(const Quad* quad, WString* dest) {
     case QUAD_BIT_XOR:
     case QUAD_GET_ADDR:
     case QUAD_CALC_ADDR:
-        WString_format_append(dest, L"%llu %llu -> %llu", quad->op1.var, quad->op2,
+        WString_format_append(dest, L"<%llu> <%llu> -> <%llu>", quad->op1.var, quad->op2,
                               quad->dest);
         break;
     case QUAD_JMP:
     case QUAD_LABEL:
-        WString_format_append(dest, L"%llu", quad->op1.label);
+        WString_format_append(dest, L"L%llu", quad->op1.label);
         break;
     case QUAD_JMP_FALSE:
     case QUAD_JMP_TRUE:
-        WString_format_append(dest, L"%llu %llu", quad->op1.label, quad->op2);
+        WString_format_append(dest, L"L%llu <%llu>", quad->op1.label, quad->op2);
         break;
     case QUAD_PUT_ARG:
+        WString_format_append(dest, L"<%llu>", quad->op2);
+        break;
     case QUAD_RETURN:
-        WString_format_append(dest, L"%llu", quad->op1.var);
+        WString_format_append(dest, L"<%llu>", quad->op1.var);
         break;
     case QUAD_CALL:
         WString_format_append(dest, L"$%llu", quad->op1.var);
         break;
     case QUAD_GET_RET:
-        WString_format_append(dest, L"-> %llu", quad->dest);
+    case QUAD_GET_ARG:
+        WString_format_append(dest, L"-> <%llu>", quad->dest);
         break;
     case QUAD_SET_ADDR:
-        WString_format_append(dest, L"%llu %llu", quad->op1.var, quad->op2);
+        WString_format_append(dest, L"<%llu> <%llu>", quad->op1.var, quad->op2);
         break;
     case QUAD_CREATE:
-        WString_format_append(dest, L"[] -> %llu", quad->dest);
+        WString_format_append(dest, L"[] -> <%llu>", quad->dest);
         break;
     case QUAD_NEGATE:
     case QUAD_BOOL_NOT:
@@ -78,7 +81,7 @@ void fmt_quad(const Quad* quad, WString* dest) {
     case QUAD_CAST_TO_UINT64:
     case QUAD_CAST_TO_BOOL:
     case QUAD_MOVE:
-        WString_format_append(dest, L"%llu -> %llu", quad->op1.var, quad->dest);
+        WString_format_append(dest, L"<%llu> -> <%llu>", quad->op1.var, quad->dest);
         break;
     }
     if (quad->type & QUAD_UINT) {
@@ -111,8 +114,8 @@ void fmt_quad(const Quad* quad, WString* dest) {
 }
 
 void fmt_quads(const Quads* quads, WString* dest) {
-    for (uint64_t ix = 0; ix < quads->quads_count; ++ix) {
-        fmt_quad(&quads->quads[ix], dest);
+    for (const Quad* q = quads->head; q != quads->tail->next_quad; q = q->next_quad) {
+        fmt_quad(q, dest);
         WString_append(dest, L'\n');
     } 
 }

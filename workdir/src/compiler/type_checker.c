@@ -1,13 +1,6 @@
 #include "type_checker.h"
 #include <mem.h>
 
-static void out_of_memory(void* ctx) {
-    Parser* parser = ctx;
-    LineInfo i;
-    i.real = false;
-    fatal_error(parser, PARSE_ERROR_OUTOFMEMORY, i);
-}
-
 static inline type_id require_number(Parser* parser, Expression* e) {
     if (e->type == TYPE_ID_INT64 || e->type == TYPE_ID_UINT64 ||
         e->type == TYPE_ID_FLOAT64) {
@@ -141,7 +134,7 @@ type_id typecheck_binop(Parser* parser, Expression* op) {
             b = require_bool(parser, op->binop.rhs);
         } else {
             a = require_number(parser, op->binop.lhs);
-            b = require_number(parser, op->binop.lhs);
+            b = require_number(parser, op->binop.rhs);
             merge_numbers(parser, a, b, op->binop.lhs, op->binop.rhs);
         }
         return TYPE_ID_BOOL;

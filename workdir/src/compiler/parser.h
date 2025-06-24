@@ -9,7 +9,7 @@
 #include <printf.h>
 #define assert(e) if (!(e)) { _wprintf_e(L"Assertion failed: '%s' at %S:%u", L#e, __FILE__, __LINE__); ExitProcess(1); }
 #else
-#include <assert.h>
+#define assert(e) if (!(e)) { __debugbreak(); }
 #endif
 
 #define pinned
@@ -17,6 +17,7 @@
 typedef struct Expression Expression;
 typedef struct Statement Statement;
 typedef struct FunctionDef FunctionDef;
+
 
 enum ExpressionKind {
     EXPRESSION_VARIABLE,
@@ -50,6 +51,8 @@ enum UnaryOperator {
     UNOP_BITNOT, UNOP_BOOLNOT, UNOP_NEGATVIE, UNOP_POSITIVE, UNOP_PAREN
 };
 
+#define PTR_SIZE 8
+
 // Index into type_table
 typedef uint64_t type_id;
 #define TYPE_ID_INVALID ((type_id) -1)
@@ -73,6 +76,13 @@ typedef uint64_t name_id;
 // Index into var_table (part of quads)
 typedef uint64_t var_id;
 #define VAR_ID_INVALID ((var_id) -1)
+typedef var_id label_id;
+#define LABEL_ID_INVALID ((label_id) -1)
+typedef uint64_t quad_id;
+#define QUAD_ID_INVALID ((quad_id) -1)
+typedef uint64_t func_id;
+#define FUNC_ID_GLOBAL ((func_id) - 1)
+
 
 // Index into hash table
 typedef uint32_t hash_id;
@@ -82,6 +92,60 @@ typedef struct LineInfo {
     uint64_t start;
     uint64_t end;
 } LineInfo;
+
+
+
+enum VarKind {
+    VAR_FUNCTION, // Function reference, not allocated
+    VAR_TEMP, // Unnamed variable, function allocated
+    VAR_LOCAL, // Named local variable, function allocated
+    VAR_GLOBAL, // Global variable, globaly allocated
+    VAR_CALLARG, // Argument to function, function allocated
+    VAR_ARRAY, // Local array, function allocated (mem only)
+    VAR_ARRAY_GLOBAL // Global array, globaly allocated
+};
+
+// Returns if this variable is function allocated
+static inline bool var_local(enum VarKind kind) {
+    return kind == VAR_TEMP || kind == VAR_LOCAL || kind == VAR_CALLARG ||
+           kind == VAR_ARRAY;
+}
+
+typedef struct VarData {
+    enum VarKind kind;
+    name_id name; // NAME_ID_INVALID for unnamed / temporary variables.
+    type_id type;
+
+    uint32_t byte_size;
+    uint32_t alignment;
+
+    func_id function;
+
+    uint32_t reads;
+    uint32_t writes;
+    enum {
+        ALLOC_NONE, ALLOC_REG, ALLOC_MEM, ALLOC_IMM
+    } alloc_type;
+    union {
+        struct {
+            uint32_t offset;
+        } memory;
+        uint32_t reg;
+        struct {
+            uint64_t uint64;
+            int64_t int64;
+            double float64;
+            bool boolean;
+        } imm;
+    };
+} VarData;
+
+typedef struct VarList {
+    uint64_t size;
+    uint64_t cap;
+    VarData* data;
+} VarList;
+
 
 typedef struct VariableExpr {
     name_id ix;
@@ -180,6 +244,8 @@ typedef struct CallArg pinned {
     LineInfo line;
 } CallArg;
 
+struct Quad;
+
 typedef struct FunctionDef pinned {
     name_id name;
     type_id return_type;
@@ -188,6 +254,13 @@ typedef struct FunctionDef pinned {
     uint64_t statement_count;
     Statement** statements;
     LineInfo line;
+
+    // First quad of function
+    struct Quad* quad_start;
+    // Last quad of function (inclusive)
+    struct Quad* quad_end;
+
+    VarList vars;
 } FunctionDef;
 
 typedef struct StructDef pinned {
@@ -220,7 +293,7 @@ typedef struct TypeData {
     } kind;
     TypeDef* type_def;
     type_id parent;
-    type_id array_type;
+    uint64_t array_size;
 } TypeData;
 
 typedef struct TypeTable {
@@ -234,12 +307,6 @@ typedef struct FunctionTable {
     uint64_t capacity;
     FunctionDef** data;
 } FunctionTable;
-
-// Linked list of array sizes
-typedef struct ArraySize {
-    uint64_t size;
-    struct ArraySize* next;
-} ArraySize;
 
 enum NameKind {
     NAME_VARIABLE,
@@ -258,13 +325,14 @@ typedef struct NameData {
     const uint8_t* name; // Ptr with ownership (arena?)
  
     enum NameKind kind;
+    bool has_var;
     union {
         // Used when kind == NAME_FUNCTION
         FunctionDef* func_def;
         // Used when kind == NAME_TYPE
         TypeDef* type_def;
-        // Used when kind == NAME_VARIABLE and type is array
-        ArraySize* array_size;
+        // Used when kind == NAME_VARIABLE before var_table is created.
+        func_id function;
         // Used when kind == NAME_VARIABLE after var_table is created.
         var_id variable;
     };
@@ -335,7 +403,7 @@ bool Parser_create(Parser* parser);
 
 Expression* parse_expression(Parser* parser);
 
-Statement** parse_statements(Parser* parser, uint64_t* count);
+Statement** parse_statements(Parser* parser, uint64_t* count, func_id function);
 
 bool parse_program(Parser* parser);
 
@@ -345,7 +413,14 @@ void find_row_col(const Parser* parser, uint64_t pos, uint64_t* row, uint64_t* c
 
 type_id type_of(Parser* parser, name_id name);
 
-type_id array_of(Parser* parser, type_id id);
+type_id array_of(Parser* parser, type_id id, uint64_t size);
+
+typedef struct AllocationInfo {
+    uint64_t size;
+    uint64_t allignment;
+} AllocInfo;
+
+AllocInfo allocation_of(Parser* parser, type_id id);
 
 void fatal_error_cb(Parser* parser, enum ParseErrorKind error, LineInfo info,
                     const char* file, uint64_t line);
@@ -355,5 +430,11 @@ void error_cb(Parser* parser, enum ParseErrorKind error, LineInfo line,
 
 #define fatal_error(p, e, l) fatal_error_cb(p, e, l, __FILE__, __LINE__)
 #define add_error(p, e, l) do { LOG_INFO("Adding error %d at %llu", e, p->pos); error_cb(p, e, l, __FILE__, __LINE__); } while(0);
+
+void out_of_memory(void* ctx);
+
+void reserve(void** ptr, uint64_t size, size_t elem_size, uint64_t* cap);
+
+#define RESERVE(ptr, size, cap) reserve((void**)(&(ptr)), (size), sizeof(*(ptr)), &(cap))
 
 #endif
