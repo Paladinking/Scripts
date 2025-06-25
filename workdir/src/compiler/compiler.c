@@ -1,3 +1,4 @@
+#include <args.h>
 #include "parser.h"
 #include "format.h"
 #include "type_checker.h"
@@ -8,28 +9,28 @@
 #include <printf.h>
 
 void dump_errors(Parser* parser) {
-    WString s;
-    WString_create(&s);
-    fmt_errors(parser, &s);
-    _wprintf_e(L"%s", s.buffer);
-    parser->first_error = NULL;
-    parser->last_error = NULL;
-    WString_free(&s);
+    String s;
+    if (String_create(&s)) {
+        fmt_errors(parser, &s);
+        _printf_e("%s", s.buffer);
+        parser->first_error = NULL;
+        parser->last_error = NULL;
+        String_free(&s);
+    }
 }
 
-int main() {
-
+int compiler(char** argv, int argc) {
     Log_Init();
 
     Parser parser;
     if (!Parser_create(&parser)) {
-        _wprintf_e(L"Failed creating parser\n");
+        _printf_e("Failed creating parser\n");
         return 1;
     }
 
     String s;
     if (!read_text_file(&s, L"src\\compiler\\program.txt")) {
-        _wprintf_e(L"Failed to read program.txt\n");
+        _printf_e("Failed to read program.txt\n");
         return 1;
     }
 
@@ -45,11 +46,11 @@ int main() {
 
 
     for (int i = 0; i < parser.function_table.size; ++i) {
-        WString s;
-        if (WString_create(&s)) {
+        String s;
+        if (String_create(&s)) {
             fmt_functiondef(parser.function_table.data[i], &parser, &s);
-            outputw(s.buffer, s.length);
-            WString_free(&s);
+            //outputUtf8(s.buffer, s.length);
+            String_free(&s);
         }
     }
 
@@ -61,11 +62,11 @@ int main() {
     }
 
     for (int i = 0; i < parser.function_table.size; ++i) {
-        WString s;
-        if (WString_create(&s)) {
+        String s;
+        if (String_create(&s)) {
             fmt_functiondef(parser.function_table.data[i], &parser, &s);
-            outputw(s.buffer, s.length);
-            WString_free(&s);
+            //outputUtf8(s.buffer, s.length);
+            String_free(&s);
         }
     }
 
@@ -76,14 +77,40 @@ int main() {
 
     dump_errors(&parser);
 
-    WString out;
-    if (WString_create(&out)) {
+    String out;
+    if (String_create(&out)) {
         fmt_quads(&q, &out);
-        outputw(out.buffer, out.length);
-        WString_free(&out);
+        //outputUtf8(out.buffer, out.length);
+        String_free(&out);
     }
 
     Generate_code(&q, &parser.function_table, &parser.name_table, &parser.arena);
 
     Log_Shutdown();
+
+    return 0;
 }
+
+#ifdef WIN32
+int main() {
+    // Obtain utf8 command line
+    wchar_t* cmd = GetCommandLineW();
+    String argbuf;
+    String_create(&argbuf);
+    if (!String_from_utf16_str(&argbuf, cmd)) {
+        return 1;
+    }
+    int argc;
+    char** argv = parse_command_line(argbuf.buffer, &argc);
+    String_free(&argbuf);
+    int status = compiler(argv, argc);
+    Mem_free(argv);
+
+    ExitProcess(status);
+}
+
+#else
+int main(char** argv, int argc) {
+    return compiler(argv, argc);
+}
+#endif

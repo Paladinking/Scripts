@@ -312,7 +312,9 @@ var_id quads_arrayindex(Parser* parser, Expression* expr, QuadList* quads,
     }
     var_id ix = expr->array_index.index->var;
     type_id ix_type = QuadList_getvar(quads, ix)->type;
-    uint64_t datatype = quad_datatype(parser, ix_type);
+    assert(ix_type == TYPE_ID_UINT64 || ix_type == TYPE_ID_INT64);
+
+    uint64_t datatype = quad_datatype(parser, expr->type);
     datatype |= quad_scale(parser, expr->type);
     Quad* q = QuadList_addquad(quads, QUAD_GET_ADDR | datatype, dest);
     q->op1.var = expr->array_index.array->var;
@@ -671,7 +673,7 @@ void quads_statements(Parser* parser, QuadList* quads, Statement** statements,
                 var_id a = QuadList_addvar(quads, NAME_ID_INVALID, 
                                            arr_type, parser);
                 rhs->var = a;
-                uint64_t datatype = quad_datatype(parser, ix_type);
+                uint64_t datatype = QUAD_PTR | QUAD_PTR_SIZE; 
                 datatype |= quad_scale(parser, rhs_type);
                 Quad* q = QuadList_addquad(quads, QUAD_CALC_ADDR | datatype, a);
                 q->op1.var = arr;

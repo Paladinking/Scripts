@@ -2,6 +2,28 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <stdint.h>
+#include <stdbool.h>
+
+#ifndef NARROW_OCHAR
+    typedef wchar_t ochar_t;
+    #define oL(s) L##s
+    
+    #define parse_uintw(s, i, base) parse_uint(s, i, base)
+    #define parse_sintw(s, i, base) parse_sint(s, i, base)
+    
+    #define ostrcmp wcscmp
+    #define ostrlen wcslen
+    #define ostrchr wcschr
+    #define ostrncmp wcsncmp
+#else
+    typedef char ochar_t;
+    #define oL(s) s
+
+    #define ostrcmp strcmp
+    #define ostrlen strlen
+    #define ostrchr strchr
+    #define ostrncmp strncmp
+#endif
 
 #define FLAG_NO_VALUE 0
 #define FLAG_OPTONAL_VALUE 1
@@ -21,7 +43,7 @@
 #define FLAG_NULL_ARGV 9
 
 typedef struct EnumValue {
-    const wchar_t** values;
+    const ochar_t** values;
     unsigned count;
 } EnumValue;
 
@@ -32,17 +54,17 @@ typedef struct FlagValue {
     char has_value; // Output
     uint16_t count; // Output
     union { // Output
-        wchar_t* str;
+        ochar_t* str;
         uint64_t uint;
         int64_t sint;
         double real;
-        wchar_t** strlist;
+        ochar_t** strlist;
     };
 } FlagValue;
 
 typedef struct FlagInfo {
-    wchar_t short_name; // Input
-    const wchar_t* long_name;
+    ochar_t short_name; // Input
+    const ochar_t* long_name;
     FlagValue* value; // Input / output
 
     uint32_t shared; // Internal
@@ -54,8 +76,8 @@ typedef struct FlagInfo {
 typedef struct ErrorInfo {
     uint32_t type;
     uint32_t ix;
-    BOOL long_flag;
-    wchar_t* value;
+    bool long_flag;
+    ochar_t* value;
 } ErrorInfo;
 
 
@@ -66,26 +88,27 @@ typedef struct ErrorInfo {
  * Base can be 16, 10, 8, or BASE_FROM_PREFIX.
  * Any other value is seen as BASE_FROM_PREFIX.
  */
-BOOL parse_uintw(const wchar_t* s, uint64_t* i, uint8_t base);
-BOOL parse_sintw(const wchar_t* s, int64_t* i, uint8_t base);
+bool parse_uint(const ochar_t* s, uint64_t* i, uint8_t base);
+bool parse_sint(const ochar_t* s, int64_t* i, uint8_t base);
 
 /**
  * Find all flags described by <flag_count> entries in <flags>.
  * Return False on error.
  */
-BOOL find_flags(wchar_t** argv, int* argc, FlagInfo* flags, uint32_t flag_count, ErrorInfo* err);
+bool find_flags(ochar_t** argv, int* argc, FlagInfo* flags, uint32_t flag_count, ErrorInfo* err);
 
 /* 
  * Turn error into readable string. Free afterwards.
  */
-wchar_t* format_error(ErrorInfo* err, FlagInfo* flags, uint32_t flag_count);
+ochar_t* format_error(ErrorInfo* err, FlagInfo* flags, uint32_t flag_count);
 
 /**
  * Checks if flag <flag> or <long_flag> apears in <argv>.
  * <argc> specifies number of entries in <argv>
  * Return number of occurances. Removes all found instances.
  */
-DWORD find_flag(LPWSTR* argv, int* argc, LPCWSTR flag, LPCWSTR long_flag);
+int find_flag(ochar_t** argv, int* argc, const ochar_t* flag,
+                const ochar_t* long_flag);
 
 /**
  * Get the value of flag <flag> or <long_flag>.
@@ -95,18 +118,19 @@ DWORD find_flag(LPWSTR* argv, int* argc, LPCWSTR flag, LPCWSTR long_flag);
  * If this function retuns 1, value and flag are removed from args.
  * Returns 0 if no flag found, -1 if flag but no value found, 1 on success.
  */
-int find_flag_value(LPWSTR *argv, int *argc, LPCWSTR flag, LPCWSTR long_flag, LPWSTR* dest);
+int find_flag_value(ochar_t **argv, int *argc, const ochar_t* flag, 
+                    const ochar_t* long_flag, ochar_t** dest);
 
 
-BOOL get_arg_len(const wchar_t* cmd, size_t* ix, size_t* len, BOOL* quoted, unsigned flags);
+bool get_arg_len(const ochar_t* cmd, size_t* ix, size_t* len, bool* quoted, unsigned flags);
 
 // Writes to dest, returns one after last written in dest, or NULL if arg could not be parsed
-wchar_t* get_arg(const wchar_t* cmd, size_t *ix, wchar_t* dest, unsigned flags);
+ochar_t* get_arg(const ochar_t* cmd, size_t *ix, ochar_t* dest, unsigned flags);
 /**
  * Convert a commandline into C-style argv and argc.
  * Returns argv, argc gets number of arguments.
  */
-LPWSTR* parse_command_line(LPCWSTR args, int* argc);
+ochar_t** parse_command_line(const ochar_t* args, int* argc);
 
 #define ARG_OPTION_BACKSLASH_ESCAPE 1
 #define ARG_OPTION_TERMINAL_OPERANDS 2
@@ -117,4 +141,4 @@ LPWSTR* parse_command_line(LPCWSTR args, int* argc);
  * Do not use ARG_OPTION_TERMINAL_OPERANDS, as "&&" and && becomes identical.
  * Use get_arg and get_arg_len directly for that, look at quoted parameter.
  */
-LPWSTR* parse_command_line_with(LPCWSTR args, int* argc, unsigned options);
+ochar_t** parse_command_line_with(const ochar_t* args, int* argc, unsigned options);

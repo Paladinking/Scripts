@@ -16,8 +16,8 @@ int main() {
     parser.indata = (uint8_t*)data;
     parser.input_size = strlen(data);
     Expression* expr = parse_expression(&parser);
-    WString output;
-    WString_create(&output);
+    String output;
+    String_create(&output);
     fmt_expression(expr, &parser, &output);
 
     assert(expr->kind == EXPRESSION_BINOP);
@@ -62,7 +62,7 @@ int main() {
     parser.input_size = strlen(data);
     parser.pos = 0;
     expr = parse_expression(&parser);
-    WString_clear(&output);
+    String_clear(&output);
     fmt_expression(expr, &parser, &output);
 
     if (parser.first_error != NULL) {
@@ -113,18 +113,18 @@ int main() {
     parser.input_size = strlen(data);
     parser.pos = 0;
     expr = parse_expression(&parser);
-    WString_clear(&output);
+    String_clear(&output);
     fmt_expression(expr, &parser, &output);
-    assert(WString_equals_str(&output, L"((({1} / {2}) - {3}) && {4})"));
+    assert(String_equals_str(&output, "((({1} / {2}) - {3}) && {4})"));
 
     data = "1() / 2(\"a\", \"b\\x3b\\\"c\") - 3() && 4()";
     parser.indata = (uint8_t*)data;
     parser.input_size = strlen(data);
     parser.pos = 0;
     expr = parse_expression(&parser);
-    WString_clear(&output);
+    String_clear(&output);
     fmt_expression(expr, &parser, &output);
-    assert(WString_equals_str(&output, L"(((({1}()) / ({2}(\"a\", \"b;\"c\"))) - ({3}())) && ({4}()))"));
+    assert(String_equals_str(&output, "(((({1}()) / ({2}(\"a\", \"b;\"c\"))) - ({3}())) && ({4}()))"));
     assert(parser.first_error == NULL);
 
     data = "1() / 2(\"a\", \"b\") - 3(!!!5 + +-6[1+-5] + ~!7) && 4()";
@@ -132,9 +132,9 @@ int main() {
     parser.input_size = strlen(data);
     parser.pos = 0;
     expr = parse_expression(&parser);
-    WString_clear(&output);
+    String_clear(&output);
     fmt_expression(expr, &parser, &output);
-    assert(WString_equals_str(&output, L"(((({1}()) / ({2}(\"a\", \"b\"))) - ({3}(((!(!(!{5}))) + ((+(-({6}[({1} + (-{5}))]))) + (~(!{7}))))))) && ({4}()))"));
+    assert(String_equals_str(&output, "(((({1}()) / ({2}(\"a\", \"b\"))) - ({3}(((!(!(!{5}))) + ((+(-({6}[({1} + (-{5}))]))) + (~(!{7}))))))) && ({4}()))"));
     assert(parser.first_error == NULL);
 
     uint64_t count;
@@ -145,7 +145,7 @@ int main() {
     parser.input_size = strlen(data);
     parser.pos = 0;
     Statement** statements = parse_statements(&parser, &count, 0);
-    WString_clear(&output);
+    String_clear(&output);
     assert(parser.first_error == NULL);
     assert(statements != NULL);
     assert(count == 5);

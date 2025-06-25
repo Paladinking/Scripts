@@ -9,7 +9,7 @@ void Backend_inital_contraints(ConflictGraph* graph, var_id var_count);
 void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
                             VarList* vars, FlowNode* node, Arena* arena);
 
-void Backend_generate_asm(VarList* vars, FunctionDef* def, Arena* arena,
-                          NameTable* name_table, FunctionTable* func_table);
+void Backend_generate_asm(NameTable* name_table, FunctionTable* func_table,
+                          Arena* arena);
 
 #endif

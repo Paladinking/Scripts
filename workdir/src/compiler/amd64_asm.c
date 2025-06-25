@@ -190,12 +190,6 @@ bool is_standard_binop(uint64_t type) {
     case QUAD_BIT_AND:
     case QUAD_BIT_OR:
     case QUAD_BIT_XOR:
-    case QUAD_CMP_LE:
-    case QUAD_CMP_L:
-    case QUAD_CMP_GE:
-    case QUAD_CMP_G:
-    case QUAD_CMP_EQ:
-    case QUAD_CMP_NEQ:
         return true;
     default:
         return false;
@@ -240,6 +234,9 @@ bool allow_op2_imm(uint64_t type) {
     if (type & QUAD_FLOAT) {
         return false;
     }
+    if (is_cmp(type)) {
+        return true;
+    }
     enum QuadType t = type & QUAD_TYPE_MASK;
     return t == QUAD_RSHIFT || t == QUAD_LSHIFT;
 }
@@ -265,6 +262,8 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
     enum QuadType q = quad->type & QUAD_TYPE_MASK;
     uint64_t datatype = quad->type & QUAD_DATATYPE_MASK;
 
+    assert(datatype != QUAD_FLOAT);
+
     if (is_standard_binop(quad->type)) {
         if (vars->data[quad->dest].alloc_type == ALLOC_MEM &&
             vars->data[quad->op2].alloc_type == ALLOC_MEM) {
@@ -276,16 +275,16 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
             ConflictGraph_add_edge(graph, quad->dest + graph->reg_count,
                     quad->op2 + graph->reg_count);
         }
-    }
-
-    if (q == QUAD_SET_ADDR) {
+    } else if (q == QUAD_BOOL_NOT) {
+        // cmp + setz
+    } else if (q == QUAD_SET_ADDR) {
         if (vars->data[quad->op1.var].alloc_type == ALLOC_MEM) {
             preinsert_move(graph, &quad->op1.var, live_set, quad, node, vars, arena);
         }
         if (vars->data[quad->op2].alloc_type == ALLOC_MEM) {
             preinsert_move(graph, &quad->op2, live_set, quad, node, vars, arena);
         }
-    } else if (q == QUAD_CALC_ADDR) {
+    } else if (q == QUAD_CALC_ADDR || q == QUAD_GET_ADDR) {
         if (vars->data[quad->op2].alloc_type == ALLOC_MEM) {
             preinsert_move(graph, &quad->op2, live_set, quad, node, vars, arena);
         }
@@ -310,8 +309,10 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
             }
             v = VarSet_getnext(live_set, v);
         }
-    } else if (q == QUAD_CREATE && quad->next_quad != NULL &&
-        fully_local(vars, quad->dest)) {
+    } else if (q == QUAD_CREATE) {
+        if (quad->next_quad == NULL || !fully_local(vars, quad->dest)) {
+            return;
+        }
         uint64_t data_size = quad->type & QUAD_DATASIZE_MASK;
         uint64_t next = quad->next_quad->type;
         bool good_datatype = false;
@@ -351,7 +352,6 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
                 }
             }
         }
-        return;
     } else if (q == QUAD_GET_ARG && quad->op1.uint64 < 4) {
         uint64_t reg = GEN_CALL_REGS[quad->op1.uint64];
         requre_gen_reg_dest(graph, reg, &quad->dest, live_set, quad, node, 
@@ -389,7 +389,6 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
             ConflictGraph_add_edge(graph, quad->dest + graph->reg_count,
                                    quad->op1.var + graph->reg_count);
         }
-
     } else if ((q == QUAD_MUL && datatype == QUAD_UINT) ||
         q == QUAD_DIV || q == QUAD_MOD) {
         // Make sure RAX and RDX are free for MUL / DIV / IDIV
@@ -448,11 +447,23 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
     } else if (q == QUAD_GET_RET) {
         requre_gen_reg_dest(graph, RAX, &quad->dest, live_set, quad, 
                             node, vars, arena);
-    } if (q == QUAD_RETURN) {
+    } else if (q == QUAD_RETURN) {
         // Readd this once allocation is better.
         // For now extra move is probably cheaper than a likely spill
         //requre_gen_reg_var(graph, RAX, &quad->op1.var, live_set, quad, 
         //                   node, vars, arena);
+    } else if (q == QUAD_CAST_TO_INT64 || q == QUAD_CAST_TO_UINT64 ||
+               q == QUAD_CAST_TO_BOOL || q == QUAD_MOVE) {
+        // Pass?
+    } else if (q == QUAD_LABEL || q == QUAD_JMP || q == QUAD_JMP_FALSE ||
+               q == QUAD_JMP_TRUE) {
+        // Pass
+    } else {
+        String out;
+        String_create(&out);
+        fmt_quad(quad, &out);
+        _printf_e("Not implemented: %s\n", out.buffer);
+        assert(false && "Not implemented");
     }
 }
 
@@ -470,13 +481,13 @@ const char* sizestr(uint64_t mask) {
     assert(false);
 }
 
-bool is_same(VarList* vars, var_id a, var_id b) {
+bool is_same(VarData* vars, var_id a, var_id b) {
     if (a == b) {
         return true;
     }
-    if (vars->data[a].alloc_type == ALLOC_REG &&
-        vars->data[b].alloc_type == ALLOC_REG) {
-        return vars->data[a].reg == vars->data[b].reg;
+    if (vars[a].alloc_type == ALLOC_REG &&
+        vars[b].alloc_type == ALLOC_REG) {
+        return vars[a].reg == vars[b].reg;
     }
     return false;
 }
@@ -531,10 +542,10 @@ void emit_var_sint(int64_t var, uint32_t ix) {
     _printf("%lld", var);
 }
 
-void emit_var_offset(uint64_t scale, uint32_t base_reg, uint32_t offset_reg,
-                  uint64_t datasize, uint64_t ix) {
+void emit_var_scaled_ix(uint64_t scale, uint32_t base_reg, uint32_t offset_reg,
+                        uint64_t ixsize, uint64_t destsize, uint64_t ix) {
     outputsep(ix);
-    outputa("[", 1);
+    _printf("%s [", sizestr(destsize));
     emit_reg(base_reg, QUAD_PTR_SIZE);
     outputa(" + ", 3);
     if (scale == QUAD_SCALE_8) {
@@ -544,7 +555,7 @@ void emit_var_offset(uint64_t scale, uint32_t base_reg, uint32_t offset_reg,
     } else if (scale == QUAD_SCALE_2) {
         outputa("2 * ", 4);
     }
-    emit_reg(offset_reg, datasize);
+    emit_reg(offset_reg, ixsize);
     outputa("]", 1);
 }
 
@@ -578,23 +589,23 @@ void emit_var(VarData* var, uint64_t datatype, uint64_t datasize, uint32_t ix) {
     }
 }
 
-void emit_op1_dest_move(Quad* quad, VarList* vars) {
+void emit_op1_dest_move(Quad* quad, VarData* vars) {
     uint64_t datatype = quad->type & QUAD_DATATYPE_MASK;
     uint64_t datasize = quad->type & QUAD_DATASIZE_MASK;
-    VarData* op1 = &vars->data[quad->op1.var];
-    VarData* dest = &vars->data[quad->dest];
+    VarData* op1 = &vars[quad->op1.var];
+    VarData* dest = &vars[quad->dest];
     emit_instr_name("mov");
     emit_var(dest, datatype, datasize, 0);
     emit_var(op1, datatype, datasize, 1);
     emit_instr_end();
 }
 
-void emit_binop(const char* name, Quad* quad, VarList* vars) {
+void emit_binop(const char* name, Quad* quad, VarData* vars) {
     uint64_t datatype = quad->type & QUAD_DATATYPE_MASK;
     uint64_t datasize = quad->type & QUAD_DATASIZE_MASK;
-    VarData* op1 = &vars->data[quad->op1.var];
-    VarData* op2 = &vars->data[quad->op2];
-    VarData* dest = &vars->data[quad->dest];
+    VarData* op1 = &vars[quad->op1.var];
+    VarData* op2 = &vars[quad->op2];
+    VarData* dest = &vars[quad->dest];
     if (op1->alloc_type == ALLOC_IMM) {
         assert(is_symetrical(quad->type));
         VarData* tmp = op1;
@@ -620,11 +631,13 @@ void emit_binop(const char* name, Quad* quad, VarList* vars) {
     emit_instr_end();
 }
 
-#define assert_in_reg(v, vars, r) assert((vars)->data[(v)].alloc_type == ALLOC_REG && \
-        (vars)->data[(v)].reg == r)
+#define assert_in_reg(v, vars, r) assert((vars)[(v)].alloc_type == ALLOC_REG && \
+        (vars)[(v)].reg == r)
 
-void Backend_generate_asm(VarList* vars, FunctionDef* def, Arena* arena,
-                          NameTable* name_table, FunctionTable* func_table) {
+void Backend_generate_fn(FunctionDef* def, Arena* arena,
+                         NameTable* name_table, FunctionTable* func_table) {
+    VarList* var_list = &def->vars;
+    VarData* vars = var_list->data;
     assert((def->quad_start->type & QUAD_TYPE_MASK) == QUAD_LABEL);
     const uint8_t* name = name_table->data[def->name].name;
     uint32_t name_len = name_table->data[def->name].name_len;
@@ -636,18 +649,18 @@ void Backend_generate_asm(VarList* vars, FunctionDef* def, Arena* arena,
 
     bool push_reg[GEN_REG_COUNT] = {false};
 
-    for (uint64_t ix = 0; ix < vars->size; ++ix) {
-        if (!var_local(vars->data[ix].kind)) {
+    for (uint64_t ix = 0; ix < var_list->size; ++ix) {
+        if (!var_local(vars[ix].kind)) {
             continue;
         }
-        if (vars->data[ix].alloc_type == ALLOC_MEM) {
-            ALLIGN_TO(stack_size, vars->data[ix].alignment);
-            vars->data[ix].memory.offset = stack_size;
-            stack_size += vars->data[ix].byte_size;
-        } else if (vars->data[ix].alloc_type == ALLOC_REG &&
-                   vars->data[ix].reg < GEN_REG_COUNT) {
-            if (!GEN_VOLATILE_REGS[vars->data[ix].reg]) {
-                push_reg[vars->data[ix].reg] = true;
+        if (vars[ix].alloc_type == ALLOC_MEM) {
+            ALLIGN_TO(stack_size, vars[ix].alignment);
+            vars[ix].memory.offset = stack_size;
+            stack_size += vars[ix].byte_size;
+        } else if (vars[ix].alloc_type == ALLOC_REG &&
+                   vars[ix].reg < GEN_REG_COUNT) {
+            if (!GEN_VOLATILE_REGS[vars[ix].reg]) {
+                push_reg[vars[ix].reg] = true;
             }
         }
     }
@@ -670,8 +683,7 @@ void Backend_generate_asm(VarList* vars, FunctionDef* def, Arena* arena,
     emit_instr_end();
 
     Quad* q = def->quad_start->next_quad;
-    WString out;
-    WString_create(&out);
+    String out;
 
     for (; q != def->quad_end->next_quad; q = q->next_quad) {
         enum QuadType type = q->type & QUAD_TYPE_MASK;
@@ -686,10 +698,10 @@ void Backend_generate_asm(VarList* vars, FunctionDef* def, Arena* arena,
             }
             uint32_t src_reg = GEN_CALL_REGS[q->op1.uint64];
 
-            if (vars->data[q->dest].alloc_type != ALLOC_REG ||
-                vars->data[q->dest].reg != src_reg) {
+            if (vars[q->dest].alloc_type != ALLOC_REG ||
+                vars[q->dest].reg != src_reg) {
                 emit_instr_name("mov");
-                emit_var(&vars->data[q->dest], datatype, datasize, 0);
+                emit_var(&vars[q->dest], datatype, datasize, 0);
                 emit_var_reg(src_reg, datasize, 1);
                 emit_instr_end();
             }
@@ -701,11 +713,11 @@ void Backend_generate_asm(VarList* vars, FunctionDef* def, Arena* arena,
                 break;
             }
             uint32_t reg = GEN_CALL_REGS[q->op1.uint64];
-            if (vars->data[q->op2].alloc_type != ALLOC_REG ||
-                vars->data[q->op2].reg != reg) {
+            if (vars[q->op2].alloc_type != ALLOC_REG ||
+                vars[q->op2].reg != reg) {
                 emit_instr_name("mov");
                 emit_var_reg(reg, datasize, 0);
-                emit_var(&vars->data[q->dest], datatype, datasize, 1);
+                emit_var(&vars[q->dest], datatype, datasize, 1);
                 emit_instr_end();
             }
             break;
@@ -717,17 +729,17 @@ void Backend_generate_asm(VarList* vars, FunctionDef* def, Arena* arena,
             emit_op1_dest_move(q, vars);
             break;
         case QUAD_CREATE:
-            if (vars->data[q->dest].alloc_type == ALLOC_IMM) {
+            if (vars[q->dest].alloc_type == ALLOC_IMM) {
                 break;
             }
             emit_instr_name("mov");
-            emit_var(&vars->data[q->dest], datatype, datasize, 0);
+            emit_var(&vars[q->dest], datatype, datasize, 0);
             if (datatype == QUAD_UINT) {
-                emit_var_uint(q->op1.uint64, 0);
+                emit_var_uint(q->op1.uint64, 1);
             } else if (datatype == QUAD_SINT) {
-                emit_var_sint(q->op1.sint64, 0);
+                emit_var_sint(q->op1.sint64, 1);
             } else if (datatype == QUAD_BOOL) {
-                emit_var_uint(q->op1.uint64 == 0 ? 0 : 1, 0);
+                emit_var_uint(q->op1.uint64 == 0 ? 0 : 1, 1);
             } else {
                 assert(false);
             }
@@ -744,7 +756,7 @@ void Backend_generate_asm(VarList* vars, FunctionDef* def, Arena* arena,
                     }
                 }
                 emit_instr_name("mul");
-                emit_var(&vars->data[q->op2], datatype, datasize, 0);
+                emit_var(&vars[q->op2], datatype, datasize, 0);
                 emit_instr_end();
             } else if (datatype == QUAD_SINT) {
                 emit_binop("imul", q, vars);
@@ -756,11 +768,11 @@ void Backend_generate_asm(VarList* vars, FunctionDef* def, Arena* arena,
         case QUAD_MOD: {
             uint32_t reg = type == QUAD_DIV ? RAX : RDX;
             assert_in_reg(q->dest, vars, reg);
-            if (vars->data[q->op1.var].alloc_type != ALLOC_REG ||
-                vars->data[q->op1.var].reg != RAX) {
+            if (vars[q->op1.var].alloc_type != ALLOC_REG ||
+                vars[q->op1.var].reg != RAX) {
                 emit_instr_name("mov");
                 emit_var_reg(RAX, datasize, 0);
-                emit_var(&vars->data[q->op1.var], datatype, datasize, 1);
+                emit_var(&vars[q->op1.var], datatype, datasize, 1);
                 emit_instr_end();
             }
             emit_instr_name("xor");
@@ -768,13 +780,13 @@ void Backend_generate_asm(VarList* vars, FunctionDef* def, Arena* arena,
             emit_var_reg(RDX, datasize, 1);
             emit_instr_end();
             emit_instr_name("div");
-            emit_var(&vars->data[q->op2], datatype, datasize, 0);
+            emit_var(&vars[q->op2], datatype, datasize, 0);
             emit_instr_end();
             break;
         }
         case QUAD_RSHIFT:
         case QUAD_LSHIFT: {
-            if (vars->data[q->op2].alloc_type != ALLOC_IMM) {
+            if (vars[q->op2].alloc_type != ALLOC_IMM) {
                 assert_in_reg(q->op2, vars, RCX);
             }
             const char* instr;
@@ -787,14 +799,14 @@ void Backend_generate_asm(VarList* vars, FunctionDef* def, Arena* arena,
                 emit_op1_dest_move(q, vars);
             }
             emit_instr_name(instr);
-            emit_var(&vars->data[q->dest], datatype, datasize, 0);
-            emit_var(&vars->data[q->op2], datatype, QUAD_8_BIT, 1);
+            emit_var(&vars[q->dest], datatype, datasize, 0);
+            emit_var(&vars[q->op2], datatype, QUAD_8_BIT, 1);
             emit_instr_end();
             break;
         }
         case QUAD_CALL: {
-            assert(vars->data[q->op1.var].name != NAME_ID_INVALID);
-            name_id n = name_table->data[vars->data[q->op1.var].name].func_def->name;
+            assert(vars[q->op1.var].name != NAME_ID_INVALID);
+            name_id n = name_table->data[vars[q->op1.var].name].func_def->name;
             const uint8_t* name = name_table->data[n].name;
             uint32_t name_len = name_table->data[n].name_len;
             emit_instr_name("call");
@@ -811,7 +823,7 @@ void Backend_generate_asm(VarList* vars, FunctionDef* def, Arena* arena,
         case QUAD_CMP_G:
         case QUAD_CMP_EQ:
         case QUAD_CMP_NEQ:
-            if (vars->data[q->dest].alloc_type == ALLOC_IMM) {
+            if (vars[q->dest].alloc_type == ALLOC_IMM) {
                 assert(datatype != QUAD_FLOAT);
                 Quad* next = q->next_quad;
                 const char* instr;
@@ -831,11 +843,11 @@ void Backend_generate_asm(VarList* vars, FunctionDef* def, Arena* arena,
                     instr = inv ? (sign ? "je" : "jz") : (sign ? "jne" : "jnz");
                 }
                 emit_instr_name("cmp");
-                emit_var(&vars->data[q->op1.var], datatype, datasize, 0);
-                if (vars->data[q->op2].alloc_type == ALLOC_IMM) {
+                emit_var(&vars[q->op1.var], datatype, datasize, 0);
+                if (vars[q->op2].alloc_type == ALLOC_IMM) {
                     LOG_DEBUG("%llu is imm", q->op2);
                 }
-                emit_var(&vars->data[q->op2], datatype, datasize, 1);
+                emit_var(&vars[q->op2], datatype, datasize, 1);
                 emit_instr_end();
                 emit_instr_name(instr);
                 emit_var_label(next->op1.label, 0);
@@ -859,32 +871,32 @@ void Backend_generate_asm(VarList* vars, FunctionDef* def, Arena* arena,
                     instr = sign ? "cmovne" : "cmovnz";
                 }
 
-                assert(vars->data[q->dest].alloc_type == ALLOC_REG);
-                assert(vars->data[q->op1.var].alloc_type == ALLOC_REG);
-                assert(vars->data[q->op1.var].reg != vars->data[q->dest].reg);
+                assert(vars[q->dest].alloc_type == ALLOC_REG);
+                assert(vars[q->op1.var].alloc_type == ALLOC_REG);
+                assert(vars[q->op1.var].reg != vars[q->dest].reg);
                 emit_instr_name("cmp");
-                emit_var(&vars->data[q->op1.var], datatype, datasize, 0);
-                emit_var(&vars->data[q->op2], datatype, datasize, 1);
+                emit_var(&vars[q->op1.var], datatype, datasize, 0);
+                emit_var(&vars[q->op2], datatype, datasize, 1);
                 emit_instr_end();
                 emit_instr_name("mov");
-                emit_var(&vars->data[q->dest], QUAD_BOOL, QUAD_32_BIT, 0);
+                emit_var(&vars[q->dest], QUAD_BOOL, QUAD_32_BIT, 0);
                 emit_var_uint(0, 1);
                 emit_instr_end();
                 emit_instr_name("mov");
-                emit_var(&vars->data[q->op1.var], QUAD_BOOL, QUAD_32_BIT, 0);
+                emit_var(&vars[q->op1.var], QUAD_BOOL, QUAD_32_BIT, 0);
                 emit_var_uint(1, 1);
                 emit_instr_end();
                 emit_instr_name(instr);
-                emit_var(&vars->data[q->dest], QUAD_BOOL, QUAD_32_BIT, 0);
-                emit_var(&vars->data[q->op1.var], QUAD_BOOL, QUAD_32_BIT, 1);
+                emit_var(&vars[q->dest], QUAD_BOOL, QUAD_32_BIT, 0);
+                emit_var(&vars[q->op1.var], QUAD_BOOL, QUAD_32_BIT, 1);
                 emit_instr_end();
             }
             break;
         case QUAD_JMP_FALSE:
         case QUAD_JMP_TRUE:
             assert(datatype == QUAD_BOOL);
-            if (vars->data[q->op2].alloc_type == ALLOC_IMM) {
-                if (vars->data[q->op2].imm.boolean) {
+            if (vars[q->op2].alloc_type == ALLOC_IMM) {
+                if (vars[q->op2].imm.boolean) {
                     if (type == QUAD_JMP_TRUE) {
                         emit_instr_name("jmp");
                         emit_var_label(q->op1.label, 0);
@@ -897,31 +909,24 @@ void Backend_generate_asm(VarList* vars, FunctionDef* def, Arena* arena,
                         emit_instr_end();
                     }
                 }
-            } else if (vars->data[q->op2].alloc_type == ALLOC_MEM) {
+            } else if (vars[q->op2].alloc_type == ALLOC_MEM) {
                 emit_instr_name("cmp");
-                emit_var(&vars->data[q->op2], datatype, datasize, 0);
-                emit_var_uint(vars->data[q->op2].imm.uint64, 0);
-                emit_instr_end();
-                if (type == QUAD_JMP_TRUE) {
-                    emit_instr_name("jne");
-                } else {
-                    emit_instr_name("je");
-                }
-                emit_var_label(q->op1.label, 0);
+                emit_var(&vars[q->op2], datatype, datasize, 0);
+                emit_var_uint(0, 1);
                 emit_instr_end();
             } else {
                 emit_instr_name("test");
-                emit_var(&vars->data[q->op2], datatype, datasize, 0);
-                emit_var(&vars->data[q->op2], datatype, datasize, 1);
-                emit_instr_end();
-                if (type == QUAD_JMP_TRUE) {
-                    emit_instr_name("jne");
-                } else {
-                    emit_instr_name("je");
-                }
-                emit_var_label(q->op1.label, 0);
+                emit_var(&vars[q->op2], datatype, datasize, 0);
+                emit_var(&vars[q->op2], datatype, datasize, 1);
                 emit_instr_end();
             }
+            if (type == QUAD_JMP_TRUE) {
+                emit_instr_name("jne");
+            } else {
+                emit_instr_name("je");
+            }
+            emit_var_label(q->op1.label, 0);
+            emit_instr_end();
             break;
         case QUAD_LABEL:
             emit_label(q->op1.label);
@@ -967,42 +972,79 @@ void Backend_generate_asm(VarList* vars, FunctionDef* def, Arena* arena,
             break;
         case QUAD_BIT_XOR:
             emit_binop("xor", q, vars);
+        case QUAD_BOOL_NOT:
+            assert(datatype == QUAD_BOOL);
+            if (vars[q->op1.var].alloc_type == ALLOC_IMM) {
+                emit_instr_name("mov");
+                emit_var(&vars[q->dest], datatype, datasize, 0);
+                emit_var_uint(vars[q->op1.var].imm.boolean ? 1 : 0, 1);
+                emit_instr_end();
+                break;
+            } else if (vars[q->op1.var].alloc_type == ALLOC_MEM) {
+                emit_instr_name("cmp");
+                emit_var(&vars[q->op1.var], datatype, datasize, 0);
+                emit_var_uint(0, 1);
+                emit_instr_end();
+            } else {
+                emit_instr_name("test");
+                emit_var(&vars[q->op1.var], datatype, datasize, 0);
+                emit_var(&vars[q->op1.var], datatype, datasize, 1);
+                emit_instr_end();
+            }
+            emit_instr_name("setz");
+            emit_var(&vars[q->dest], datatype, datasize, 0);
+            emit_instr_end();
             break;
         case QUAD_RETURN:
-            if (vars->data[q->op1.var].alloc_type != ALLOC_REG ||
-                vars->data[q->op1.var].reg != RAX) {
+            if (vars[q->op1.var].alloc_type != ALLOC_REG ||
+                vars[q->op1.var].reg != RAX) {
                 emit_instr_name("mov");
                 emit_var_reg(RAX, datasize, 0);
-                emit_var(&vars->data[q->op1.var], datatype, datasize, 1);
+                emit_var(&vars[q->op1.var], datatype, datasize, 1);
                 emit_instr_end();
             }
             emit_instr_name("jmp");
             emit_var_endlabel(name, name_len, 0);
             emit_instr_end();
             break;
-        case QUAD_CALC_ADDR:
-            if (!is_same(vars, q->op1.var, q->dest)) {
-                emit_op1_dest_move(q, vars);
+        case QUAD_GET_ADDR:
+        case QUAD_CALC_ADDR: {
+            assert(vars[q->op2].alloc_type == ALLOC_REG);
+            assert(vars[q->dest].alloc_type == ALLOC_REG);
+            if (vars[q->op1.var].kind == VAR_ARRAY ||
+                vars[q->op1.var].kind == VAR_ARRAY_GLOBAL) {
+                emit_instr_name("lea");
+                emit_var(&vars[q->dest], QUAD_PTR, QUAD_PTR_SIZE, 0);
+                emit_var(&vars[q->op1.var], QUAD_PTR, QUAD_PTR_SIZE, 1);
+                emit_instr_end();
+            } else {
+                if (!is_same(vars, q->op1.var, q->dest)) {
+                    emit_op1_dest_move(q, vars);
+                }
             }
-            assert(vars->data[q->op2].alloc_type == ALLOC_REG);
-            assert(vars->data[q->dest].alloc_type == ALLOC_REG);
-            emit_instr_name("lea");
-            emit_var(&vars->data[q->dest], QUAD_PTR, QUAD_PTR_SIZE, 0);
-            emit_var_offset(q->type & QUAD_SCALE_MASK, vars->data[q->dest].reg, 
-                         vars->data[q->op2].reg, datasize, 1);
+            if (type == QUAD_GET_ADDR) {
+                emit_instr_name("mov");
+            } else {
+                emit_instr_name("lea");
+            }
+            emit_var(&vars[q->dest], datatype, datasize, 0);
+            emit_var_scaled_ix(q->type & QUAD_SCALE_MASK, vars[q->dest].reg, 
+                               vars[q->op2].reg, QUAD_64_BIT, datasize, 1);
             emit_instr_end();
             break;
+        }
         case QUAD_SET_ADDR:
-            assert(vars->data[q->op1.var].alloc_type == ALLOC_REG);
-            assert(vars->data[q->op2].alloc_type == ALLOC_REG);
+            assert(vars[q->op1.var].alloc_type == ALLOC_REG);
+            assert(vars[q->op2].alloc_type == ALLOC_REG);
             emit_instr_name("mov");
-            emit_var_deref(vars->data[q->op1.var].reg, datasize, 0);
-            emit_var_reg(vars->data[q->op2].reg, datasize, 1);
+            emit_var_deref(vars[q->op1.var].reg, datasize, 0);
+            emit_var_reg(vars[q->op2].reg, datasize, 1);
             emit_instr_end();
             break;
         default:
+            String_create(&out);
             fmt_quad(q, &out);
-            _wprintf_e(L"Not implemented: %s\n", out.buffer);
+            _printf_e("Not implemented: %s\n", out.buffer);
             assert(false && "Not implemented");
             break;
         }
@@ -1022,4 +1064,14 @@ void Backend_generate_asm(VarList* vars, FunctionDef* def, Arena* arena,
     }
     emit_instr_name("ret");
     emit_instr_end();
+}
+
+void Backend_generate_asm(NameTable *name_table, FunctionTable *func_table, Arena* arena) {
+    _printf("format PE64 console\n");
+    _printf("entry main\n\n");
+
+    for (uint64_t ix = 0; ix < func_table->size; ++ix) {
+        Backend_generate_fn(func_table->data[ix], arena, 
+                            name_table, func_table);
+    }
 }

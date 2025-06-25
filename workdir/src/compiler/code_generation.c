@@ -376,27 +376,6 @@ void create_conflict_graph(ConflictGraph* graph, FlowNode* nodes, uint64_t node_
             q = q->last_quad;
         }
     }
-    return;
-    for (uint64_t ix = 0; ix < vars->size; ++ix) {
-        uint64_t count = ConflictGraph_count(graph, ix + graph->reg_count);
-        _wprintf(L"%llu conflicts (%llu): ", ix, count);
-        for (uint64_t j = 0; j < vars->size; ++j) {
-            if (ix == j) {
-                continue;
-            }
-            if (ConflictGraph_has_edge(graph, ix + graph->reg_count,
-                                       j + graph->reg_count)) {
-                _wprintf(L"v%llu, ", j);
-            }
-
-        }
-        for (uint64_t j = 0; j < graph->reg_count; ++j) {
-            if (ConflictGraph_has_edge(graph, ix + graph->reg_count, j)) {
-                _wprintf(L"r%llu, ", j);
-            }
-        }
-        _wprintf(L"\n");
-    }
 }
 
 
@@ -512,7 +491,6 @@ void Generate_function(Quads* quads, Quad* start, Quad* end,
         while (1) {
             v = VarSet_getnext(&graph.members, v);
             if (v == VAR_ID_INVALID) {
-                _wprintf(L"To alloc: %llu, Stack size: %llu\n", to_alloc, stack_size);
                 break;
             }
             uint64_t count = ConflictGraph_count(&graph, v);
@@ -564,6 +542,10 @@ void Generate_function(Quads* quads, Quad* start, Quad* end,
         vars->data[v].reg = reg;
     }
 
+    Mem_free(stack);
+
+    return;
+
     for (uint64_t ix = 0; ix < vars->size; ++ix) {
         switch(vars->data[ix].alloc_type) {
             case ALLOC_NONE:
@@ -580,64 +562,61 @@ void Generate_function(Quads* quads, Quad* start, Quad* end,
                 break;
         }
     }
-
-    Mem_free(stack);
-
-    WString out;
-    if (WString_create(&out)) {
+    String out;
+    if (String_create(&out)) {
         for (uint64_t i = 0; i < node_count; ++i) {
-            WString_clear(&out);
-            WString_append(&out, L'\n');
+            String_clear(&out);
+            String_append(&out, '\n');
             for (Quad* q = nodes[i].start; q != nodes[i].end->next_quad; q = q->next_quad) {
                 fmt_quad(q, &out);
-                WString_append(&out, L'\n');
+                String_append(&out, '\n');
             }
-            WString_extend(&out, L"Use:");
+            String_extend(&out, "Use:");
             for (var_id s = 0; s < vars->size; ++s) {
                 if (VarSet_contains(&nodes[i].use, s)) {
-                    WString_format_append(&out, L" %llu,", s);
+                    String_format_append(&out, " %llu,", s);
                 }
             }
             if (out.buffer[out.length - 1] == L',') {
-                WString_pop(&out, 1);
+                String_pop(&out, 1);
             }
-            WString_append(&out, L'\n');
-            WString_extend(&out, L"Def:");
+            String_append(&out, '\n');
+            String_extend(&out, "Def:");
             for (var_id s = 0; s < vars->size; ++s) {
                 if (VarSet_contains(&nodes[i].def, s)) {
-                    WString_format_append(&out, L" %llu,", s);
+                    String_format_append(&out, " %llu,", s);
                 }
             }
             if (out.buffer[out.length - 1] == L',') {
-                WString_pop(&out, 1);
+                String_pop(&out, 1);
             }
-            WString_append(&out, L'\n');
-            WString_extend(&out, L"Live-in:");
+            String_append(&out, L'\n');
+            String_extend(&out, "Live-in:");
             for (var_id s = 0; s < vars->size; ++s) {
                 if (VarSet_contains(&nodes[i].live_in, s)) {
-                    WString_format_append(&out, L" %llu,", s);
+                    String_format_append(&out, " %llu,", s);
                 }
             }
             if (out.buffer[out.length - 1] == L',') {
-                WString_pop(&out, 1);
+                String_pop(&out, 1);
             }
-            WString_append(&out, L'\n');
-            WString_extend(&out, L"Live-out:");
+            String_append(&out, '\n');
+            String_extend(&out, "Live-out:");
             for (var_id s = 0; s < vars->size; ++s) {
                 if (VarSet_contains(&nodes[i].live_out, s)) {
-                    WString_format_append(&out, L" %llu,", s);
+                    String_format_append(&out, " %llu,", s);
                 }
             }
             if (out.buffer[out.length - 1] == L',') {
-                WString_pop(&out, 1);
+                String_pop(&out, 1);
             }
-            WString_append(&out, L'\n');
+            String_append(&out, '\n');
 
-            WString_append(&out, L'\n');
-            outputw(out.buffer, out.length);
+            String_append(&out, '\n');
+            outputUtf8(out.buffer, out.length);
         }
 
-        WString_free(&out);
+        String_free(&out);
     }
 }
 
@@ -659,8 +638,7 @@ void Generate_code(Quads* quads, FunctionTable* functions, NameTable* name_table
         
         Generate_function(quads, start, end, label_map,
                           &functions->data[ix]->vars, arena);
-        Backend_generate_asm(&functions->data[ix]->vars, functions->data[ix],
-                             arena, name_table, functions);
     }
+    Backend_generate_asm(name_table, functions, arena);
     Mem_free(label_map);
 }

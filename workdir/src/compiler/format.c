@@ -1,27 +1,27 @@
 #include "format.h"
 
-const static wchar_t* quadnames[] = {
-    L"QDIV", L"QMUL", L"QMOD", L"QSUB", L"QADD",
-    L"QRSHIFT", L"QLSHIFT", L"QNEGATE", L"QCMP_EQ",
-    L"QCMP_NEQ", L"QCMP_G", L"QCMP_L", L"QCMP_GE",
-    L"QCMP_LE", L"QJMP", L"QJMP_FALSE", L"QJMP_TRUE",
-    L"QLABEL", L"QBOOL_AND", L"QBOOL_OR", L"QBOOL_NOT",
-    L"QBIT_AND", L"QBIT_OR", L"QBIT_XOR", L"QBIT_NOT",
-    L"QCAST_TO_FLOAT64", L"QCAST_TO_INT64", L"QCAST_TO_UINT64",
-    L"QCAST_TO_BOOL", L"QPUT_ARG",  L"QCALL", L"QRETURN",
-    L"QGET_RET", L"QGET_ARG", L"QMOVE", L"QGET_ADDR", L"QCALC_ADDR",
-    L"QSET_ADDR", L"QCREATE"
+const static char* quadnames[] = {
+    "QDIV", "QMUL", "QMOD", "QSUB", "QADD",
+    "QRSHIFT", "QLSHIFT", "QNEGATE", "QCMP_EQ",
+    "QCMP_NEQ", "QCMP_G", "QCMP_L", "QCMP_GE",
+    "QCMP_LE", "QJMP", "QJMP_FALSE", "QJMP_TRUE",
+    "QLABEL", "QBOOL_AND", "QBOOL_OR", "QBOOL_NOT",
+    "QBIT_AND", "QBIT_OR", "QBIT_XOR", "QBIT_NOT",
+    "QCAST_TO_FLOAT64", "QCAST_TO_INT64", "QCAST_TO_UINT64",
+    "QCAST_TO_BOOL", "QPUT_ARG",  "QCALL", "QRETURN",
+    "QGET_RET", "QGET_ARG", "QMOVE", "QGET_ADDR", "QCALC_ADDR",
+    "QSET_ADDR", "QCREATE"
 };
 
-void fmt_quad(const Quad* quad, WString* dest) {
+void fmt_quad(const Quad* quad, String* dest) {
     enum QuadType type = quad->type & QUAD_TYPE_MASK;
     if (type >= 0 && type < 39) {
-        WString_extend(dest, quadnames[type]);
+        String_extend(dest, quadnames[type]);
     } else {
-        WString_extend(dest, L"QUNKOWN");
+        String_extend(dest, "QUNKOWN");
         return;
     }
-    WString_format_append(dest, L" ");
+    String_append(dest, ' ');
     switch (type) {
     case QUAD_DIV:
     case QUAD_MUL:
@@ -43,35 +43,35 @@ void fmt_quad(const Quad* quad, WString* dest) {
     case QUAD_BIT_XOR:
     case QUAD_GET_ADDR:
     case QUAD_CALC_ADDR:
-        WString_format_append(dest, L"<%llu> <%llu> -> <%llu>", quad->op1.var, quad->op2,
-                              quad->dest);
+        String_format_append(dest, "<%llu> <%llu> -> <%llu>", quad->op1.var, quad->op2,
+                             quad->dest);
         break;
     case QUAD_JMP:
     case QUAD_LABEL:
-        WString_format_append(dest, L"L%llu", quad->op1.label);
+        String_format_append(dest, "L%llu", quad->op1.label);
         break;
     case QUAD_JMP_FALSE:
     case QUAD_JMP_TRUE:
-        WString_format_append(dest, L"L%llu <%llu>", quad->op1.label, quad->op2);
+        String_format_append(dest, "L%llu <%llu>", quad->op1.label, quad->op2);
         break;
     case QUAD_PUT_ARG:
-        WString_format_append(dest, L"<%llu>", quad->op2);
+        String_format_append(dest, "<%llu>", quad->op2);
         break;
     case QUAD_RETURN:
-        WString_format_append(dest, L"<%llu>", quad->op1.var);
+        String_format_append(dest, "<%llu>", quad->op1.var);
         break;
     case QUAD_CALL:
-        WString_format_append(dest, L"$%llu", quad->op1.var);
+        String_format_append(dest, "$%llu", quad->op1.var);
         break;
     case QUAD_GET_RET:
     case QUAD_GET_ARG:
-        WString_format_append(dest, L"-> <%llu>", quad->dest);
+        String_format_append(dest, "-> <%llu>", quad->dest);
         break;
     case QUAD_SET_ADDR:
-        WString_format_append(dest, L"<%llu> <%llu>", quad->op1.var, quad->op2);
+        String_format_append(dest, "<%llu> <%llu>", quad->op1.var, quad->op2);
         break;
     case QUAD_CREATE:
-        WString_format_append(dest, L"[] -> <%llu>", quad->dest);
+        String_format_append(dest, "[] -> <%llu>", quad->dest);
         break;
     case QUAD_NEGATE:
     case QUAD_BOOL_NOT:
@@ -81,102 +81,102 @@ void fmt_quad(const Quad* quad, WString* dest) {
     case QUAD_CAST_TO_UINT64:
     case QUAD_CAST_TO_BOOL:
     case QUAD_MOVE:
-        WString_format_append(dest, L"<%llu> -> <%llu>", quad->op1.var, quad->dest);
+        String_format_append(dest, "<%llu> -> <%llu>", quad->op1.var, quad->dest);
         break;
     }
     if (quad->type & QUAD_UINT) {
-        WString_extend(dest, L" UINT");
+        String_extend(dest, " UINT");
     } else if (quad->type & QUAD_SINT) {
-        WString_extend(dest, L" SINT");
+        String_extend(dest, " SINT");
     } else if (quad->type & QUAD_FLOAT) {
-        WString_extend(dest, L" FLOAT");
+        String_extend(dest, " FLOAT");
     } else if (quad->type & QUAD_BOOL) {
-        WString_extend(dest, L" BOOL");
+        String_extend(dest, " BOOL");
     }
     if (quad->type & QUAD_64_BIT) {
-        WString_extend(dest, L" 64");
+        String_extend(dest, " 64");
     } else if (quad->type & QUAD_32_BIT) {
-        WString_extend(dest, L" 32");
+        String_extend(dest, " 32");
     } else if (quad->type & QUAD_16_BIT) {
-        WString_extend(dest, L" 16");
+        String_extend(dest, " 16");
     } else if (quad->type & QUAD_8_BIT) {
-        WString_extend(dest, L" 8");
+        String_extend(dest, " 8");
     }
     if (quad->type & QUAD_SCALE_8) {
-        WString_extend(dest, L" SCALE 8");
+        String_extend(dest, " SCALE 8");
     } else if (quad->type & QUAD_SCALE_4) {
-        WString_extend(dest, L" SCALE 4");
+        String_extend(dest, " SCALE 4");
     } else if (quad->type & QUAD_SCALE_2) {
-        WString_extend(dest, L" SCALE 2");
+        String_extend(dest, " SCALE 2");
     } else if (quad->type & QUAD_SCALE_1) {
-        WString_extend(dest, L" SCALE 1");
+        String_extend(dest, " SCALE 1");
     }
 }
 
-void fmt_quads(const Quads* quads, WString* dest) {
+void fmt_quads(const Quads* quads, String* dest) {
     for (const Quad* q = quads->head; q != quads->tail->next_quad; q = q->next_quad) {
         fmt_quad(q, dest);
-        WString_append(dest, L'\n');
+        String_append(dest, '\n');
     } 
 }
 
-void fmt_functiondef(const FunctionDef* def, const Parser* parser, WString* dest) {
-    WString_extend(dest, L"FunctionDef ");
+void fmt_functiondef(const FunctionDef* def, const Parser* parser, String* dest) {
+    String_extend(dest, "FunctionDef ");
     fmt_name(def->name, parser, dest);
-    WString_append(dest, L'(');
+    String_append(dest, '(');
     for (uint64_t i = 0; i < def->arg_count; ++i) {
         fmt_type(def->args[i].type, parser, dest);
-        WString_append(dest, L' ');
+        String_append(dest, ' ');
         fmt_name(def->args[i].name, parser, dest);
         if (i + 1 != def->arg_count) {
-            WString_append_count(dest, L", ", 2);
+            String_append_count(dest, ", ", 2);
         }
     }
-    WString_extend(dest, L") -> ");
+    String_extend(dest, ") -> ");
     fmt_type(def->return_type, parser, dest);
-    WString_append_count(dest, L" {\n", 3);
+    String_append_count(dest, " {\n", 3);
     fmt_statements(def->statements, def->statement_count, parser, dest);
-    WString_append_count(dest, L"}\n", 2);
+    String_append_count(dest, "}\n", 2);
 }
 
-void fmt_name(name_id name, const Parser* parser, WString* dest) {
+void fmt_name(name_id name, const Parser* parser, String* dest) {
     if (name == NAME_ID_INVALID) {
-        WString_extend(dest, L"<Invalid name>");
+        String_extend(dest, "<Invalid name>");
         return;
     }
     const uint8_t* b = parser->name_table.data[name].name;
     uint32_t len = parser->name_table.data[name].name_len;
-    WString_append_utf8_bytes(dest, (const char*)b, len);
-    WString_format_append(dest, L"#%llu", name);
+    String_append_count(dest, (const char*)b, len);
+    String_format_append(dest, "#%llu", name);
 }
 
-void fmt_type(type_id type, const Parser* parser, WString* dest) {
+void fmt_type(type_id type, const Parser* parser, String* dest) {
     if (type == TYPE_ID_INVALID) {
-        WString_extend(dest, L"<Invalid type>");
+        String_extend(dest, "<Invalid type>");
         return;
     }
     const TypeDef* def = parser->type_table.data[type].type_def;
     name_id name;
     if (def->kind == TYPEDEF_STRUCT) {
-        WString_extend(dest, L"<Struct '");
+        String_extend(dest, "<Struct '");
         name = def->struct_.name;
     } else if (def->kind == TYPEDEF_FUNCTION) {
-        WString_extend(dest, L"<Function type '");
+        String_extend(dest, "<Function type '");
         name = def->func->name;
     } else {
         name = def->name;
     }
     fmt_name(name, parser, dest);
     if (def->kind == TYPEDEF_STRUCT || def->kind == TYPEDEF_FUNCTION) {
-        WString_append_count(dest, L"'>", 2);
+        String_append_count(dest, "'>", 2);
     }
     while (parser->type_table.data[type].kind == TYPE_ARRAY) {
-        WString_append_count(dest, L"[]", 2);
+        String_append_count(dest, "[]", 2);
         type = parser->type_table.data[type].parent;
     }
 }
 
-void fmt_errors(const Parser* parser, WString* dest) {
+void fmt_errors(const Parser* parser, String* dest) {
     ParseError* err = parser->first_error;
     while (err != NULL) {
         if (err->kind == PARSE_ERROR_NONE) {
@@ -186,136 +186,136 @@ void fmt_errors(const Parser* parser, WString* dest) {
         case PARSE_ERROR_NONE:
             break;
         case PARSE_ERROR_BAD_TYPE:
-            WString_extend(dest, L"Error: bad type");
+            String_extend(dest, "Error: bad type");
             break;
         case PARSE_ERROR_EOF:
-            WString_extend(dest, L"Error: unexpecetd end of file");
+            String_extend(dest, "Error: unexpecetd end of file");
             break;
         case PARSE_ERROR_OUTOFMEMORY:
-            WString_extend(dest, L"Error: Out of memory");
+            String_extend(dest, "Error: Out of memory");
             break;
         case PARSE_ERROR_INVALID_ESCAPE:
-            WString_extend(dest, L"Error: invalid escape code");
+            String_extend(dest, "Error: invalid escape code");
             break;
         case PARSE_ERROR_INVALID_CHAR:
-            WString_extend(dest, L"Error: bad character");
+            String_extend(dest, "Error: bad character");
             break;
         case PARSE_ERROR_RESERVED_NAME:
-            WString_extend(dest, L"Error: illegal name");
+            String_extend(dest, "Error: illegal name");
             break;
         case PARSE_ERROR_BAD_NAME:
-            WString_extend(dest, L"Error: bad identifier");
+            String_extend(dest, "Error: bad identifier");
             break;
         case PARSE_ERROR_INVALID_LITERAL:
-            WString_extend(dest, L"Error: invalid literal");
+            String_extend(dest, "Error: invalid literal");
             break;
         case PARSE_ERROR_REDEFINITION:
-            WString_extend(dest, L"Error: redefinition");
+            String_extend(dest, "Error: redefinition");
             break;
         case PARSE_ERROR_BAD_ARRAY_SIZE:
-            WString_extend(dest, L"Error: Bad array size");
+            String_extend(dest, "Error: Bad array size");
             break;
         case PARSE_ERROR_INTERNAL:
-            WString_extend(dest, L"Internal compiler error");
+            String_extend(dest, "Internal compiler error");
             break;
         case TYPE_ERROR_ILLEGAL_TYPE:
-            WString_extend(dest, L"Type Error: Illegal type");
+            String_extend(dest, "Type Error: Illegal type");
             break;
         case TYPE_ERROR_ILLEGAL_CAST:
-            WString_extend(dest, L"Type Error: Illegal cast");
+            String_extend(dest, "Type Error: Illegal cast");
             break;
         case TYPE_ERROR_WRONG_ARG_COUNT:
-            WString_extend(dest, L"Type Error: Wrong number of arguments");
+            String_extend(dest, "Type Error: Wrong number of arguments");
         }
         uint64_t row, col;
         find_row_col(parser, err->pos.start, &row, &col);
         ++row;
         ++col;
-        WString_format_append(dest, L" at row %llu collum %llu [%S:%llu]\n",
+        String_format_append(dest, " at row %llu collum %llu [%s:%llu]\n",
                               row, col, err->file, err->internal_line);
         err = err->next;
     }
 }
 
-void fmt_unary_operator(enum UnaryOperator op, WString *dest) {
+void fmt_unary_operator(enum UnaryOperator op, String *dest) {
     switch(op) {
     case UNOP_BITNOT:
-        WString_append(dest, '~');
+        String_append(dest, '~');
         return;
     case UNOP_BOOLNOT:
-        WString_append(dest, '!');
+        String_append(dest, '!');
         return;
     case UNOP_NEGATVIE:
-        WString_append(dest, '-');
+        String_append(dest, '-');
         return;
     case UNOP_POSITIVE:
-        WString_append(dest, '+');
+        String_append(dest, '+');
         return;
     case UNOP_PAREN:
         return;
     }
 }
 
-void fmt_binary_operator(enum BinaryOperator op, WString* dest) {
+void fmt_binary_operator(enum BinaryOperator op, String* dest) {
     switch (op) {
         case BINOP_DIV:
-            WString_append(dest, L'/');
+            String_append(dest, L'/');
             return;
         case BINOP_MUL:
-            WString_append(dest, L'*');
+            String_append(dest, L'*');
             return;
         case BINOP_MOD:
-            WString_append(dest, L'%');
+            String_append(dest, L'%');
             return;
         case BINOP_SUB:
-            WString_append(dest, L'-');
+            String_append(dest, L'-');
             return;
         case BINOP_ADD:
-            WString_append(dest, L'+');
+            String_append(dest, L'+');
             return;
         case BINOP_BIT_LSHIFT:
-            WString_append_count(dest, L"<<", 2);
+            String_append_count(dest, "<<", 2);
             return;
         case BINOP_BIT_RSHIFT:
-            WString_append_count(dest, L">>", 2);
+            String_append_count(dest, ">>", 2);
             return;
         case BINOP_CMP_LE:
-            WString_append_count(dest, L"<=", 2);
+            String_append_count(dest, "<=", 2);
             return;
         case BINOP_CMP_GE:
-            WString_append_count(dest, L">=", 2);
+            String_append_count(dest, ">=", 2);
             return;
         case BINOP_CMP_G:
-            WString_append(dest, L'>');
+            String_append(dest, '>');
             return;
         case BINOP_CMP_L:
-            WString_append(dest, L'<');
+            String_append(dest, '<');
             return;
         case BINOP_CMP_EQ:
-            WString_append_count(dest, L"==", 2);
+            String_append_count(dest, "==", 2);
             return;
         case BINOP_CMP_NEQ:
-            WString_append_count(dest, L"!=", 2);
+            String_append_count(dest, "!=", 2);
             return;
         case BINOP_BIT_XOR:
-            WString_append(dest, L'^');
+            String_append(dest, '^');
             return;
         case BINOP_BOOL_AND:
-            WString_append(dest, L'&');
+            String_append(dest, '&');
         case BINOP_BIT_AND:
-            WString_append(dest, L'&');
+            String_append(dest, '&');
             return;
         case BINOP_BOOL_OR:
-            WString_append(dest, L'|');
+            String_append(dest, '|');
         case BINOP_BIT_OR:
-            WString_append(dest, L'|');
+            String_append(dest, '|');
             return;
     }
 }
 
-void fmt_double(double d, WString* dest) {
+void fmt_double(double d, String* dest) {
     if (d == 0.0) {
-        WString_append_count(dest, L"0.0", 3);
+        String_append_count(dest, "0.0", 3);
         return;
     }
     bool negative = d < 0;
@@ -357,151 +357,151 @@ void fmt_double(double d, WString* dest) {
         }
     }
     if (negative) {
-        WString_append(dest, L'-');
+        String_append(dest, '-');
     }
-    WString_format_append(dest, L"%llu.", whole_part);
+    String_format_append(dest, "%llu.", whole_part);
     for (uint64_t i = 0; i < leading_zeroes; ++i) {
-        WString_append(dest, L'0');
+        String_append(dest, '0');
     }
-    WString_format_append(dest, L"%llu", frac_part);
+    String_format_append(dest, "%llu", frac_part);
     if (exponent != 0) {
-        WString_format_append(dest, L"e%lld", exponent);
+        String_format_append(dest, "e%lld", exponent);
     }
 }
 
-void fmt_expression(const Expression* expr, const Parser* parser, WString* dest) {
+void fmt_expression(const Expression* expr, const Parser* parser, String* dest) {
     switch (expr->kind) {
         case EXPRESSION_CALL:
-            WString_append(dest, L'(');
+            String_append(dest, L'(');
             fmt_expression(expr->call.function, parser, dest);
-            WString_append(dest, L'(');
+            String_append(dest, L'(');
             for (uint64_t ix = 0; ix < expr->call.arg_count; ++ix) {
                 fmt_expression(expr->call.args[ix], parser, dest);
                 if (ix < expr->call.arg_count - 1) {
-                    WString_append_count(dest, L", ", 2);
+                    String_append_count(dest, ", ", 2);
                 }
             }
-            WString_append_count(dest, L"))", 2);
+            String_append_count(dest, "))", 2);
             return;
         case EXPRESSION_BINOP:
-            WString_append(dest, L'(');
+            String_append(dest, '(');
             fmt_expression(expr->binop.lhs, parser, dest);
-            WString_append(dest, L' ');
+            String_append(dest, ' ');
             fmt_binary_operator(expr->binop.op, dest);
-            WString_append(dest, L' ');
+            String_append(dest, ' ');
             fmt_expression(expr->binop.rhs, parser, dest);
-            WString_append(dest, L')');
+            String_append(dest, ')');
             return;
         case EXPRESSION_UNOP:
-            WString_append(dest, L'(');
+            String_append(dest, '(');
             fmt_unary_operator(expr->unop.op, dest);
             fmt_expression(expr->unop.expr, parser, dest);
-            WString_append(dest, L')');
+            String_append(dest, ')');
             return;
         case EXPRESSION_LITERAL_BOOL:
             if (expr->literal.uint != 0) {
-                WString_extend(dest, L"{true}");
+                String_extend(dest, "{true}");
             } else {
-                WString_extend(dest, L"{false}");
+                String_extend(dest, "{false}");
             }
             return;
         case EXPRESSION_LITERAL_INT:
-            WString_format_append(dest, L"{%lld}", expr->literal.iint);
+            String_format_append(dest, "{%lld}", expr->literal.iint);
             return;
         case EXPRESSION_LITERAL_UINT:
-            WString_format_append(dest, L"{%llu}", expr->literal.uint);
+            String_format_append(dest, "{%llu}", expr->literal.uint);
             return;
         case EXPRESSION_LITERAL_FLOAT:
-            WString_append(dest, L'{');
+            String_append(dest, '{');
             fmt_double(expr->literal.float64, dest);
-            WString_append(dest, L'}');
+            String_append(dest, '}');
             return;
         case EXPRESSION_LITERAL_STRING:
             WString s;
-            WString_append(dest, '"');
-            WString_append_utf8_bytes(dest, (const char*)expr->literal.string.bytes,
+            String_append(dest, '"');
+            String_append_count(dest, (const char*)expr->literal.string.bytes,
                                       expr->literal.string.len);
-            WString_append(dest, '"');
+            String_append(dest, '"');
             return;
         case EXPRESSION_VARIABLE:
             fmt_name(expr->variable.ix, parser, dest);
             return;
         case EXPRESSION_ARRAY_INDEX:
-            WString_append(dest, '(');
+            String_append(dest, '(');
             fmt_expression(expr->array_index.array, parser, dest);
-            WString_append(dest, '[');
+            String_append(dest, '[');
             fmt_expression(expr->array_index.index, parser, dest);
-            WString_append(dest, ']');
-            WString_append(dest, ')');
+            String_append(dest, ']');
+            String_append(dest, ')');
             return;
         case EXPRESSION_CAST:
-            WString_append(dest, '(');
+            String_append(dest, '(');
             fmt_type(expr->cast.type, parser, dest);
-            WString_append(dest, ')');
-            WString_append(dest, '(');
+            String_append(dest, ')');
+            String_append(dest, '(');
             fmt_expression(expr->cast.e, parser, dest);
-            WString_append(dest, ')');
+            String_append(dest, ')');
             return;
         default:
-            WString_extend(dest, L"UNKOWN");
+            String_extend(dest, "UNKOWN");
             return;
     }
 }
 
-void fmt_statement(const Statement* statement, const Parser* parser, WString* dest) {
+void fmt_statement(const Statement* statement, const Parser* parser, String* dest) {
     switch (statement->type) {
     case STATEMENT_RETURN:
-        WString_extend(dest, L"return ");
+        String_extend(dest, "return ");
         fmt_expression(statement->return_.return_value, parser, dest);
-        WString_append(dest, L';');
-        WString_append(dest, L'\n');
+        String_append(dest, ';');
+        String_append(dest, '\n');
         return;
     case STATEMENT_ASSIGN:
         fmt_expression(statement->assignment.lhs, parser, dest);
-        WString_extend(dest, L" = ");
+        String_extend(dest, " = ");
         fmt_expression(statement->assignment.rhs, parser, dest);
-        WString_append(dest, L';');
-        WString_append(dest, L'\n');
+        String_append(dest, ';');
+        String_append(dest, '\n');
         return;
     case STATEMENT_EXPRESSION:
         fmt_expression(statement->expression, parser, dest);
-        WString_append(dest, L';');
-        WString_append(dest, L'\n');
+        String_append(dest, ';');
+        String_append(dest, '\n');
         return;
     case STATEMENT_IF:
         if (statement->if_.condition) {
-            WString_extend(dest, L"if ");
+            String_extend(dest, "if ");
             fmt_expression(statement->if_.condition, parser, dest);
-            WString_append(dest, L' ');
+            String_append(dest, ' ');
         }
-        WString_extend(dest, L"{\n");
+        String_extend(dest, "{\n");
         for (uint64_t ix = 0; ix < statement->if_.statement_count; ++ix) {
             fmt_statement(statement->if_.statements[ix], parser, dest);
         }
-        WString_extend(dest, L"}");
+        String_extend(dest, "}");
         if (statement->if_.else_branch != NULL) {
-            WString_extend(dest, L" else ");
+            String_extend(dest, " else ");
             fmt_statement(statement->if_.else_branch, parser, dest);
         } else {
-            WString_append(dest, '\n');
+            String_append(dest, '\n');
         }
         return;
     case STATEMENT_WHILE:
-        WString_extend(dest, L"while ");
+        String_extend(dest, "while ");
         fmt_expression(statement->if_.condition, parser, dest);
-        WString_extend(dest, L" {\n");
+        String_extend(dest, " {\n");
         for (uint64_t ix = 0; ix < statement->if_.statement_count; ++ix) {
             fmt_statement(statement->if_.statements[ix], parser, dest);
         }
-        WString_extend(dest, L"}\n");
+        String_extend(dest, "}\n");
         return;
     case STATEMET_INVALID:
-        WString_extend(dest, L"BAD STATEMENT");
+        String_extend(dest, "BAD STATEMENT\n");
         break;
     }
 }
 
-void fmt_statements(Statement* const* s, uint64_t count, const Parser* parser, WString* dest) {
+void fmt_statements(Statement* const* s, uint64_t count, const Parser* parser, String* dest) {
     for (uint64_t ix = 0; ix < count; ++ix) {
         fmt_statement(s[ix], parser, dest);
     }
