@@ -3,6 +3,9 @@
 #ifndef DYNAMIC_STRING_NO_FMT
 #include <stdarg.h>
 
+extern int _vscprintf(const char *format, va_list argptr);
+extern int _vsnprintf(char *buffer, size_t count, const char* format,
+                      va_list argptr);
 extern int _vscwprintf(const wchar_t *format, va_list argptr);
 extern int _vsnwprintf(wchar_t *buffer, size_t count, const wchar_t *format,
                        va_list argptr);
@@ -532,6 +535,41 @@ bool WString_from_utf8_str(WString* dest, const char* s) {
 
 
 #ifndef DYNAMIC_STRING_NO_FMT
+bool String_format(String* dest, const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    int count = _vscprintf(fmt, args);
+    if (count == -1) {
+        return false;
+    }
+    if (!String_reserve(dest, count)) {
+        return false;
+    }
+    _vsnprintf(dest->buffer, count, fmt, args);
+    dest->length = count;
+    dest->buffer[dest->length] = '\0';
+
+    va_end(args);
+    return true;
+}
+
+bool String_format_append(String* dest, const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    int count = _vscprintf(fmt, args);
+    if (count == -1) {
+        return false;
+    }
+    if (!String_reserve(dest, dest->length + count)) {
+        return false;
+    }
+    _vsnprintf(dest->buffer + dest->length, count, fmt, args);
+    dest->length = count + dest->length;
+    dest->buffer[dest->length] = '\0';
+
+    va_end(args);
+    return true;
+}
 
 bool WString_format(WString* dest, const wchar_t* fmt, ...) {
     va_list args;

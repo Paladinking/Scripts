@@ -150,6 +150,10 @@ type_id typecheck_binop(Parser* parser, Expression* op) {
 
 type_id typecheck_array_index(Parser* parser, Expression* e) {
     type_id ix = require_interger(parser, e->array_index.index, true, true);
+    if (ix != TYPE_ID_UINT64) {
+        cast_to(parser, e->array_index.index, TYPE_ID_UINT64);
+        // No need to check validity of cast, require_interger makes sure it's valid.
+    }
     type_id a = e->array_index.array->type;
     if (parser->type_table.data[a].kind != TYPE_ARRAY) {
         add_error(parser, TYPE_ERROR_ILLEGAL_TYPE, e->line);

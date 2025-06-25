@@ -1,4 +1,23 @@
 
+
+fn main() -> uint64 {
+    uint64[100] array;
+
+    bool a = false;
+
+    uint64 ix = 0;
+    while (ix < 100) {
+        array[ix] = ix;
+        ix = ix + 1;
+    }
+
+    if (!a) {
+        array[13] = array[14] + array[29];
+    }
+
+    return array[13] + array[88];
+}
+
 fn x(int64 a, uint64 b) -> uint64 {
     uint64 a = 10;
     uint64 __bee1 = 2 * 2;

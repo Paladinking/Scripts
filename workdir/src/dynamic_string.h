@@ -137,6 +137,11 @@ bool WString_from_utf8_bytes(WString* dest, const char* s, size_t count);
 bool WString_from_utf8_str(WString* dest, const char* s);
 
 #ifndef DYNAMIC_STRING_NO_FMT
+
+bool String_format(String* dest, const char* fmt, ...);
+
+bool String_format_append(String* dest, const char* fmt, ...);
+
 bool WString_format(WString* dest, const wchar_t* fmt, ...);
 
 bool WString_format_append(WString* dest, const wchar_t* fmt, ...);

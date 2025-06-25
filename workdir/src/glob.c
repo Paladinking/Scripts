@@ -1095,6 +1095,7 @@ void WalkDir_abort(WalkCtx* ctx) {
     }
 }
 
+#ifndef NARROW_OCHAR
 
 wchar_t** glob_command_line_with(const wchar_t* args, int* argc, unsigned options) {
     *argc = 0;
@@ -1107,7 +1108,7 @@ wchar_t** glob_command_line_with(const wchar_t* args, int* argc, unsigned option
 
     size_t len = 0;
     size_t size = 0;
-    BOOL quoted;
+    bool quoted;
     GlobCtx ctx;
     Path* path;
     while (1) {
@@ -1191,3 +1192,5 @@ fail:
 wchar_t** glob_command_line(const wchar_t* args, int* argc) {
     return glob_command_line_with(args, argc, ARG_OPTION_STD);
 }
+
+#endif

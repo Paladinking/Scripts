@@ -72,6 +72,8 @@ typedef uint64_t name_id;
 #define NAME_ID_WHILE 3
 #define NAME_ID_ELSE 4
 #define NAME_ID_RETURN 5
+#define NAME_ID_TRUE 6
+#define NAME_ID_FALSE 7
 
 // Index into var_table (part of quads)
 typedef uint64_t var_id;

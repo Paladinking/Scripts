@@ -20,10 +20,48 @@ extern int _vsnwprintf(wchar_t *buffer, size_t count, const wchar_t *format,
 }
 #endif
 
+void outputUtf8_h(HANDLE out, const uint8_t* data, size_t size) {
+    if (size > INT_MAX) {
+        size = INT_MAX;
+    }
+    DWORD type = GetFileType(out);
+    if (type == FILE_TYPE_CHAR) {
+        wchar_t buf[512];
+        int outsize = MultiByteToWideChar(CP_UTF8, 0, (const char*)data, size, NULL, 0);
+        wchar_t* output = buf;
+        if (outsize > 512) {
+            output = Mem_alloc(outsize * sizeof(wchar_t));
+            if (output == NULL) {
+                return;
+            }
+        }
+        MultiByteToWideChar(CP_UTF8, 0, (const char*)data, size, output, outsize);
+        DWORD written = 0;
+        while (written < outsize) {
+            DWORD w;
+            if (!WriteConsoleW(out, output + written, outsize - written, &w, NULL)) {
+                break;
+            }
+            written += w;
+        }
+        if (outsize > 512) {
+            Mem_free(output);
+        }
+    } else {
+        DWORD written = 0;
+        while (written < size) {
+            DWORD w;
+            if (!WriteFile(out, data + written, size - written, &w, NULL)) {
+                break;
+            }
+            written += w;
+        }
+    }
+}
+
 void outputa_h(HANDLE out, const char* data, size_t size) {
     DWORD type = GetFileType(out);
     if (type == FILE_TYPE_CHAR) {
-        // TODO: Convert to UTF-16 and use WriteConsoleW??
         WriteConsoleA(out, data, size, NULL, NULL);
     } else {
         DWORD written = 0;
@@ -45,16 +83,16 @@ int _printf_h(HANDLE dest, const char *fmt, ...) {
         return -1;
     }
     if (count < 1024) { // Note: not inclusive for NULL terminator
-        char buf[1024];
-        _vsnprintf(buf, count, fmt, args);
-        outputa_h(dest, buf, count);
+        uint8_t buf[1024];
+        _vsnprintf((char*)buf, count, fmt, args);
+        outputUtf8_h(dest, buf, count);
     } else {
-        char *buf = (char *)Mem_alloc(count);
+        uint8_t *buf = (uint8_t *)Mem_alloc(count);
         if (buf == NULL) {
             return -1;
         }
-        _vsnprintf(buf, count, fmt, args);
-        outputa_h(dest, buf, count);
+        _vsnprintf((char*)buf, count, fmt, args);
+        outputUtf8_h(dest, buf, count);
         Mem_free(buf);
     }
     va_end(args);

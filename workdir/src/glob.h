@@ -7,11 +7,14 @@
 #include <windows.h>
 #include <stdint.h>
 
+#ifndef NARROW_OCHAR
 
 wchar_t** glob_command_line(const wchar_t* args, int* argc);
 
 wchar_t** glob_command_line_with(const wchar_t* args, int* argc,
                                  unsigned options);
+
+#endif
 
 /**
  * Get current dir.

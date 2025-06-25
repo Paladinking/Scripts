@@ -388,7 +388,7 @@ bool peek_keyword(Parser* parser, name_id keyword) {
 }
 
 
-bool parse_uint(Parser* parser, uint64_t* i, uint8_t base) {
+static bool parse_uint(Parser* parser, uint64_t* i, uint8_t base) {
     *i = 0;
     uint64_t n = 0;
     expect_data(parser);
@@ -523,6 +523,13 @@ name_id parse_known_name(Parser* parser) {
 }
 
 // Also accepts function names
+bool is_variable(Parser* parser, name_id name) {
+    if (name == NAME_ID_INVALID) {
+        return false;
+    }
+    enum NameKind kind = parser->name_table.data[name].kind;
+    return kind == NAME_VARIABLE || kind == NAME_FUNCTION;
+}
 name_id parse_variable_name(Parser* parser) {
     uint32_t len = 0;
     const uint8_t* base = parse_name(parser, &len);
@@ -1120,16 +1127,29 @@ loop:
             e->literal.string.bytes = s;
             e->literal.string.len = len;
         } else {
-            name_id name = parse_variable_name(parser);
+            name_id name = parse_known_name(parser);
             if (name == NAME_ID_INVALID) {
                 e->kind = EXPRESSION_INVALID;
                 Mem_free(stack);
                 return e;
-            } else {
+            }
+            e->line = i;
+            e->line.end = parser->pos;
+            if (name == NAME_ID_TRUE) {
+                e->kind = EXPRESSION_LITERAL_BOOL;
+                e->literal.uint = 1;
+            } else if (name == NAME_ID_FALSE) {
+                e->kind = EXPRESSION_LITERAL_BOOL;
+                e->literal.uint = 0;
+            } else if (is_variable(parser, name)) {
                 e->kind = EXPRESSION_VARIABLE;
-                e->line = i;
-                e->line.end = parser->pos;
                 e->variable.ix = name;
+            } else {
+                LineInfo l = {true, i.start, parser->pos};
+                add_error(parser, PARSE_ERROR_BAD_NAME, l);
+                e->kind = EXPRESSION_INVALID;
+                Mem_free(stack);
+                return e;
             }
         }
 
@@ -1849,6 +1869,8 @@ bool Parser_create(Parser* parser) {
     insert_keyword(parser, "while", NAME_ID_WHILE);
     insert_keyword(parser, "else", NAME_ID_ELSE);
     insert_keyword(parser, "return", NAME_ID_RETURN);
+    insert_keyword(parser, "true", NAME_ID_TRUE);
+    insert_keyword(parser, "false", NAME_ID_FALSE);
 
     parser_add_builtin(parser, TYPE_ID_UINT64, TYPEDEF_UINT64, "uint64");
     parser_add_builtin(parser, TYPE_ID_INT64, TYPEDEF_INT64, "int64");
