@@ -27,6 +27,16 @@ LINKFLAGS: str
 
 g_context: Optional['Context'] = None
 
+
+class Package:
+    def __init__(self, compile_flags: str, link_flags: str, dlls: List[str],
+                 sources: List[str]) -> None:
+        self.compile_flags = compile_flags
+        self.link_flags = link_flags
+        self.dlls = dlls
+        self.sources = sources
+
+
 class Context:
     def __init__(self, directory: Optional[str]=None,
                  group: Optional[str]=None,
@@ -140,10 +150,10 @@ class ZigCC(BackendBase):
                "    command = zig.exe cc -MMD -MF $out.d -c $in -o $out $cl_flags"
 
     def link_exe_ninja(self) -> str:
-        return "    command = zig.exe cc -o $out $link_flags $in"
+        return "    command = zig.exe cc -o $out $in $link_flags"
 
     def link_dll_ninja(self) -> str:
-        return "    command = zig.exe cc -shared -o $out $link_flags $in"
+        return "    command = zig.exe cc -shared -o $out $in $link_flags"
 
     def find_headers(self, obj: Obj) -> List[str]:
         cmd = f"zig.exe cc -MM {obj.cmp_flags} {obj.source}"
@@ -165,6 +175,9 @@ class ZigCC(BackendBase):
     def include(self, directory: str) -> str:
         return f"-I{directory}"
 
+    def libpath(self, directory: str) -> str:
+        return f"-L{directory}"
+
     def define(self, key: str, val: Optional[str]) -> str:
         if val:
             return f"-D{key}={val}"
@@ -172,6 +185,7 @@ class ZigCC(BackendBase):
 
     def import_lib_cmd(self, out: str, dll: str, symbols: List[str]) -> Cmd:
         def_path = BUILD_DIR / pathlib.PurePath(out).with_suffix(".def").name
+        def_path = def_path.relative_to(BUILD_DIR)
         def_file = Command(str(def_path), f"python comp.py --deffile {def_path} {' '.join(symbols)}")
         out_path = BUILD_DIR / out
         cmd = f"zig.exe dlltool -D {dll} -d {def_path} -l {out_path}"
@@ -220,10 +234,10 @@ class Mingw(BackendBase):
                "    command = gcc.exe -MMD -MF $out.d -c $in -o $out $cl_flags"
 
     def link_exe_ninja(self) -> str:
-        return "    command = gcc.exe -o $out $link_flags $in"
+        return "    command = gcc.exe -o $out $in $link_flags"
 
     def link_dll_ninja(self) -> str:
-        return "    command = gcc.exe -shared -o $out $link_flags $in"
+        return "    command = gcc.exe -shared -o $out $in $link_flags"
 
     def find_headers(self, obj: Obj) -> List[str]:
         cmd = f"gcc.exe -MM {obj.cmp_flags} {obj.source}"
@@ -245,6 +259,9 @@ class Mingw(BackendBase):
     def include(self, directory: str) -> str:
         return f"-I{directory}"
 
+    def libpath(self, directory: str) -> str:
+        return f"-L{directory}"
+
     def define(self, key: str, val: Optional[str]) -> str:
         if val:
             return f"-D{key}={val}"
@@ -252,6 +269,7 @@ class Mingw(BackendBase):
 
     def import_lib_cmd(self, out: str, dll: str, symbols: List[str]) -> Cmd:
         def_path = BUILD_DIR / pathlib.PurePath(out).with_suffix(".def").name
+        def_path = def_path.relative_to(BUILD_DIR)
         def_file = Command(str(def_path), f"python comp.py --deffile {def_path} {' '.join(symbols)}")
         out_path = BUILD_DIR / out
         cmd = f"dlltool.exe -D {dll} -d {def_path} -l {out_path}"
@@ -324,6 +342,9 @@ class Msvc(BackendBase):
     def include(self, directory: str) -> str:
         return f"/I{directory}"
 
+    def libpath(self, directory: str) -> str:
+        return f"/LIBPATH:{directory}"
+
     def define(self, key: str, val: Optional[str]) -> str:
         if val:
             return f"/D{key}={val}"
@@ -385,6 +406,7 @@ def Executable(name: str, *sources: Union[str, Obj, Cmd],
                includes: List[str]=[],
                directory: Optional[str]=None, 
                group: Optional[str]=None,
+               packages: List[Package]=[],
                context: Optional[Context]=None) -> Exe:
     if context is None:
         context = g_context
@@ -394,6 +416,13 @@ def Executable(name: str, *sources: Union[str, Obj, Cmd],
         link_flags = LINKFLAGS
     if extra_link_flags is not None:
         link_flags += " " + extra_link_flags
+    for pkg in packages:
+        if pkg.compile_flags:
+            cmp_flags += " " + pkg.compile_flags
+        if pkg.link_flags:
+            link_flags += " " + pkg.link_flags
+        if pkg.sources:
+            sources = sources + tuple(pkg.sources)
 
     objs = []
     cmds = []
@@ -608,7 +637,7 @@ def ninjafile(dest: TextIO = sys.stdout) -> None:
     resolve_dirs()
 
     def esc(s : Union[str, pathlib.Path]) -> str:
-        return str(s).replace(" ", "$ ")
+        return str(s).replace(" ", "$ ").replace(":", "$:")
 
     print("ninja_required_version = 1.5", file=dest)
     print(f"builddir = {esc(BACKEND.builddir)}\n", file=dest)
@@ -803,6 +832,27 @@ def set_backend(name: str) -> None:
     BACKEND = backend
     ACTIVE_BACKEND = name
 
+    run = True
+    if get_args().deffile:
+        run = False
+        args = get_args().deffile
+        dest = args[0]
+        with open(dest, 'w') as file:
+            print("EXPORTS", file=file)
+            for arg in args[1:]:
+                print(arg, file=file)
+
+    elif get_args().copyto:
+        run = False
+        args = get_args().copyto
+        if len(args) != 2:
+            print("Invalid copyto args", file=sys.stderr)
+            exit(1)
+        shutil.copy2(args[0], args[1])
+
+    if not run:
+        exit(0)
+
     return
 
 def backend() -> Backend:
@@ -834,27 +884,6 @@ def get_make() -> Tuple[str, List[str]]:
     return make, args
 
 def build(comp_file: str) -> None:
-    run = True
-    if get_args().deffile:
-        run = False
-        args = get_args().deffile
-        dest = args[0]
-        with open(dest, 'w') as file:
-            print("EXPORTS", file=file)
-            for arg in args[1:]:
-                print(arg, file=file)
-        return
-
-    if get_args().copyto:
-        run = False
-        args = get_args().copyto
-        if len(args) != 2:
-            print("Invalid copyto args", file=sys.stderr)
-            exit(1)
-        shutil.copy2(args[0], args[1])
-
-    if not run:
-        return
 
     comp_stamp = os.path.getmtime(pathlib.Path(comp_file))
     compiledb = WORKDIR / 'compile_commands.json'
@@ -916,7 +945,9 @@ def build(comp_file: str) -> None:
     make_exe, args = get_make()
     if not get_args().make:
         res = subprocess.run([make_exe, '-f', str(make), *args])
-        exit(res.returncode)
+        if res.returncode != 0:
+            exit(res.returncode)
+        return
     res = subprocess.Popen([make_exe, '-f', str(make), *args], bufsize=1,
                            universal_newlines=True, stdout=subprocess.PIPE)
     assert res.stdout is not None
@@ -959,6 +990,213 @@ def build(comp_file: str) -> None:
                     makefile(dest=file)
             except Exception as e:
                 print(f"Failed generating makefile: {e}", file=sys.stderr)
+    if res.returncode != 0:
+        exit(res.returncode)
 
-    exit(res.returncode)
 
+def find_cmake() -> str:
+    cmake = shutil.which('cmake.exe')
+    if cmake is None:
+        raise RuntimeError("Could not find cmake.exe")
+    res = subprocess.run(['cmake', '--version'], stdout=subprocess.PIPE)
+    if res.returncode != 0:
+        raise RuntimeError("Bad cmake version")
+    ver = res.stdout.decode('utf8')
+    if not ver.startswith('cmake version '):
+        raise RuntimeError("Bad cmake version")
+    ver = ver[14:]
+    parts = ver.strip().split('.')
+    if len(parts) < 2:
+        raise RuntimeError("Bad cmake version")
+    try:
+        major = int(parts[0])
+        minor = int(parts[1])
+        if (major, minor) < (3, 22):
+            raise RuntimeError("Insufficient cmake version")
+    except Exception:
+        raise RuntimeError("Bad cmake version")
+    return cmake
+
+
+def _sdl3_gfx_hook(path: pathlib.Path, pkg: Dict[str, Any]) -> None:
+    root = path / "SDL3_gfx-1.0.1"
+    include = root / 'include'
+    if not include.is_dir():
+        include.mkdir()
+    include_gfx = include / 'SDL3_gfx'
+    if not include_gfx.is_dir():
+        include_gfx.mkdir()
+
+    import glob
+
+    for file in glob.glob(str(root) + "/*.h"):
+        p = pathlib.Path(file)
+        shutil.copy2(p, include_gfx / p.name)
+
+
+def _box2d_hook(path: pathlib.Path, pkg: Dict[str, Any]) -> None:
+    src_path = path.with_name(path.name + "-src")
+    
+    if src_path.exists():
+        shutil.rmtree(src_path)
+    
+    shutil.move(path, src_path)
+
+    cmake_src_path = src_path / 'box2d-3.1.1'
+
+    build_dir = src_path / 'build'
+    cmake = find_cmake()
+
+    if BACKEND.name == "msvc":
+        cmp = "cl.exe"
+    else:
+        cmp = "gcc.exe"
+
+    res = subprocess.run([cmake, '-B', str(build_dir), '-S', str(cmake_src_path), '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release',
+                          f'-DCMAKE_INSTALL_PREFIX={path}', '-DBOX2D_SAMPLES=OFF', '-DBOX2D_UNIT_TESTS=OFF', '-DBUILD_SHARED_LIBS=OFF',
+                           f'-DCMAKE_C_COMPILER={cmp}'])
+    if res.returncode != 0:
+        raise RuntimeError("Failed building box2d")
+    res = subprocess.run([cmake, '--build', str(build_dir)])
+    if res.returncode != 0:
+        raise RuntimeError("Failed building box2d")
+    res = subprocess.run([cmake, '--install', str(build_dir)])
+    if res.returncode != 0:
+        raise RuntimeError("Failed building box2d")
+    shutil.rmtree(src_path)
+
+
+KNOWN_PACKAGES = {
+    "box2d": {
+        "msvc": {
+            "url": "https://github.com/erincatto/box2d/archive/refs/tags/v3.1.1.zip",
+            "include": ["include"],
+            "libpath": ["lib"],
+            "libname": ["box2d.lib"],
+            "dll": [],
+            "hook": _box2d_hook
+        },
+        "mingw": {
+            "url": "https://github.com/erincatto/box2d/archive/refs/tags/v3.1.1.zip",
+            "include": ["include"],
+            "libpath": ["lib"],
+            "libname": ["-lbox2d"],
+            "dll": [],
+            "hook": _box2d_hook
+        }
+    },
+    "SDL3_gfx": {
+        "msvc": {
+            "url": "https://github.com/sabdul-khabir/SDL3_gfx/archive/refs/tags/v1.0.1.zip",
+            "include": ["SDL3_gfx-1.0.1/include"],
+            "libpath": [],
+            "libname": [],
+            "dll": [],
+            "sources": ["SDL3_gfx-1.0.1/SDL3_gfxPrimitives.c", "SDL3_gfx-1.0.1/SDL3_framerate.c",
+                        "SDL3_gfx-1.0.1/SDL3_imageFilter.c", "SDL3_gfx-1.0.1/SDL3_rotozoom.c"],
+            "hook": _sdl3_gfx_hook
+        },
+        "mingw": {
+            "url": "https://github.com/sabdul-khabir/SDL3_gfx/archive/refs/tags/v1.0.1.zip",
+            "include": ["SDL3_gfx-1.0.1/include"],
+            "libpath": [],
+            "libname": [],
+            "dll": [],
+            "sources": ["SDL3_gfx-1.0.1/SDL3_gfxPrimitives.c", "SDL3_gfx-1.0.1/SDL3_framerate.c",
+                        "SDL3_gfx-1.0.1/SDL3_imageFilter.c", "SDL3_gfx-1.0.1/SDL3_rotozoom.c"],
+            "hook": _sdl3_gfx_hook
+        },
+    },
+    "SDL3": {
+        "msvc": {
+            "url": "https://github.com/libsdl-org/SDL/releases/download/release-3.2.16/SDL3-devel-3.2.16-VC.zip", 
+            "include": ["SDL3-3.2.16/include"],
+            "libpath": ["SDL3-3.2.16/lib/x64"],
+            "libname": ["SDL3.lib"],
+            "dll": ["SDL3-3.2.16/lib/x64/SDL3.dll"]
+        },
+        "mingw": { 
+            "url": "https://github.com/libsdl-org/SDL/releases/download/release-3.2.16/SDL3-devel-3.2.16-mingw.zip",
+            "include": ["SDL3-3.2.16/x86_64-w64-mingw32/include"],
+            "libpath": ["SDL3-3.2.16/x86_64-w64-mingw32/lib"],
+            "libname": ["-lSDL3"],
+            "dll": ["SDL3-3.2.16/x86_64-w64-mingw32/bin/SDL3.dll"]
+        }
+    },
+    "SDL3_image": {
+        "msvc": {
+            "url": "https://github.com/libsdl-org/SDL_image/releases/download/release-3.2.4/SDL3_image-devel-3.2.4-VC.zip",
+            "include": ["SDL3_image-3.2.4/include"],
+            "libpath": ["SDL3_image-3.2.4/lib/x64"],
+            "libname": ["SDL3_image.lib"],
+            "dll": ["SDL3_image-3.2.4/lib/x64/SDL3_image.dll"]
+        },
+        "mingw": { 
+            "url": "https://github.com/libsdl-org/SDL_image/releases/download/release-3.2.4/SDL3_image-devel-3.2.4-mingw.zip",
+            "include": ["SDL3_image-3.2.4/x86_64-w64-mingw32/include"],
+            "libpath": ["SDL3_image-3.2.4/x86_64-w64-mingw32/lib"],
+            "libname": ["-lSDL3_image"],
+            "dll": ["SDL3_image-3.2.4/x86_64-w64-mingw32/bin/SDL3_image.dll"]
+        }
+    },
+    "SDL3_ttf": {
+        "msvc": {
+            "url": "https://github.com/libsdl-org/SDL_ttf/releases/download/release-3.2.2/SDL3_ttf-devel-3.2.2-VC.zip" ,
+            "include": ["SDL3_ttf-3.2.2/include"],
+            "libpath": ["SDL3_ttf-3.2.2/lib/x64"],
+            "libname": ["SDL3_ttf.lib"],
+            "dll": ["SDL3_ttf-3.2.2/lib/x64/SDL3_ttf.dll"]
+
+        },
+        "mingw": {
+            "url": "https://github.com/libsdl-org/SDL_ttf/releases/download/release-3.2.2/SDL3_ttf-devel-3.2.2-mingw.zip",
+            "include": ["SDL3_ttf-3.2.2/x86_64-w64-mingw32/include"],
+            "libpath": ["SDL3_ttf-3.2.2/x86_64-w64-mingw32/lib"],
+            "libname": ["-lSDL3_ttf"],
+            "dll": ["SDL3_ttf-3.2.2/x86_64-w64-mingw32/bin/SDL3_ttf.dll"]
+        }
+    }
+}
+
+
+def find_package(package: str) -> Package:
+    if package not in KNOWN_PACKAGES:
+        raise RuntimeError(f"Unkown package '{package}'")
+    if BACKEND.name not in KNOWN_PACKAGES[package]:
+        raise RuntimeError(f"Package '{package}' not supported for {BACKEND.name}")
+
+    libdir = pathlib.Path(WORKDIR) / 'lib'
+    libdir = libdir.relative_to(WORKDIR)
+    if not libdir.exists():
+        libdir.mkdir()
+
+    pkg = KNOWN_PACKAGES[package][BACKEND.name]
+    pkg_path = libdir / (package + f"-{BACKEND.name}")
+    if not pkg_path.exists():
+        from urllib.request import urlretrieve
+        print(f"Downloading {pkg['url']}")
+        path, msg = urlretrieve(pkg['url'], filename=(libdir / package).with_suffix(".zip"))
+
+        print(f"Extracting {path}")
+        import zipfile
+        with zipfile.ZipFile(path, 'r') as zfile:
+            zfile.extractall(pkg_path)
+
+        if "hook" in pkg:
+            pkg['hook'](pkg_path, pkg)
+
+    includes = pkg['include']
+    libpath = pkg['libpath']
+    libname = pkg['libname']
+    dll = pkg['dll']
+
+    i_flags = ' '.join(BACKEND.include(str(pkg_path / i)) for i in includes)
+    l_flags = ' '.join(BACKEND.libpath(str(pkg_path / l)) for l in libpath)
+    lib_flags = ' '.join(libname)
+    link_flags = ' '.join([l_flags, lib_flags])
+    if "sources" in pkg:
+        sources = [str(pkg_path / s) for s in pkg['sources']]
+    else:
+        sources = []
+    dlls = [str(pkg_path / d) for d in dll]
+    return Package(i_flags, link_flags, dlls, sources)
