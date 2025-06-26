@@ -6,6 +6,7 @@
 #endif
 #include <windows.h>
 #include <stdint.h>
+#include "args.h"
 
 #ifndef NARROW_OCHAR
 
@@ -86,7 +87,7 @@ char* SyncLineIter_next(LineCtx* ctx, uint64_t* len);
 
 void SyncLineIter_abort(LineCtx* ctx);
 
-bool LineIter_begin(LineCtx* ctx, const wchar_t* filename);
+bool LineIter_begin(LineCtx* ctx, const ochar_t* filename);
 
 char* LineIter_next(LineCtx* ctx, uint64_t* len);
 
@@ -108,7 +109,7 @@ int WalkDir_next(WalkCtx* ctx, Path** path);
 
 void WalkDir_abort(WalkCtx* ctx);
 
-bool read_text_file(String_noinit* str, const wchar_t* filename);
+bool read_text_file(String_noinit* str, const ochar_t* filename);
 
 bool read_utf16_file(WString_noinit* str, const wchar_t* filename);
 

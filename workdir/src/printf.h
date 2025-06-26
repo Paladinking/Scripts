@@ -1,6 +1,17 @@
 #pragma once
 #include <windows.h>
 #include <stdint.h>
+#include "ochar.h"
+
+#ifdef NARROW_OCHAR
+    #define oprintf(...) _printf(__VA_ARGS__)
+    #define oprintf_h(...) _printf_h(__VA_ARGS__)
+    #define oprintf_e(...) _printf_e(__VA_ARGS__)
+#else
+    #define oprintf(...) _wprintf(L##__VA_ARGS__)
+    #define oprintf_h(handle, ...) _wprintf_h(handle, L##__VA_ARGS__)
+    #define oprintf_e(...) _wprintf_e(L##__VA_ARGS__)
+#endif
 
 #define _printf(...) _printf_h(GetStdHandle(STD_OUTPUT_HANDLE), __VA_ARGS__)
 #define _wprintf(...) _wprintf_h(GetStdHandle(STD_OUTPUT_HANDLE), __VA_ARGS__)

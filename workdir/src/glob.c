@@ -54,10 +54,25 @@ bool read_utf16_file(WString_noinit* str, const wchar_t* filename) {
 
 }
 
-bool read_text_file(String_noinit* str, const wchar_t* filename) {
-    HANDLE file = CreateFileW(filename, GENERIC_READ,
+bool read_text_file(String_noinit* str, const ochar_t* filename) {
+#ifdef NARROW_OCHAR
+    WString name;
+    if (!WString_create_capacity(&name, 512)) {
+        return false;
+    }
+    if (!WString_from_utf8_str(filename)) {
+        return false;
+    }
+    wchar_t* fname = name.buffer;
+#else
+    const wchar_t* fname = filename;
+#endif
+    HANDLE file = CreateFileW(fname, GENERIC_READ,
                               FILE_SHARE_READ, NULL,
                               OPEN_EXISTING, 0, NULL);
+#ifdef NARROW_OCHAR
+    WString_free(&name);
+#endif
 
     if (file == INVALID_HANDLE_VALUE) {
         return false;
@@ -586,10 +601,27 @@ void SyncLineIter_abort(LineCtx* ctx) {
     ctx->file = INVALID_HANDLE_VALUE;
 }
 
-bool LineIter_begin(LineCtx* ctx, const wchar_t* filename) {
-    ctx->file = CreateFileW(filename, GENERIC_READ, FILE_SHARE_READ, NULL,
+bool LineIter_begin(LineCtx* ctx, const ochar_t* filename) {
+#ifdef NARROW_OCHAR
+    WString s;
+    if (!WString_create(&s)) {
+        ctx->filename = INVALID_HANDLE_VALUE;
+        return false;
+    }
+    if (!WString_from_utf8_str(filename)) {
+        ctx->filename = INVALID_HANDLE_VALUE;
+        return false;
+    }
+    wchar_t* name = s.buffer;
+#else
+    const wchar_t* name = filename;
+#endif
+    ctx->file = CreateFileW(name, GENERIC_READ, FILE_SHARE_READ, NULL,
                             OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL |
                             FILE_FLAG_OVERLAPPED, NULL);
+#ifdef NARROW_OCHAR
+    WString_free(&s);
+#endif
 
     ctx->eof = false;
     ctx->ended_cr = false;

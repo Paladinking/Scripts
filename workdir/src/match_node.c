@@ -692,7 +692,7 @@ MatchNode* find_final(const wchar_t *cmd, size_t* offset, WString* rem) {
     MatchNode* current = gRoot;
     size_t ix = 0;
     size_t len = 0;
-    BOOL quoted = FALSE;
+    bool quoted = false;
 
     size_t pos = ix;
     unsigned count = 0;

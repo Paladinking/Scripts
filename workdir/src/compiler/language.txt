@@ -1,7 +1,90 @@
+// builtins: type, name, number, string, space
+// + is concatenation
+// | means or
+
+PROGRAM = '' |
+          PROGRAM + ?space + FUNCTION + ?space;
+
+?space = '' |
+         space;
+
+FUNCTION = 'fn' + space + FUNCTION_NAME + ?space +
+           '(' + ?space + ARG_LIST + ?space + ')' +
+           ?space + ?RET_TYPE + ?space + STATEMENTS;
+
+FUNCTION_NAME = name;
+
+?RET_TYPE = '' |
+            '->' + ?space + name;
 
 
+ARG_LIST = '' |
+           ARG + TRAILING_ARGS;
+
+TRAILING_ARGS = '' |
+                ',' + ?space + ARG + ?space + TRAILING_ARGS;
+
+ARG = type + space + name;
+
+STATEMENTS = '{' + ?space + STATEMENT_LIST + ?space + '}';
+
+STATEMENT_LIST = '' |
+                 STATEMENT_LIST + ?space + STATEMENT;
+
+STATEMENT = WHILE |
+            IF |
+            DECLARATION + ';' |
+            ASSIGNMENT + ';' |
+            EXPRESSION + ';' |
+            RETURN + ';';
+
+DECLARATION = type + space + name + ?ASSIGN;
+
+?ASSIGN = '' |
+          ?space + '=' + ?space + EXPRESSION;
+
+ASSIGNMENT = EXPRESSION + ?space + '=' + ?space + EXPRESSION;
+
+COND = '(' + ?space + EXPRESSION + ?space + ')';
+
+IF = 'if' + ?space + COND + ?space + STATEMENTS + ?ELSE;
+
+?ELSE = '' |
+        ?space + ELSE;
+
+ELSE = 'else' + ?space + ?IFCOND;
+
+?IFCOND = STATEMENTS | IF;
+
+WHILE = 'while' + ?space + COND + ?space + STATEMENTS;
+
+RETURN = 'return' + EXPRESSION;
+
+EXPRESSION = name | BINOP | UNOP | number | string | CALL | ARRAY_INDEX;
+
+BINOP = EXPRESSION + ?space + BIN_OPERATOR + ?space + EXPRESSION;
+
+BIN_OPERATOR = '/'  | '*'  | '%' |
+               '-'  | '+'  | 
+               '>>' | '<<' |
+               '<=' | '>=' | '>' | '<' |
+               '==' | '!=' |
+               '&'  | '|'  | '^' |
+               '&&' | '||';
+
+UNOP = UN_OPERATOR + ?space + EXPRESSION |
+       '(' + ?space + EXPRESSION + ?space + ')';
+
+UN_OPERATOR = '~' | '!' | '-' | '+';
+
+CALL = EXPRESSION + ?space + '(' + ?space + PARAM_LIST + ?space + ')';
+
+PARAM_LIST = '' |
+             EXPRESSION + TRAILING_PARAMS;
+
+TRAILING_PARAMS = '' |
+                  ',' + ?space + EXPRESSION + ?space + TRAILING_PARAMS;
+
+ARRAY_INDEX = EXPRESSION + ?space + '[' + ?space + EXPRESSION + ?space + ']';
 
 
-fn x(int64 a, uint64 b, float64 c) -> int64 {
-    return a + b + c;
-}
