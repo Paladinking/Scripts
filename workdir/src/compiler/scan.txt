@@ -1,0 +1,32 @@
+// + is concatenation
+// | means or
+
+// atoms: a, b;
+
+// S = L ;
+// L = L + '-' + E;
+// L = E;
+// E = a;
+// E = b;
+
+atoms: identifier, statements;
+
+type: PROGRAM = Program*;
+
+PROGRAM = '' : Prog1 |
+          PROGRAM + FUNCTION : Prog2;
+
+FUNCTION = 'fn' + identifier + 
+            '(' + ?ARG_LIST + ')' + 
+            ?RET_TYPE + statements;
+
+?RET_TYPE = '' |
+            '->' + identifier;
+
+?ARG_LIST = '' |
+            ARG_LIST;
+
+ARG_LIST = ARG |
+           ARG_LIST + ',' + ARG;
+
+ARG = identifier + identifier;
