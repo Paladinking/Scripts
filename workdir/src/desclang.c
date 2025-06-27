@@ -65,14 +65,10 @@ bool reserve(void** dst, uint32_t* cap, uint32_t size, size_t elem_size) {
 
 #define RESERVE(ptr, cap, size) reserve((void**)&(ptr), &(cap), size, sizeof(*(ptr)))
 
-bool TokenSet_create(TokenSet* set) {
-    set->tokens = Mem_alloc(8 * sizeof(rule_id));
-    if (set->tokens == NULL) {
-        return false;
-    }
+void TokenSet_create(TokenSet* set) {
+    set->tokens = Mem_xalloc(8 * sizeof(rule_id));
     set->cap = 8;
     set->size = 0;
-    return true;
 }
 
 void TokenSet_free(TokenSet* set) {
@@ -86,15 +82,11 @@ void TokenSet_clear(TokenSet* set) {
     set->size = 0;
 }
 
-bool TokenSet_copy(TokenSet* new, TokenSet* old) {
-    new->tokens = Mem_alloc(old->cap * sizeof(rule_id));
-    if (new->tokens == NULL) {
-        return false;
-    }
+void TokenSet_copy(TokenSet* new, TokenSet* old) {
+    new->tokens = Mem_xalloc(old->cap * sizeof(rule_id));
     memcpy(new->tokens, old->tokens, old->size * sizeof(rule_id));
     new->size = old->size;
     new->cap = old->cap;
-    return true;
 }
 
 bool TokenSet_equals(TokenSet* a, TokenSet* b) {
@@ -104,13 +96,11 @@ bool TokenSet_equals(TokenSet* a, TokenSet* b) {
     return memcmp(a->tokens, b->tokens, a->size * sizeof(rule_id)) == 0;
 }
 
+// Returns false on no change
 bool TokenSet_insert(TokenSet* set, rule_id id) {
     if (set->cap == set->size) {
-        rule_id* new_ptr = Mem_realloc(set->tokens, set->cap * 
-                                       2 * sizeof(rule_id));
-        if (new_ptr == NULL) {
-            return false;
-        }
+        rule_id* new_ptr = Mem_xrealloc(set->tokens, set->cap * 
+                                        2 * sizeof(rule_id));
         set->tokens = new_ptr;
         set->cap *= 2;
     }
@@ -122,7 +112,7 @@ bool TokenSet_insert(TokenSet* set, rule_id id) {
             set->size += 1;
             return true;
         } else if (id == set->tokens[ix]) {
-            return true;
+            return false;
         }
     }
     set->tokens[set->size] = id;
@@ -155,13 +145,10 @@ rule_id NodeRow_get_next(NodeRow* row, Rule* rules) {
     return rules[row->rule].data[row->ix];
 }
 
-bool NodeRow_get_advanced(NodeRow* row, NodeRow* dest) {
+void NodeRow_get_advanced(NodeRow* row, NodeRow* dest) {
     dest->rule = row->rule;
     dest->ix = row->ix + 1;
-    if (!TokenSet_copy(&dest->lookahead, &row->lookahead)) {
-        return false;
-    }
-    return true;
+    TokenSet_copy(&dest->lookahead, &row->lookahead);
 }
 
 // Return 0, 1, or 2
@@ -187,26 +174,103 @@ typedef struct NodeRows {
     uint32_t cap;
 } NodeRows;
 
-bool NodeRows_create(NodeRows* rows) {
-    rows->rows = Mem_alloc(8 * sizeof(NodeRow));
-    if (rows->rows == NULL) {
-        return false;
-    }
+void NodeRows_create(NodeRows* rows) {
+    rows->rows = Mem_xalloc(8 * sizeof(NodeRow));
     rows->count = 0;
     rows->cap = 8;
+}
+
+// Check if the LR(1) items are equal
+bool NodeRows_fully_equal(NodeRows* a, NodeRows* b) {
+    if (a->count != b->count) {
+        return false;
+    }
+    for (uint32_t i = 0; i < a->count; ++i) {
+        bool same = false;
+        for (uint32_t j = 0; j < b->count; ++j) {
+            if (a->rows[i].rule != b->rows[j].rule) {
+                continue;
+            }
+            if (a->rows[i].ix != b->rows[j].ix) {
+                continue;
+            }
+            if (!TokenSet_equals(&a->rows[i].lookahead,
+                                 &b->rows[j].lookahead)) {
+                continue;
+            }
+            same = true;
+            break;
+        }
+        if (!same) {
+            return false;
+        }
+    }
+    return true;
+
+}
+
+// Check if the LR(0) items are equal
+bool NodeRows_equal(NodeRows* a, NodeRows* b) {
+    if (a->count != b->count) {
+        return false;
+    }
+    for (uint32_t i = 0; i < a->count; ++i) {
+        bool same = false;
+        for (uint32_t j = 0; j < b->count; ++j) {
+            if (a->rows[i].rule != b->rows[j].rule) {
+                continue;
+            }
+            if (a->rows[i].ix != b->rows[j].ix) {
+                continue;
+            }
+            same = true;
+            break;
+        }
+        if (!same) {
+            return false;
+        }
+    }
     return true;
 }
 
+// returns false if row already existed
 bool NodeRows_append(NodeRows* rows, NodeRow* row) {
     if (rows->count == rows->cap) {
-        NodeRow* p = Mem_realloc(rows->rows, rows->cap * 2 * sizeof(NodeRow));
-        if (p == NULL) {
-            return false;
-        }
+        NodeRow* p = Mem_xrealloc(rows->rows, rows->cap * 2 * sizeof(NodeRow));
         rows->rows = p;
         rows->cap *= 2;
     }
-    rows->rows[rows->count] = *row;
+    uint32_t i = 0;
+    for (; i < rows->count; ++i) {
+        if (rows->rows[i].rule < row->rule) {
+            continue;
+        }
+        if (rows->rows[i].rule > row->rule) {
+            break;
+        }
+        if (rows->rows[i].ix < row->ix) {
+            continue;
+        }
+        if (rows->rows[i].ix > row->ix) {
+            break;
+        }
+        bool change = false;
+        for (uint32_t j = 0; j < row->lookahead.size; ++j) {
+            rule_id token = row->lookahead.tokens[j];
+            if (TokenSet_insert(&rows->rows[i].lookahead, token)) {
+                change = true;
+            }
+        }
+        TokenSet_free(&row->lookahead);
+        return change;
+    }
+    if (i == rows->count) {
+        rows->rows[rows->count] = *row;
+    } else {
+        memmove(rows->rows + i + 1, rows->rows + i, 
+                (rows->count - i) * sizeof(NodeRow));
+        rows->rows[i] = *row;
+    }
     rows->count += 1;
     return true;
 }
@@ -296,31 +360,13 @@ bool Graph_addEdge(Graph* g, Node* source, Node* dest, rule_id token,
         return false;
     }
     for (uint32_t ix = 0; ix < g->count; ++ix) {
-        if (g->nodes[ix]->rows.count != dest->rows.count) {
-            continue;
-        }
-        bool same = true;
-        for (uint32_t j = 0; j < dest->rows.count; ++j) {
-            if (g->nodes[ix]->rows.rows[j].rule != dest->rows.rows[j].rule) {
-                same = false;
-                break;
-            }
-            if (g->nodes[ix]->rows.rows[j].ix != dest->rows.rows[j].ix) {
-                same = false;
-                break;
-            }
-            if (!TokenSet_equals(&g->nodes[ix]->rows.rows[j].lookahead,
-                                 &dest->rows.rows[j].lookahead)) {
-                same = false;
-                break;
-            }
-        }
-        if (same) {
+        if (NodeRows_fully_equal(&g->nodes[ix]->rows, &dest->rows)) {
             Mem_free(dest);
             source->edges[source->edge_count].dest = g->nodes[ix];
             source->edges[source->edge_count].token = token;
             source->edge_count += 1;
             return true;
+
         }
     }
     if (!Graph_addNode(g, dest)) {
@@ -349,114 +395,77 @@ bool Node_expand(Node* node, Rule* rules) {
     bool changed = true;
 
     uint8_t checked[MAX_RULES];
-    rule_id* stack = Mem_alloc(16 * sizeof(rule_id));
-    if (stack == NULL) {
-        return false;
-    }
+    rule_id* stack = Mem_xalloc(16 * sizeof(rule_id));
     uint32_t stack_size = 0;
     uint32_t stack_cap = 16;
 
     while (changed) {
         changed = false;
-    for (uint32_t ix = 0; ix < node->rows.count; ++ix) {
-        NodeRow* row = &node->rows.rows[ix];
-        rule_id r, next_rule;
-        uint32_t ncount = NodeRow_get_next_rules(row, rules, &r, &next_rule);
-        if (ncount == 0 || rules[r].type != RULE_MAPPING) {
-            continue;
-        }
-        for (;r != RULE_ID_NONE; r = rules[r].next) {
-            TokenSet look;
-            if (!TokenSet_copy(&look, &row->lookahead)) {
-                Mem_free(stack);
-                return false;
+        for (uint32_t ix = 0; ix < node->rows.count; ++ix) {
+            NodeRow* row = &node->rows.rows[ix];
+            rule_id r, next_rule;
+            uint32_t ncount = NodeRow_get_next_rules(row, rules, &r, &next_rule);
+            if (ncount == 0 || rules[r].type != RULE_MAPPING) {
+                continue;
             }
-            if (ncount > 1 && rules[next_rule].type == RULE_MAPPING) {
-                TokenSet_clear(&look);
-                memset(checked, 0, sizeof(checked));
-                checked[next_rule] = 1;
-                stack_size = 0;
-                for (rule_id i = next_rule; i != RULE_ID_NONE; i = rules[i].next) {
-                    ++stack_size;
-                }
-                if (!RESERVE(stack, stack_cap, stack_size)) {
-                    Mem_free(stack);
-                    TokenSet_free(&look);
-                    return false;
-                }
-                stack_size = 0;
-                for (rule_id i = next_rule; i != RULE_ID_NONE; i = rules[i].next) {
-                    stack[stack_size++] = i;
-                }
-                while (stack_size > 0) {
-                    rule_id top = stack[stack_size - 1];
-                    --stack_size;
-                    if (rules[top].count == 0) {
-                        continue;
+            for (;r != RULE_ID_NONE; r = rules[r].next) {
+                TokenSet look;
+                TokenSet_copy(&look, &row->lookahead);
+                if (ncount > 1 && rules[next_rule].type == RULE_MAPPING) {
+                    TokenSet_clear(&look);
+                    memset(checked, 0, sizeof(checked));
+                    checked[next_rule] = 1;
+                    stack_size = 0;
+                    for (rule_id i = next_rule; i != RULE_ID_NONE; i = rules[i].next) {
+                        ++stack_size;
                     }
-                    top = rules[top].data[0];
-                    if (rules[top].type != RULE_MAPPING) {
-                        if (!TokenSet_insert(&look, top)) {
-                            Mem_free(stack);
-                            TokenSet_free(&look);
-                            return false;
-                        }
-                        continue;
-                    }
-                    if (checked[top]) {
-                        continue;
-                    }
-                    checked[top] = 1;
-                    rule_id i = top;
-                    uint32_t c = 0;
-                    for (; i != RULE_ID_NONE; i = rules[i].next, ++c) {}
-                    if (!RESERVE(stack, stack_cap, stack_size + c)) {
+                    if (!RESERVE(stack, stack_cap, stack_size)) {
                         Mem_free(stack);
                         TokenSet_free(&look);
                         return false;
                     }
-                    for (i = top; i != RULE_ID_NONE; i = rules[i].next) {
+                    stack_size = 0;
+                    for (rule_id i = next_rule; i != RULE_ID_NONE; i = rules[i].next) {
                         stack[stack_size++] = i;
                     }
-                }
-            } else if (ncount > 1) {
-                TokenSet_clear(&look);
-                if (!TokenSet_insert(&look, next_rule)) {
-                    Mem_free(stack);
-                    TokenSet_free(&look);
-                    return false;
-                }
-            }
-            uint32_t i = 0;
-            for (; i < node->rows.count; ++i) {
-                if (node->rows.rows[i].rule == r && 
-                    node->rows.rows[i].ix == 0) {
-                    TokenSet* old = &node->rows.rows[i].lookahead;
-                    uint32_t old_len = old->size;
-                    for (uint32_t j = 0; j < look.size; ++j) {
-                        if (!TokenSet_insert(old, look.tokens[j])) {
+                    while (stack_size > 0) {
+                        rule_id top = stack[stack_size - 1];
+                        --stack_size;
+                        if (rules[top].count == 0) {
+                            continue;
+                        }
+                        top = rules[top].data[0];
+                        if (rules[top].type != RULE_MAPPING) {
+                            TokenSet_insert(&look, top);
+                            continue;
+                        }
+                        if (checked[top]) {
+                            continue;
+                        }
+                        checked[top] = 1;
+                        rule_id i = top;
+                        uint32_t c = 0;
+                        for (; i != RULE_ID_NONE; i = rules[i].next, ++c) {}
+                        if (!RESERVE(stack, stack_cap, stack_size + c)) {
                             Mem_free(stack);
                             TokenSet_free(&look);
                             return false;
                         }
+                        for (i = top; i != RULE_ID_NONE; i = rules[i].next) {
+                            stack[stack_size++] = i;
+                        }
                     }
-                    if (old->size > old_len) {
-                        changed = true;
-                    }
-                    break;
+                } else if (ncount > 1) {
+                    TokenSet_clear(&look);
+                    TokenSet_insert(&look, next_rule);
                 }
-            }
-            if (i == node->rows.count) {
-                changed = true;
+                uint32_t i = 0;
                 NodeRow new_row = {r, 0, look};
-                if (!NodeRows_append(&node->rows, &new_row)) {
-                    Mem_free(stack);
-                    TokenSet_free(&look);
-                    return false;
+                if (NodeRows_append(&node->rows, &new_row)) {
+                    changed = true;
                 }
             }
         }
-    }
     }
     return true;
 }
@@ -482,9 +491,7 @@ bool Node_add_children(Node* node, Graph* g, Rule* rules) {
             continue;
         }
         NodeRow advanced;
-        if (!NodeRow_get_advanced(row, &advanced)) {
-            goto fail;
-        }
+        NodeRow_get_advanced(row, &advanced);
         if (!RESERVE(consumed, cap, size + 1)) {
             TokenSet_free(&advanced.lookahead);
             goto fail;
@@ -492,22 +499,15 @@ bool Node_add_children(Node* node, Graph* g, Rule* rules) {
         uint32_t ix = 0;
         for (; ix < size; ++ix) {
             if (consumed[ix].token == to_consume) {
-                if (!NodeRows_append(&consumed[ix].rows, &advanced)) {
-                    TokenSet_free(&advanced.lookahead);
-                    goto fail;
-                }
+                NodeRows_append(&consumed[ix].rows, &advanced);
                 break;
             }
         }
         if (ix == size) {
-            if (!NodeRows_create(&consumed[size].rows)) {
-                goto fail;
-            }
+            NodeRows_create(&consumed[size].rows);
             consumed[size].token = to_consume;
             ++size;
-            if (!NodeRows_append(&consumed[size - 1].rows, &advanced)) {
-                goto fail;
-            }
+            NodeRows_append(&consumed[size - 1].rows, &advanced);
         }
     }
 
@@ -617,79 +617,186 @@ void fmt_rows(Rule* rules, NodeRows* rows) {
     }
 }
 
-bool output_code(Graph* graph, Rule* rules, uint32_t rule_count) {
-    _printf("#include <stdint.h>\n");
-    _printf("#include \"mem.h\"\n\n");
-    _printf("enum TokenType {\n");
-    _printf("    TOKEN_LITERAL, TOKEN_END");
+char upper(char a) {
+    if (a >= 'a' && a <= 'z') {
+        return a - 'a' + 'A';
+    }
+    return a;
+}
+
+void output_header(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
+                   String* includes) {
+    _printf_h(h, "#include <stdint.h>\n");
+    _printf_h(h, "#include <stdbool.h>\n");
+
+    for (uint64_t ix = 0; ix < includes->length;) {
+        uint64_t len = strlen(includes->buffer + ix);
+        _printf_h(h, "#include %s\n", includes->buffer + ix);
+        ix += len + 1;
+    }
+    _printf_h(h, "\n");
+
+    _printf_h(h, "enum TokenType {\n");
+    _printf_h(h, "    TOKEN_LITERAL, TOKEN_END");
     for (uint32_t ix = 0; ix < rule_count - 1; ++ix) {
         if (rules[ix].type != RULE_ATOM) {
             continue;
         }
-        _printf(", TOKEN_");
+        _printf_h(h, ", TOKEN_");
         for (const char *c = rules[ix].name; c[0] != '\0'; ++c) {
-            char up = toupper(*c);
-            _printf("%c", up);
+            char up = upper(*c);
+            _printf_h(h, "%c", up);
         }
     }
-    _printf("\n};\n");
+    _printf_h(h, "\n};\n");
 
-    _printf("typedef struct Token {\n");
-    _printf("    enum TokenType id;\n    union {\n");
-    _printf("        const char* literal;\n");
+    _printf_h(h, "typedef struct Token {\n");
+    _printf_h(h, "    enum TokenType id;\n");
+    _printf_h(h, "    union {\n");
+    _printf_h(h, "        const char* literal;\n");
     for (uint32_t ix = 0; ix < rule_count - 1; ++ix) {
         if (rules[ix].type != RULE_ATOM) {
             continue;
         }
-        _printf("        %s %s;\n", rules[ix].ctype, rules[ix].name);
+        _printf_h(h, "        %s %s;\n", rules[ix].ctype, rules[ix].name);
     }
-    _printf("    };\n");
-    _printf("} Token;\n\n");
+    _printf_h(h, "    };\n");
+    _printf_h(h, "} Token;\n\n");
 
-    _printf("struct StackEntry {\n");
-    _printf("    int32_t state;\n");
-    _printf("    union {\n");
+    _printf_h(h, "struct StackEntry {\n");
+    _printf_h(h, "    int32_t state;\n");
+    _printf_h(h, "    uint64_t start;\n");
+    _printf_h(h, "    uint64_t end;\n");
+    _printf_h(h, "    union {\n");
     for (uint32_t ix = 0; ix < rule_count - 1; ++ix) {
         if (rules[ix].type == RULE_LITERAL ||
             (rules[ix].type == RULE_MAPPING && 
              rules[ix].next != RULE_ID_NONE)) {
             continue;
         }
-        _printf("        %s m%lu;\n", rules[ix].ctype, ix);
+        _printf_h(h, "        %s m%lu;\n", rules[ix].ctype, ix);
     }
-    _printf("    };\n");
-    _printf("};\n\n");
-    _printf("struct Stack {\n");
-    _printf("    struct StackEntry* b;\n");
-    _printf("    uint32_t size;\n");
-    _printf("    uint32_t cap;\n");
-    _printf("};\n\n");
+    _printf_h(h, "    };\n");
+    _printf_h(h, "};\n\n");
+    _printf_h(h, "struct Stack {\n");
+    _printf_h(h, "    struct StackEntry* b;\n");
+    _printf_h(h, "    uint32_t size;\n");
+    _printf_h(h, "    uint32_t cap;\n");
+    _printf_h(h, "};\n\n");
 
-    uint32_t mapping_count = 0;
-    uint32_t MAP_IX[MAX_RULES];
     for (uint32_t ix = 0; ix < rule_count - 1; ++ix) {
         if (rules[ix].type != RULE_MAPPING) {
             continue;
         }
-        MAP_IX[ix] = mapping_count;
-        ++mapping_count;
         if (rules[ix].redhook == NULL) {
             continue;
         }
-        _printf("%s %s(void* ctx, uint64_t start, uint64_t end", 
+        _printf_h(h, "%s %s(void* ctx, uint64_t start, uint64_t end", 
                 rules[ix].ctype, rules[ix].redhook);
         for (uint32_t j = 0; j < rules[ix].count; ++j) {
-            _printf(", %s", rules[rules[ix].data[j]].ctype);
+            if (rules[rules[ix].data[j]].type == RULE_LITERAL) {
+                continue;
+            }
+            _printf_h(h, ", %s", rules[rules[ix].data[j]].ctype);
         }
-        _printf(");\n\n");
+        _printf_h(h, ");\n\n");
     }
 
+    _printf_h(h, "Token peek_token(void* ctx, uint64_t* start, uint64_t* end);\n\n");
+    _printf_h(h, "void consume_token(void* ctx, uint64_t* start, uint64_t* end);\n\n");
+    _printf_h(h, "bool parse(void* ctx);\n\n");
+}
+
+const static char* INDENTS[8] =  {
+    "", "    ", "        ", "            ",
+    "                ", "                    ",
+    "                        ", "                            "
+};
+
+void output_shift(NodeEdge* edge, HANDLE h, uint8_t indents) {
+    const char* i = INDENTS[indents];
+    uint32_t new_state = edge->dest->ix;
+    _printf_h(h, "%sn.state = %lu;\n", i, new_state);
+    _printf_h(h, "%sconsume_token(ctx, &n.start, &n.end);\n", i);
+    _printf_h(h, "%spush_state(&stack, n);\n", i);
+}
+
+void output_reduce(rule_id r, Rule* rules, uint32_t* map_ix,
+                   uint32_t mapping_count, bool accept, HANDLE h, 
+                   uint8_t indents) {
+    const char* i = INDENTS[indents];
+    _printf_h(h, i);
+    if (rules[r].count > 0) {
+        _printf_h(h, "n.start = stack.b[stack.size - %lu].start;\n",
+                  rules[r].count);
+        _printf_h(h, i);
+        _printf_h(h, "n.end = stack.b[stack.size - 1].end;\n");
+    } else {
+        _printf_h(h, "n.start = start;\n");
+        _printf_h(h, i);
+        _printf_h(h, "n.end = start;\n");
+    }
+    if (rules[r].redhook != NULL) {
+        rule_id id = r;
+        while (rules[id].next != RULE_ID_NONE) {
+            id = rules[id].next;
+        }
+        _printf_h(h, "%sn.m%lu = %s(ctx, n.start, n.end",
+                  i, id, rules[r].redhook);
+        for (uint32_t i2 = 0; i2 < rules[r].count; ++i2) {
+            if (rules[rules[r].data[i2]].type == RULE_LITERAL) {
+                continue;
+            }
+            rule_id id = rules[r].data[i2];
+            if (rules[id].type == RULE_MAPPING) {
+                while (rules[id].next != RULE_ID_NONE) {
+                    id = rules[id].next;
+                }
+            }
+            uint32_t s_ix = rules[r].count - i2;
+            _printf_h(h, ", stack.b[stack.size - %lu].m%lu",
+                    s_ix, id);
+        }
+        _printf_h(h, ");\n");
+    }
+    if (rules[r].count > 0) {
+        _printf_h(h, "%sstack.size -= %lu;\n", i,
+                rules[r].count);
+        _printf_h(h, i);
+        _printf_h(h, "n.state = stack.b[stack.size - 1].state;\n");
+    }
+    _printf_h(h, i);
+    if (accept) {
+        _printf_h(h, "goto accept;\n");
+        return;
+    }
+    _printf_h(h, "n.state = reduce_table[n.state * %lu + %lu];\n",
+              mapping_count, map_ix[r]);
+    _printf_h(h, i);
+    if (rules[r].count == 0) {
+        _printf_h(h, "push_state(&stack, n);\n");
+    } else {
+        _printf_h(h, "stack.b[stack.size] = n;\n");
+        _printf_h(h, "%s++stack.size;\n", i);
+    }
+}
+
+
+void output_reduce_table(Graph* graph, Rule* rules, uint32_t rule_count,
+                         uint32_t* map_ix, uint32_t mapping_count,
+                         HANDLE h) {
     uint32_t state_count = graph->count;
-    _printf("const static int32_t reduce_table[%lu] = {\n", 
-            state_count * mapping_count);
+    const char* size = "int32_t";
+    if (state_count < 255) {
+        size = "uint8_t";
+    } else if (state_count < 65535) {
+        size = "uint16_t";
+    }
+    _printf_h(h, "const static %s reduce_table[%lu] = {\n", 
+            size, state_count * mapping_count);
     for (uint32_t ix = 0; ix < graph->count; ++ix) {
         Node* n = graph->nodes[ix];
-        _printf("    ");
+        _printf_h(h, "    ");
         for (uint32_t i = 0; i < rule_count; ++i) {
             if (rules[i].type != RULE_MAPPING) {
                 continue;
@@ -710,77 +817,97 @@ bool output_code(Graph* graph, Rule* rules, uint32_t rule_count) {
                 if (edge_id == id) {
                     found = true;
                     uint32_t n_ix = n->edges[j].dest->ix;
-                    _printf("%lu", n_ix);
+                    _printf_h(h, "%lu", n_ix);
                     break;
                 }
             }
             if (!found) {
-                _printf("-1");
+                _printf_h(h, "-1", size);
             }
-            if (MAP_IX[i] + 1 < mapping_count) {
-                _printf(", ");
+            if (map_ix[i] + 1 < mapping_count) {
+                _printf_h(h, ", ");
             }
         } 
         if (ix + 1 < graph->count) {
-            _printf(",\n");
+            _printf_h(h, ",\n");
         }
     }
-    _printf("\n};\n\n");
+    _printf_h(h, "\n};\n\n");
+}
 
-    _printf("Token peek_token(void* ctx, uint64_t* start, uint64_t* end);\n\n");
-    _printf("void consume_token(void* ctx);\n\n");
-    _printf("static void push_state(struct Stack* stack, struct StackEntry n) {\n");
-    _printf("    if (stack->size == stack->cap) {\n");
-    _printf("        struct StackEntry* p = Mem_realloc(stack->b,\n");
-    _printf("                           2 * stack->cap * sizeof(struct StackEntry));\n");
-    _printf("        if (p == NULL) {\n");
-    _printf("            // TODO\n");
-    _printf("        }\n");
-    _printf("        stack->b = p;\n");
-    _printf("        stack->cap *= 2;\n");
-    _printf("    }\n");
-    _printf("    stack->b[stack->size] = n;\n");
-    _printf("    stack->size += 1;\n");
-    _printf("}\n\n");
+bool output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
+                 String* includes, const char* header) {
+    if (header != NULL) {
+        _printf_h(h, "#include \"%s\"\n", header);
+    }
+    _printf_h(h, "#include \"mem.h\"\n\n");
+
+    if (header == NULL) {
+        output_header(graph, rules, rule_count, h, includes);
+    }
+
+    uint32_t mapping_count = 0;
+    uint32_t MAP_IX[MAX_RULES];
+
+    for (uint32_t ix = 0; ix < rule_count - 1; ++ix) {
+        if (rules[ix].type == RULE_MAPPING) {
+            MAP_IX[ix] = mapping_count;
+            ++mapping_count;
+        }
+    }
+    
+    output_reduce_table(graph, rules, rule_count, MAP_IX, mapping_count, h);
+
+    _printf_h(h, "static void push_state(struct Stack* stack, struct StackEntry n) {\n");
+    _printf_h(h, "    if (stack->size == stack->cap) {\n");
+    _printf_h(h, "        struct StackEntry* p = Mem_realloc(stack->b,\n");
+    _printf_h(h, "                           2 * stack->cap * sizeof(struct StackEntry));\n");
+    _printf_h(h, "        if (p == NULL) {\n");
+    _printf_h(h, "            // TODO\n");
+    _printf_h(h, "        }\n");
+    _printf_h(h, "        stack->b = p;\n");
+    _printf_h(h, "        stack->cap *= 2;\n");
+    _printf_h(h, "    }\n");
+    _printf_h(h, "    stack->b[stack->size] = n;\n");
+    _printf_h(h, "    stack->size += 1;\n");
+    _printf_h(h, "}\n\n");
 
 
-    _printf("bool parse(void* ctx) {\n");
-    _printf("    int32_t state = 0;\n");
-    _printf("    struct Stack stack;\n");
-    _printf("    stack.b = Mem_alloc(16 * sizeof(struct StackEntry));\n");
-    _printf("    stack.size = 1;\n");
-    _printf("    stack.b[0].state = 0;\n");
-    _printf("    stack.cap = 16;\n");
-    _printf("    while (1) {\n");
-    _printf("        struct StackEntry n;\n");
-    _printf("        uint64_t start, end;\n");
-    _printf("        Token t = peek_token(ctx, &start, &end);\n");
-    _printf("        uint64_t len = end - start;\n");
-    _printf("        switch (state) {\n");
+    _printf_h(h, "bool parse(void* ctx) {\n");
+    _printf_h(h, "    struct Stack stack;\n");
+    _printf_h(h, "    stack.b = Mem_alloc(16 * sizeof(struct StackEntry));\n");
+    _printf_h(h, "    stack.size = 1;\n");
+    _printf_h(h, "    stack.b[0].state = 0;\n");
+    _printf_h(h, "    stack.b[0].start = 0;\n");
+    _printf_h(h, "    stack.b[0].end = 0;\n");
+    _printf_h(h, "    stack.cap = 16;\n");
+    _printf_h(h, "    struct StackEntry n = {0, 0, 0};\n");
+    _printf_h(h, "    while (1) {\n");
+    _printf_h(h, "        uint64_t start, end;\n");
+    _printf_h(h, "        Token t = peek_token(ctx, &start, &end);\n");
+    _printf_h(h, "        uint64_t len = end - start;\n");
+    _printf_h(h, "        switch (n.state) {\n");
     for (uint32_t ix = 0; ix < graph->count; ++ix) {
         Node* n = graph->nodes[ix];
-        _printf("        case %lu: {\n", ix);
-        _printf("            switch (t.id) {\n");
+        _printf_h(h, "        case %lu: {\n", ix);
+        _printf_h(h, "            switch (t.id) {\n");
         bool has_literal = false;
         for (uint32_t j = 0; j < n->edge_count; ++j) {
             rule_id r = n->edges[j].token;
             if (rules[r].type == RULE_LITERAL) {
                 uint64_t l = strlen(rules[r].name);
                 if (!has_literal) {
-                    _printf("            case TOKEN_LITERAL:\n");
-                    _printf("                if (len == %llu", l);
+                    _printf_h(h, "            case TOKEN_LITERAL:\n");
+                    _printf_h(h, "                if (len == %llu", l);
                 } else {
-                    _printf(" else if (len == %llu", l);
+                    _printf_h(h, " else if (len == %llu", l);
                 }
                 for (uint64_t i = 0; i < l; ++i) {
-                    _printf(" && t.literal[%lu] == '%c'", i, rules[r].name[i]);
+                    _printf_h(h, " && t.literal[%lu] == '%c'", i, rules[r].name[i]);
                 }
-                _printf(") {\n");
-                uint32_t new_state = n->edges[j].dest->ix;
-                _printf("                    n.state = state = %lu;\n", new_state);
-                _printf("                    push_state(&stack, n);\n");
-                _printf("                    consume_token(ctx);\n");
-                _printf("                }");
+                _printf_h(h, ") {\n");
+                output_shift(&n->edges[j], h, 5);
+                _printf_h(h, "                }");
                 has_literal = true;
             }
         }
@@ -796,80 +923,40 @@ bool output_code(Graph* graph, Rule* rules, uint32_t rule_count) {
                 }
                 uint64_t l = strlen(rules[r].name);
                 if (!has_literal) {
-                    _printf("            case TOKEN_LITERAL:\n");
-                    _printf("                if (len == %llu", l);
+                    _printf_h(h, "            case TOKEN_LITERAL:\n");
+                    _printf_h(h, "                if (len == %llu", l);
                 } else {
-                    _printf(" else if (len == %llu", l);
+                    _printf_h(h, " else if (len == %llu", l);
                 }
                 has_literal = true;
                 for (uint64_t i2 = 0; i2 < l; ++i2) {
-                    _printf(" && t.literal[%lu] == '%c'", i2, rules[r].name[i2]);
+                    _printf_h(h, " && t.literal[%lu] == '%c'", i2, rules[r].name[i2]);
                 }
-                _printf(") {\n");
-                if (rules[row->rule].redhook != NULL) {
-                    rule_id id = row->rule;
-                    while (rules[id].next != RULE_ID_NONE) {
-                        id = rules[id].next;
-                    }
-                    _printf("                    n.m%lu = %s(ctx, start, end",
-                            id, rules[row->rule].redhook);
-                    for (uint32_t i2 = 0; i2 < rules[row->rule].count; ++i2) {
-                        if (rules[rules[row->rule].data[i2]].type == RULE_LITERAL) {
-                            continue;
-                        }
-                        rule_id id = rules[row->rule].data[i2];
-                        if (rules[id].type == RULE_MAPPING) {
-                            while (rules[id].next != RULE_ID_NONE) {
-                                id = rules[id].next;
-                            }
-                        }
-                        uint32_t s_ix = rules[row->rule].count - i2;
-                        _printf(", stack.b[stack.size - %lu].m%lu",
-                                s_ix, id);
-                    }
-                    _printf(");\n");
-                }
-                if (rules[row->rule].count > 0) {
-                    _printf("                    stack.size -= %lu;\n",
-                            rules[row->rule].count);
-                    _printf("                    ");
-                    _printf("state = stack.b[stack.size - 1].state;\n");
-                }
-                _printf("                    ");
-                _printf("n.state = state = reduce_table[state * %lu + %lu];\n",
-                        mapping_count, MAP_IX[row->rule]);
-                _printf("                    ");
-                if (rules[row->rule].count == 0) {
-                    _printf("push_state(&stack, n);\n");
-                } else {
-                    _printf("stack.b[stack.size] = n;\n");
-                    _printf("                    ++stack.size;\n");
-                }
-                _printf("                }");
+                _printf_h(h, ") {\n");
+                output_reduce(row->rule, rules, MAP_IX, mapping_count, false, h, 5);
+                _printf_h(h, "                }");
             }
         }
         if (has_literal) {
-            _printf(" else {\n");
-            _printf("                    goto failure;\n");
-            _printf("                }\n");
-            _printf("                break;\n");
+            _printf_h(h, " else {\n");
+            _printf_h(h, "                    goto failure;\n");
+            _printf_h(h, "                }\n");
+            _printf_h(h, "                break;\n");
         }
         for (uint32_t j = 0; j < n->edge_count; ++j) {
             rule_id id = n->edges[j].token;
             if (rules[id].type != RULE_ATOM) {
                 continue;
             }
-            _printf("            case TOKEN_");
+            _printf_h(h, "            case TOKEN_");
             for (const char* c = rules[id].name; *c != '\0'; ++c) {
-                _printf("%c", toupper(*c));
+                _printf_h(h, "%c", upper(*c));
             }
-            _printf(":\n");
+            _printf_h(h, ":\n");
             uint32_t new_state = n->edges[j].dest->ix;
-            _printf("                n.state = state = %lu;\n", new_state);
-            _printf("                n.m%lu = t.%s;\n", id, rules[id].name);
-            _printf("                push_state(&stack, n);\n");
-            _printf("                consume_token(ctx);\n");
-            _printf("                break;\n");
+            _printf_h(h, "                n.m%lu = t.%s;\n", id, rules[id].name);
+            output_shift(&n->edges[j], h, 4);
+            _printf_h(h, "                break;\n");
         }
         for (uint32_t j = 0; j < n->rows.count; ++j) {
             NodeRow* row = &n->rows.rows[j];
@@ -881,77 +968,39 @@ bool output_code(Graph* graph, Rule* rules, uint32_t rule_count) {
                 if (rules[id].type != RULE_ATOM) {
                     continue;
                 }
-                _printf("            case TOKEN_");
+                _printf_h(h, "            case TOKEN_");
                 if (id == rule_count - 1) {
-                    _printf("END");
+                    _printf_h(h, "END");
                 } else {
                     for (const char* c = rules[id].name; *c != '\0'; ++c) {
-                        _printf("%c", toupper(*c));
+                        _printf_h(h, "%c", upper(*c));
                     }
                 }
-                _printf(":\n");
-                if (rules[row->rule].redhook != NULL) {
-                    rule_id id = row->rule;
-                    while (rules[id].next != RULE_ID_NONE) {
-                        id = rules[id].next;
-                    }
-                    _printf("                n.m%lu = %s(ctx, start, end",
-                            id, rules[row->rule].redhook);
-                    for (uint32_t i2 = 0; i2 < rules[row->rule].count; ++i2) {
-                        if (rules[rules[row->rule].data[i2]].type == RULE_LITERAL) {
-                            continue;
-                        }
-                        rule_id id = rules[row->rule].data[i2];
-                        if (rules[id].type == RULE_MAPPING) {
-                            while (rules[id].next != RULE_ID_NONE) {
-                                id = rules[id].next;
-                            }
-                        }
-                        uint32_t s_ix = rules[row->rule].count - i2;
-                        _printf(", stack.b[stack.size - %lu].m%lu",
-                                s_ix, id);
-                    }
-                    _printf(");\n");
+                _printf_h(h, ":\n");
+                bool accept = id == rule_count - 1 && n->accept;
+                output_reduce(row->rule, rules, MAP_IX, mapping_count, 
+                              accept, h, 4);
+                if (!accept) {
+                    _printf_h(h, "                break;\n");
                 }
-                if (rules[row->rule].count > 0) {
-                    _printf("                stack.size -= %lu;\n",
-                            rules[row->rule].count);
-                    _printf("                ");
-                    _printf("state = stack.b[stack.size - 1].state;\n");
-                }
-                if (n->accept && id == rule_count - 1) {
-                    _printf("                goto accept;\n");
-                    continue;
-                }
-                _printf("                ");
-                _printf("n.state = state = reduce_table[state * %lu + %lu];\n",
-                        mapping_count, MAP_IX[row->rule]);
-                _printf("                ");
-                if (rules[row->rule].count == 0) {
-                    _printf("push_state(&stack, n);\n");
-                } else {
-                    _printf("stack.b[stack.size] = n;\n");
-                    _printf("                ++stack.size;\n");
-                }
-                _printf("                break;\n");
             }
         }
-        _printf("            default:\n");
-        _printf("                goto failure;\n");
-        _printf("            }\n");
-        _printf("            break;\n");
-        _printf("        }\n");
+        _printf_h(h, "            default:\n");
+        _printf_h(h, "                goto failure;\n");
+        _printf_h(h, "            }\n");
+        _printf_h(h, "            break;\n");
+        _printf_h(h, "        }\n");
     }
-    _printf("        default:\n");
-    _printf("            goto failure;\n");
-    _printf("        }\n");
-    _printf("    }\n");
-    _printf("accept:\n");
-    _printf("    Mem_free(stack);\n");
-    _printf("    return true;\n");
-    _printf("failure:\n");
-    _printf("    __debugbreak();\n");
-    _printf("}\n");
+    _printf_h(h, "        default:\n");
+    _printf_h(h, "            goto failure;\n");
+    _printf_h(h, "        }\n");
+    _printf_h(h, "    }\n");
+    _printf_h(h, "accept:\n");
+    _printf_h(h, "    Mem_free(stack.b);\n");
+    _printf_h(h, "    return true;\n");
+    _printf_h(h, "failure:\n");
+    _printf_h(h, "    __debugbreak();\n");
+    _printf_h(h, "}\n");
     
     return true;
 }
@@ -963,6 +1012,7 @@ bool validate_graph(Rule* rules, rule_id rule_count, Graph* graph, Rule* start) 
     while (rules[s_id].next != RULE_ID_NONE) {
         s_id = rules[s_id].next;
     }
+    uint64_t conf_count = 0;
     for (uint32_t ix = 0; ix < graph->count; ++ix) {
         Node* n = graph->nodes[ix];
         for (rule_id id = 0; id < rule_count; ++id) {
@@ -989,12 +1039,14 @@ bool validate_graph(Rule* rules, rule_id rule_count, Graph* graph, Rule* start) 
                         _printf("\n");
                         fmt_rows(rules, &n->rows);
                         good = false;
+                        ++conf_count;
                     }
                     if (shift) {
                         _printf("Shift - Reduce conflict: ");
                         fmt_rule(rules, id);
                         _printf("\n");
                         fmt_rows(rules, &n->rows);
+                        ++conf_count;
                         good = false;
                     }
                     rule_id s = row->rule;
@@ -1003,7 +1055,6 @@ bool validate_graph(Rule* rules, rule_id rule_count, Graph* graph, Rule* start) 
                     }
                     if (s == s_id && id == rule_count - 1) {
                         n->accept = true;
-                        _printf("Node %lu accepts %lu\n", ix, id);
                         accepting = true;
                     }
                     reduce = true;
@@ -1011,19 +1062,59 @@ bool validate_graph(Rule* rules, rule_id rule_count, Graph* graph, Rule* start) 
             }
         }
     }
+    if (conf_count > 0) { 
+        oprintf_e("Total %lu conflicts\n", conf_count);
+    }
     return good;
 }
 
-bool create_graph(Rule* rules, rule_id rule_count, Rule* start_rule) {
+void merge_states(Graph* graph) {
+loop:
+    for (uint32_t i = 0; i < graph->count; ++i) {
+        Node* n1 = graph->nodes[i];
+        for (uint32_t j = 0; j < graph->count; ++j) {
+            if (i == j) {
+                continue;
+            }
+            Node* n2 = graph->nodes[j];
+            if (!NodeRows_equal(&n1->rows, &n2->rows)) {
+                continue;
+            }
+            graph->nodes[j] = graph->nodes[graph->count - 1];
+            graph->count -= 1;
+            for (uint32_t k = 0; k < graph->count; ++k) {
+                Node* n = graph->nodes[k];
+                int64_t n1_edge = -1;
+                int64_t n2_edge = -1;
+                for (uint32_t e = 0; e < n->edge_count; ++e) {
+                    if (n->edges[e].dest == n1) {
+                        n1_edge = e;
+                    } else if (n->edges[e].dest == n2) {
+                        n2_edge = e;
+                    }
+                }
+                if (n2_edge != -1) {
+                    if (n1_edge == -1) {
+                        n->edges[n2_edge].dest = n1;
+                    } else {
+                        n->edges[n2_edge] = n->edges[n->edge_count - 1];
+                        n->edge_count -= 1;
+                    }
+                }
+                n->ix = k;
+            }
+            Node_free(n2);
+            goto loop;
+        }
+    }
+}
+
+bool create_graph(Rule* rules, rule_id rule_count, Rule* start_rule, HANDLE out,
+                  String* includes) {
     NodeRows inital_row;
-    if (!NodeRows_create(&inital_row)) {
-        return false;
-    }
+    NodeRows_create(&inital_row);
     TokenSet look;
-    if (!TokenSet_create(&look)) {
-        NodeRows_free(&inital_row);
-        return false;
-    }
+    TokenSet_create(&look);
     // Add $ marker
     TokenSet_insert(&look, rule_count - 1);
     for (rule_id id = start_rule - rules; id != RULE_ID_NONE; id = rules[id].next) {
@@ -1034,10 +1125,7 @@ bool create_graph(Rule* rules, rule_id rule_count, Rule* start_rule) {
             return false;
         }
         if (rules[id].next != RULE_ID_NONE) {
-            if (!TokenSet_copy(&look, &row.lookahead)) {
-                NodeRows_free(&inital_row);
-                return false;
-            }
+            TokenSet_copy(&look, &row.lookahead);
         }
     }
 
@@ -1063,13 +1151,15 @@ bool create_graph(Rule* rules, rule_id rule_count, Rule* start_rule) {
         return false;
     }
 
+    merge_states(&graph);
+
     for (uint32_t ix = 0; ix < graph.count; ++ix) {
         _printf("%lu\n", ix);
         fmt_rows(rules, &graph.nodes[ix]->rows);
     }
 
     if (validate_graph(rules, rule_count, &graph, start_rule)) {
-        output_code(&graph, rules, rule_count);
+        output_code(&graph, rules, rule_count, out, includes, NULL);
         Graph_free(&graph);
         return true;
     }
@@ -1077,18 +1167,367 @@ bool create_graph(Rule* rules, rule_id rule_count, Rule* start_rule) {
     return false;
 }
 
+// Like memchr, but skips '' literals. 
+char* scan_memchr(char* s, char c, uint64_t len) {
+    for (uint64_t ix = 0; ix < len; ++ix) {
+        if (s[ix] == c) {
+            return s + ix;
+        }
+        if (s[ix] == '\'') {
+            ++ix;
+            for (;ix < len; ++ix) {
+                if (s[ix] == '\'') {
+                    break;
+                }
+            }
+        }
+    }
+    return NULL;
+}
+
+// 0: success, 1: out of rules, 2: other parse errror, 3: out of memory
+int parse_lang(String* data, Rule* rules, rule_id* rule_len, HashMap* rule_map,
+               String* headers) {
+    uint64_t rule_count = 0;
+
+    char* line;
+    char* next = data->buffer;
+    while (next != NULL) {
+        line = next;
+        uint64_t offset = line - data->buffer;
+        char* end = scan_memchr(line, ';', data->length - offset);
+        if (end == NULL) {
+            end = data->buffer + data->length;
+            next = NULL;
+        } else {
+            next = end + 1;
+        }
+        uint64_t len = end - line;
+
+        uint64_t ix = 0;
+        while (ix < len && is_space(line[ix])) {
+            ++ix;
+        }
+        if (ix == len) {
+            continue;
+        }
+        if (len - ix >= 8 && memcmp(line + ix, "include:", 8) == 0) {
+            ix += 8;
+            while (ix < len && is_space(line[ix])) {
+                ++ix;
+            }
+            while (end > line + ix && is_space(end[-1])) {
+                --end;
+            }
+            *end = '\0';
+            if (!String_append_count(headers, line + ix, 1 + end - (line + ix))) {
+                return 3;
+            }
+            continue;
+        }
+        if (len - ix >= 5 && memcmp(line + ix, "type:", 5) == 0) {
+            ix += 5;
+            char* sep = memchr(line + ix, '=', len - ix);
+            if (sep == NULL) {
+                oprintf_e("Invalid type definition\n");
+                continue;
+            }
+            while (ix < len && is_space(line[ix])) {
+                ++ix;
+            }
+            char* name_end = sep;
+            while (name_end > line + ix && is_space(name_end[-1])) {
+                --name_end;
+            }
+            if (line + ix == name_end) {
+                oprintf_e("Invalid rule name ''\n");
+                continue;
+            }
+            *name_end = '\0';
+            if (line[ix] == '\'') {
+                oprintf_e("Invalid rule name '%s'\n", line + ix);
+                continue;
+            }
+            HashElement* e = HashMap_Get(rule_map, line + ix);
+            if (e == NULL) {
+                return 3;
+            }
+            Rule* rule = e->value;
+            if (e->value == NULL) {
+                if (rule_count == MAX_RULES) {
+                    return 1;
+                }
+                rules[rule_count].type = RULE_SLOT;
+                rules[rule_count].next = RULE_ID_NONE;
+                rules[rule_count].redhook = NULL;
+                rules[rule_count].name = line + ix;
+                rule = rules + rule_count;
+                e->value = rule;
+                ++rule_count;
+            }
+            uint64_t type_ix = sep - line + 1;
+            while (type_ix < len && is_space(line[type_ix])) {
+                ++type_ix;
+            }
+            while (end > line + type_ix && is_space(end[-1])) {
+                --end;
+            }
+            *end = '\0';
+            rule->ctype = line + type_ix;
+
+            continue;
+        }
+        if (len - ix >= 6 && memcmp(line + ix, "atoms:", 6) == 0) {
+            ix += 6;
+            char* sep = line;
+            while (sep < end) {
+                while (len - ix > 0 && is_space(line[ix])) {
+                    ++ix;
+                }
+                sep = memchr(line + ix, ',', len - ix);
+                if (sep == NULL) {
+                    sep = end;
+                }
+                *sep = '\0';
+                if (rule_count == MAX_RULES) {
+                    return 1;
+                }
+                HashElement* e = HashMap_Get(rule_map, line + ix);
+                if (e == NULL) {
+                    return 3;
+                }
+                Rule* r = e->value;
+                if (r == NULL) {
+                    r = rules + rule_count;
+                    r->name = line + ix;
+                    r->next = RULE_ID_NONE;
+                    r->ctype = NULL;
+                    r->redhook = NULL;
+                    e->value = r;
+                    ++rule_count;
+                } else if (r->type != RULE_SLOT) {
+                    _printf_e("Duplicate rule name '%s'\n", line + ix);
+                    return 2;
+                }
+
+                r->type = RULE_ATOM;
+                ix = sep - line + 1;
+            }
+            continue;
+        }
+        char* name = line + ix;
+        char* name_sep = memchr(name, '=', len - ix);
+        uint64_t name_len = name_sep - name;
+        if (name_sep == NULL) {
+            _printf_e("Invalid rule '%.*s'\n", len - ix, line + ix);
+            continue;
+        }
+        while (name_len > 0 && is_space(name[name_len - 1])) {
+            --name_len;
+        }
+        name[name_len] = '\0';
+
+        ix = name_sep - line + 1;
+        if (ix >= len || scan_memchr(line + ix, '=', len - ix) != NULL) {
+            _printf_e("Invalid rule '%s'\n", name);
+            continue;
+        }
+        while (ix < len) {
+            char* next = scan_memchr(line + ix, '|', len - ix);
+            if (next == NULL) {
+                next = end;
+            }
+            char* part_end = next;
+            char* hook_start = scan_memchr(line + ix, ':', next - line - ix);
+            char* hook_end = NULL;
+            if (hook_start != NULL) {
+                hook_end = part_end;
+                while (hook_end > hook_start && is_space(hook_end[-1])) {
+                    --hook_end;
+                }
+                part_end = hook_start;
+                do {
+                    ++hook_start;
+                } while (hook_start < hook_end && is_space(hook_start[0]));
+            }
+
+            while (part_end > line + ix && is_space(part_end[-1])) {
+                --part_end;
+            }
+            while (ix < len && is_space(line[ix])) {
+                ++ix;
+            }
+            char* part = line + ix;
+            uint64_t part_len = (part_end - line) - ix;
+            uint64_t max_parts = 1;
+            for (uint64_t i = 0; i < part_len; ++i) {
+                if (part[i] == '+') {
+                    ++max_parts;
+                }
+            }
+            rule_id* ids = Mem_alloc(max_parts * sizeof(rule_id));
+            if (ids == NULL) {
+                return 3;
+            }
+            uint64_t part_ix = 0;
+            while (part < part_end) {
+                char* sep = scan_memchr(part, '+', part_end - part);
+                char* cur = part;
+                if (sep == NULL) {
+                    sep = part_end;
+                    part = part_end;
+                } else {
+                    part = sep + 1;
+                }
+                while (cur < sep && is_space(cur[0])) {
+                    ++cur;
+                }
+                while (sep > cur && is_space(sep[-1])) {
+                    --sep;
+                }
+                if (cur == sep) {
+                    _printf_e("Illegal part emtpy part for '%s'\n", name);
+                    continue;
+                }
+                HashElement* e;
+                if (sep - cur >= 2 && cur[0] == '\'' && sep[-1] == '\'') {
+                    if (sep - cur == 2) {
+                        // Skip empty literal
+                        continue;
+                    }
+                    sep[0] = '\0';
+                    e = HashMap_Get(rule_map, cur);
+                    sep[-1] = '\0';
+                    ++cur;
+                    if (e == NULL) {
+                        Mem_free(ids);
+                        return 3;
+                    }
+                    if (e->value == NULL) {
+                        if (rule_count == MAX_RULES) {
+                            Mem_free(ids);
+                            return 1;
+                        }
+                        rules[rule_count].type = RULE_LITERAL;
+                        rules[rule_count].name = cur;
+                        rules[rule_count].next = RULE_ID_NONE;
+                        rules[rule_count].ctype = NULL;
+                        rules[rule_count].redhook = NULL;
+                        e->value = rules + rule_count;
+                        ++rule_count;
+                    } else if (((Rule*)e->value)->type != RULE_LITERAL) {
+                        _printf_e("Literal name overlaps with rule %s\n",
+                                 ((Rule*)e->value)->name);
+                        Mem_free(ids);
+                        return 2;
+                    }
+                } else {
+                    *sep = '\0';
+                    e = HashMap_Get(rule_map, cur);
+                    if (e == NULL) {
+                        Mem_free(ids);
+                        return 3;
+                    }
+                    if (e->value == NULL) {
+                        if (rule_count == MAX_RULES) {
+                            Mem_free(ids);
+                            return 3;
+                        }
+                        rules[rule_count].type = RULE_SLOT;
+                        rules[rule_count].name = cur;
+                        rules[rule_count].next = RULE_ID_NONE;
+                        rules[rule_count].redhook = NULL;
+                        e->value = rules + rule_count;
+                        ++rule_count;
+                    }
+                }
+                Rule* r = e->value;
+                rule_id id = r - rules;
+                ids[part_ix] = id;
+                ++part_ix;
+            }
+            HashElement* e = HashMap_Get(rule_map, name);
+            if (e == NULL) {
+                Mem_free(ids);
+                return 3;
+            }
+            Rule* new_rule = e->value;
+            if (e->value == NULL) {
+                if (rule_count == MAX_RULES) {
+                    Mem_free(ids);
+                    return 1;
+                }
+                rules[rule_count].next = RULE_ID_NONE;
+                new_rule = rules + rule_count;
+                new_rule->type = RULE_MAPPING;
+                new_rule->name = name;
+                new_rule->redhook = NULL;
+                new_rule->ctype = NULL;
+                e->value = new_rule;
+                ++rule_count;
+            } else if (new_rule->type == RULE_MAPPING) {
+                if (rule_count == MAX_RULES) {
+                    Mem_free(ids);
+                    return 1;
+                }
+                while (new_rule->next != RULE_ID_NONE) {
+                    new_rule = &rules[new_rule->next];
+                }
+                new_rule->next = rule_count;
+                rules[rule_count].ctype = new_rule->ctype;
+                new_rule = rules + rule_count;
+                new_rule->name = name;
+                new_rule->type = RULE_MAPPING;
+                new_rule->next = RULE_ID_NONE;
+                new_rule->redhook = NULL;
+                ++rule_count;
+            } else if (new_rule->type == RULE_SLOT) {
+                new_rule->type = RULE_MAPPING;
+            } else {
+                _printf_e("Duplicate rule name '%s'\n", name);
+                Mem_free(ids);
+                ids = NULL;
+            }
+
+            if (ids != NULL) {
+                new_rule->data = ids;
+                new_rule->count = part_ix;
+                if (hook_start != NULL && hook_start != hook_end) {
+                    *hook_end = '\0';
+                    new_rule->redhook = hook_start;
+                }
+            }
+
+            ix = next - line + 1;
+        }
+    }
+    if (rule_count == MAX_RULES) {
+        return 1;
+    }
+    rules[rule_count].type = RULE_ATOM;
+    rules[rule_count].name = "$";
+    rules[rule_count].next = RULE_ID_NONE;
+    rules[rule_count].ctype = NULL;
+    rules[rule_count].redhook = NULL;
+    ++rule_count;
+
+    *rule_len = rule_count;
+    return 0;
+} 
 
 int generate(ochar_t** argv, int argc) {
     if (argc < 1 || argv == NULL) {
         return 1;
     }
     FlagValue startnode = {FLAG_STRING};
+    FlagValue outfile = {FLAG_STRING};
     FlagInfo flags[] = {
         {oL('s'), oL("startnode"), &startnode},
+        {oL('o'), oL("output"), &outfile},
     };
     ErrorInfo err;
-    if (!find_flags(argv, &argc, flags, 1, &err)) {
-        ochar_t* e = format_error(&err, flags, 1);
+    if (!find_flags(argv, &argc, flags, 2, &err)) {
+        ochar_t* e = format_error(&err, flags, 2);
         if (e != NULL) {
             oprintf_e("%s\n", e);
             oprintf_e("Run '%s' --help for more information\n", argv[0]);
@@ -1138,7 +1577,7 @@ int generate(ochar_t** argv, int argc) {
             oprintf_e("Out of memory\n");
             LineIter_abort(&ctx);
             String_free(&data);
-            return 2;
+            return 3;
         }
     }
 
@@ -1148,318 +1587,30 @@ int generate(ochar_t** argv, int argc) {
     if (!HashMap_Create(&rule_map)) {
         oprintf_e("Out of memory\n");
         String_free(&data);
-        return 2;
+        return 3;
     }
 
-    uint64_t rule_count = 0;
-
-    char* next = data.buffer;
-    while (next != NULL) {
-        line = next;
-        uint64_t offset = line - data.buffer;
-        char* end = memchr(line, ';', data.length - offset);
-        if (end == NULL) {
-            end = data.buffer + data.length;
-            next = NULL;
-        } else {
-            next = end + 1;
-        }
-        uint64_t len = end - line;
-
-        uint64_t ix = 0;
-        while (ix < len && is_space(line[ix])) {
-            ++ix;
-        }
-        if (ix == len) {
-            continue;
-        }
-        if (len - ix >= 5 && memcmp(line + ix, "type:", 5) == 0) {
-            ix += 5;
-            char* sep = memchr(line + ix, '=', len - ix);
-            if (sep == NULL) {
-                oprintf_e("Invalid type definition\n");
-                continue;
-            }
-            while (ix < len && is_space(line[ix])) {
-                ++ix;
-            }
-            char* name_end = sep;
-            while (name_end > line + ix && is_space(name_end[-1])) {
-                --name_end;
-            }
-            if (line + ix == name_end) {
-                oprintf_e("Invalid rule name ''\n");
-                continue;
-            }
-            *name_end = '\0';
-            if (line[ix] == '\'') {
-                oprintf_e("Invalid rule name '%s'\n", line + ix);
-                continue;
-            }
-            HashElement* e = HashMap_Get(&rule_map, line + ix);
-            if (e == NULL) {
-                goto err_out_of_mem;
-            }
-            Rule* rule = e->value;
-            if (e->value == NULL) {
-                if (rule_count == MAX_RULES) {
-                    goto err_out_of_rules;
-                }
-                rules[rule_count].type = RULE_SLOT;
-                rules[rule_count].next = RULE_ID_NONE;
-                rules[rule_count].redhook = NULL;
-                rules[rule_count].name = line + ix;
-                rule = rules + rule_count;
-                e->value = rule;
-                ++rule_count;
-            }
-            uint64_t type_ix = sep - line + 1;
-            while (type_ix < len && is_space(line[type_ix])) {
-                ++type_ix;
-            }
-            while (end > line + type_ix && is_space(end[-1])) {
-                --end;
-            }
-            *end = '\0';
-            rule->ctype = line + type_ix;
-            _printf_e("Found type for '%s': '%s'\n", rule->name, rule->ctype);
-
-            continue;
-        }
-        if (len - ix >= 6 && memcmp(line + ix, "atoms:", 6) == 0) {
-            ix += 6;
-            char* sep = line;
-            while (sep < end) {
-                while (len - ix > 0 && is_space(line[ix])) {
-                    ++ix;
-                }
-                sep = memchr(line + ix, ',', len - ix);
-                if (sep == NULL) {
-                    sep = end;
-                }
-                *sep = '\0';
-                if (rule_count == MAX_RULES) {
-                    goto err_out_of_rules;
-                }
-                HashElement* e = HashMap_Get(&rule_map, line + ix);
-                if (e == NULL) {
-                    goto err_out_of_mem;
-                }
-                Rule* r = e->value;
-                if (r == NULL) {
-                    r = rules + rule_count;
-                    r->name = line + ix;
-                    r->next = RULE_ID_NONE;
-                    r->ctype = NULL;
-                    r->redhook = NULL;
-                    e->value = r;
-                    ++rule_count;
-                } else if (r->type != RULE_SLOT) {
-                    _printf_e("Duplicate rule name '%s'\n", line + ix);
-                    goto fail;
-                }
-
-                r->type = RULE_ATOM;
-                ix = sep - line + 1;
-            }
-            continue;
-        }
-        char* name = line + ix;
-        char* name_sep = memchr(name, '=', len - ix);
-        uint64_t name_len = name_sep - name;
-        if (name_sep == NULL) {
-            _printf_e("Invalid rule '%.*s'\n", len - ix, line + ix);
-            continue;
-        }
-        while (name_len > 0 && is_space(name[name_len - 1])) {
-            --name_len;
-        }
-        name[name_len] = '\0';
-
-        ix = name_sep - line + 1;
-        if (ix >= len || memchr(line + ix, '=', len - ix) != NULL) {
-            _printf_e("Invalid rule '%s'\n", name);
-            continue;
-        }
-        while (ix < len) {
-            char* next = memchr(line + ix, '|', len - ix);
-            if (next == NULL) {
-                next = end;
-            }
-            char* part_end = next;
-            char* hook_start = memchr(line + ix, ':', next - line - ix);
-            char* hook_end = NULL;
-            if (hook_start != NULL) {
-                hook_end = part_end;
-                while (hook_end > hook_start && is_space(hook_end[-1])) {
-                    --hook_end;
-                }
-                part_end = hook_start;
-                do {
-                    ++hook_start;
-                } while (hook_start < hook_end && is_space(hook_start[0]));
-            }
-
-            while (part_end > line + ix && is_space(part_end[-1])) {
-                --part_end;
-            }
-            while (ix < len && is_space(line[ix])) {
-                ++ix;
-            }
-            char* part = line + ix;
-            uint64_t part_len = (part_end - line) - ix;
-            uint64_t max_parts = 1;
-            for (uint64_t i = 0; i < part_len; ++i) {
-                if (part[i] == '+') {
-                    ++max_parts;
-                }
-            }
-            rule_id* ids = Mem_alloc(max_parts * sizeof(rule_id));
-            if (ids == NULL) {
-                goto err_out_of_mem;
-            }
-            uint64_t part_ix = 0;
-            while (part < part_end) {
-                char* sep = memchr(part, '+', part_end - part);
-                char* cur = part;
-                if (sep == NULL) {
-                    sep = part_end;
-                    part = part_end;
-                } else {
-                    part = sep + 1;
-                }
-                while (cur < sep && is_space(cur[0])) {
-                    ++cur;
-                }
-                while (sep > cur && is_space(sep[-1])) {
-                    --sep;
-                }
-                if (cur == sep) {
-                    _printf_e("Illegal part emtpy part for '%s'\n", name);
-                    continue;
-                }
-                HashElement* e;
-                if (sep - cur >= 2 && cur[0] == '\'' && sep[-1] == '\'') {
-                    if (sep - cur == 2) {
-                        // Skip empty literal
-                        continue;
-                    }
-                    sep[0] = '\0';
-                    e = HashMap_Get(&rule_map, cur);
-                    sep[-1] = '\0';
-                    ++cur;
-                    if (e == NULL) {
-                        Mem_free(ids);
-                        goto err_out_of_mem;
-                    }
-                    if (e->value == NULL) {
-                        if (rule_count == MAX_RULES) {
-                            Mem_free(ids);
-                            goto err_out_of_rules;
-                        }
-                        rules[rule_count].type = RULE_LITERAL;
-                        rules[rule_count].name = cur;
-                        rules[rule_count].next = RULE_ID_NONE;
-                        rules[rule_count].ctype = NULL;
-                        rules[rule_count].redhook = NULL;
-                        e->value = rules + rule_count;
-                        ++rule_count;
-                    } else if (((Rule*)e->value)->type != RULE_LITERAL) {
-                        _printf_e("Literal name overlaps with rule %s\n",
-                                 ((Rule*)e->value)->name);
-                        Mem_free(ids);
-                        goto fail;
-                    }
-                } else {
-                    *sep = '\0';
-                    e = HashMap_Get(&rule_map, cur);
-                    if (e == NULL) {
-                        Mem_free(ids);
-                        goto err_out_of_mem;
-                    }
-                    if (e->value == NULL) {
-                        if (rule_count == MAX_RULES) {
-                            Mem_free(ids);
-                            goto err_out_of_rules;
-                        }
-                        rules[rule_count].type = RULE_SLOT;
-                        rules[rule_count].name = cur;
-                        rules[rule_count].next = RULE_ID_NONE;
-                        rules[rule_count].redhook = NULL;
-                        e->value = rules + rule_count;
-                        ++rule_count;
-                    }
-                }
-                Rule* r = e->value;
-                rule_id id = r - rules;
-                ids[part_ix] = id;
-                ++part_ix;
-            }
-            HashElement* e = HashMap_Get(&rule_map, name);
-            if (e == NULL) {
-                Mem_free(ids);
-                goto err_out_of_mem;
-            }
-            Rule* new_rule = e->value;
-            if (e->value == NULL) {
-                if (rule_count == MAX_RULES) {
-                    Mem_free(ids);
-                    goto err_out_of_rules;
-                }
-                rules[rule_count].next = RULE_ID_NONE;
-                new_rule = rules + rule_count;
-                new_rule->type = RULE_MAPPING;
-                new_rule->name = name;
-                new_rule->redhook = NULL;
-                new_rule->ctype = NULL;
-                e->value = new_rule;
-                ++rule_count;
-            } else if (new_rule->type == RULE_MAPPING) {
-                if (rule_count == MAX_RULES) {
-                    Mem_free(ids);
-                    goto err_out_of_rules;
-                }
-                while (new_rule->next != RULE_ID_NONE) {
-                    new_rule = &rules[new_rule->next];
-                }
-                new_rule->next = rule_count;
-                rules[rule_count].ctype = new_rule->ctype;
-                new_rule = rules + rule_count;
-                new_rule->name = name;
-                new_rule->type = RULE_MAPPING;
-                new_rule->next = RULE_ID_NONE;
-                new_rule->redhook = NULL;
-                ++rule_count;
-            } else if (new_rule->type == RULE_SLOT) {
-                new_rule->type = RULE_MAPPING;
-            } else {
-                _printf_e("Duplicate rule name '%s'\n", name);
-                Mem_free(ids);
-                ids = NULL;
-            }
-
-            if (ids != NULL) {
-                new_rule->data = ids;
-                new_rule->count = part_ix;
-                if (hook_start != NULL && hook_start != hook_end) {
-                    *hook_end = '\0';
-                    new_rule->redhook = hook_start;
-                    _printf("Found hook %s for rule %s\n", hook_start, name);
-                }
-            }
-
-            ix = next - line + 1;
-        }
+    String includes;
+    if (!String_create(&includes)) {
+        oprintf_e("Out of memory\n");
+        String_free(&data);
+        HashMap_Free(&rule_map);
+        return 3;
     }
-    if (rule_count == MAX_RULES) {
-        goto err_out_of_rules;
+
+    rule_id rule_count;
+    int status = parse_lang(&data, rules, &rule_count, &rule_map, &includes);
+    if (status > 0) {
+        String_free(&includes);
+        String_free(&data);
+        HashMap_Free(&rule_map);
+        if (status == 1) {
+            oprintf_e("Too many rules used in spec\n");
+        } else if (status == 3) {
+            oprintf_e("Out of memory\n");
+        }
+        return status;
     }
-    rules[rule_count].type = RULE_ATOM;
-    rules[rule_count].name = "$";
-    rules[rule_count].next = RULE_ID_NONE;
-    rules[rule_count].ctype = NULL;
-    rules[rule_count].redhook = NULL;
-    ++rule_count;
 
     Rule* start_rule;
 #ifdef NARROW_OCHAR
@@ -1467,11 +1618,13 @@ int generate(ochar_t** argv, int argc) {
 #else
     String s;
     if (!String_create(&s)) {
-        goto err_out_of_mem;
+        HashMap_Free(&rule_map);
+        goto fail;
     }
     if (!String_from_utf16_str(&s, startnode.str)) {
         String_free(&s);
-        goto err_out_of_mem;
+        HashMap_Free(&rule_map);
+        goto fail;
     }
     start_rule = HashMap_Value(&rule_map, s.buffer);
     String_free(&s);
@@ -1480,25 +1633,38 @@ int generate(ochar_t** argv, int argc) {
 
     if (start_rule == NULL || start_rule->type != RULE_MAPPING) {
         oprintf_e("Could not find start node '%s'\n", startnode.str);
-        goto fail2;
+        goto fail;
     }
 
     for (uint64_t ix = 0; ix < rule_count; ++ix) {
         if (rules[ix].type == RULE_SLOT) {
             _printf_e("Missing rule '%s'\n", rules[ix].name);
-            goto fail2;
+            goto fail;
         }
         if (rules[ix].type != RULE_LITERAL) {
             if (rules[ix].ctype == NULL) {
                 rules[ix].ctype = "int64_t";
             }
         }
-        //fmt_rule(rules, ix);
-        //_printf("\n");
     }
 
-    bool status = create_graph(rules, rule_count, start_rule);
+    HANDLE out;
+    if (flags[1].count == 0) {
+        out = GetStdHandle(STD_OUTPUT_HANDLE);
+    } else {
+        out = open_file_write(outfile.str);
+        if (out == INVALID_HANDLE_VALUE) {
+            oprintf_e("Failed opening '%s'\n", outfile.str);
+            goto fail;
+        }
+    }
+
+    bool sucess = create_graph(rules, rule_count, start_rule, out, &includes);
+    if (flags[1].count > 0) {
+        CloseHandle(out);
+    }
     String_free(&data);
+    String_free(&includes);
 
     for (rule_id id = 0; id < rule_count; ++id) {
         if (rules[id].type == RULE_MAPPING) {
@@ -1506,16 +1672,10 @@ int generate(ochar_t** argv, int argc) {
         }
     }
 
-    return status ? 0 : 2;
-err_out_of_rules:
-    oprintf_e("Too many rules used\n");
-    goto fail;
-err_out_of_mem:
-    oprintf_e("Out of memory\n");
+    return sucess ? 0 : 2;
 fail:
-    HashMap_Free(&rule_map);
-fail2:
     String_free(&data);
+    String_free(&includes);
     for (rule_id id = 0; id < rule_count; ++id) {
         if (rules[id].type == RULE_MAPPING) {
             Mem_free(rules[id].data);
