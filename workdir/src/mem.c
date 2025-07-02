@@ -93,4 +93,37 @@ void Mem_debug_dbg(int lineno, const char* file, const char* fmt, ...) {
     append_file(buf, L"mem_debug.txt");
 }
 
+void* Mem_xalloc_dbg(size_t size, int lineno, const char* file) {
+    void* res = Mem_alloc_dbg(size, lineno, file);
+    if (res == NULL) {
+        ExitProcess(ERROR_OUTOFMEMORY);
+    }
+    return res;
+
+}
+
+void* Mem_xrealloc_dbg(void* ptr, size_t size, int lineno, const char* file) {
+    void* res = Mem_realloc_dbg(ptr, size, lineno, file);
+    if (res == NULL) {
+        ExitProcess(ERROR_OUTOFMEMORY);
+    }
+    return res;
+}
+
 #endif
+
+/*void* Mem_xalloc(size_t size) {
+    void* ptr = Mem_alloc(size);
+    if (ptr == NULL) {
+        ExitProcess(ERROR_OUTOFMEMORY);
+    }
+    return ptr;
+}
+
+void* Mem_xrealloc(void* ptr, size_t size) {
+    void* p = Mem_realloc(ptr, size);
+    if (p == NULL) {
+        ExitProcess(ERROR_OUTOFMEMORY);
+    }
+    return p;
+}*/

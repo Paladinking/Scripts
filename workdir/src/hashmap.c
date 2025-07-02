@@ -166,6 +166,25 @@ static int HashMap_AddElement(HashMap* map, HashBucket* bucket, HashElement elem
 static int HashMap_Rehash(HashMap* map) {
     HashMap tmp;
     CHECKED_CALL(HashMap_Allocate(&tmp, map->bucket_count * 2));
+#ifdef HASHMAP_LINKED
+    uint32_t b = map->first_bucket_ix;
+    uint32_t ix = map->first_elem_ix;
+    for (uint32_t i = 0; i < map->element_count; ++i) {
+        uint64_t h = hash(map->buckets[b].data[ix].key);
+        HashBucket* bucket = &tmp.buckets[h % tmp.bucket_count];
+        HashElement elem = {map->buckets[b].data[ix].key, map->buckets[b].data[ix].value};
+        int status = HashMap_AddElement(&tmp, bucket, elem);
+#ifdef HASHMAP_ALLOC_ERROR
+        if (!status) {
+            HashMap_Free(&tmp);
+            return 0;
+        }
+#endif
+        uint32_t next_b = map->buckets[b].data[ix].next_bucket_ix;
+        ix = map->buckets[b].data[ix].next_elem_ix;
+        b = next_b;
+    }
+#else
     for (uint32_t b = 0; b < map->bucket_count; ++b) {
         for (uint32_t ix = 0; ix < map->buckets[b].size; ++ix) {
             uint64_t h = hash(map->buckets[b].data[ix].key);
@@ -180,6 +199,7 @@ static int HashMap_Rehash(HashMap* map) {
 #endif
         }
     }
+#endif
     for (uint32_t i = 0; i < map->bucket_count; ++i) {
         HASHMAP_FREE_FN(map->buckets[i].data);
     }

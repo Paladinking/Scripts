@@ -54,13 +54,37 @@ bool read_utf16_file(WString_noinit* str, const wchar_t* filename) {
 
 }
 
+HANDLE open_file_write(const ochar_t* filename) {
+#ifdef NARROW_OCHAR
+    WString name;
+    if (!WString_create_capacity(&name, 512)) {
+        return false;
+    }
+    if (!WString_from_utf8_str(&name, filename)) {
+        WString_free(&name);
+        return false;
+    }
+    wchar_t* fname = name.buffer;
+#else
+    const wchar_t* fname = filename;
+#endif
+    HANDLE file = CreateFileW(fname, GENERIC_WRITE,
+                              0, NULL, CREATE_ALWAYS,
+                              FILE_ATTRIBUTE_NORMAL, NULL);
+#ifdef NARROW_OCHAR
+    WString_free(&name);
+#endif
+    return file;
+}
+
 bool read_text_file(String_noinit* str, const ochar_t* filename) {
 #ifdef NARROW_OCHAR
     WString name;
     if (!WString_create_capacity(&name, 512)) {
         return false;
     }
-    if (!WString_from_utf8_str(filename)) {
+    if (!WString_from_utf8_str(&name, filename)) {
+        WString_free(&name);
         return false;
     }
     wchar_t* fname = name.buffer;
@@ -69,7 +93,7 @@ bool read_text_file(String_noinit* str, const ochar_t* filename) {
 #endif
     HANDLE file = CreateFileW(fname, GENERIC_READ,
                               FILE_SHARE_READ, NULL,
-                              OPEN_EXISTING, 0, NULL);
+                              OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 #ifdef NARROW_OCHAR
     WString_free(&name);
 #endif
@@ -605,11 +629,12 @@ bool LineIter_begin(LineCtx* ctx, const ochar_t* filename) {
 #ifdef NARROW_OCHAR
     WString s;
     if (!WString_create(&s)) {
-        ctx->filename = INVALID_HANDLE_VALUE;
+        ctx->file = INVALID_HANDLE_VALUE;
         return false;
     }
-    if (!WString_from_utf8_str(filename)) {
-        ctx->filename = INVALID_HANDLE_VALUE;
+    if (!WString_from_utf8_str(&s, filename)) {
+        WString_free(&s);
+        ctx->file = INVALID_HANDLE_VALUE;
         return false;
     }
     wchar_t* name = s.buffer;

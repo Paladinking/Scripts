@@ -12,6 +12,7 @@
     #define ostrcmp wcscmp
     #define ostrlen wcslen
     #define ostrchr wcschr
+    #define ostrrchr wcsrchr
     #define ostrncmp wcsncmp
 #else
     typedef char ochar_t;
@@ -20,6 +21,7 @@
     #define ostrcmp strcmp
     #define ostrlen strlen
     #define ostrchr strchr
+    #define ostrrchr strrchr
     #define ostrncmp strncmp
 #endif
 
