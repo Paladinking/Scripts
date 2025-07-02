@@ -109,6 +109,8 @@ int WalkDir_next(WalkCtx* ctx, Path** path);
 
 void WalkDir_abort(WalkCtx* ctx);
 
+HANDLE open_file_write(const ochar_t* filename);
+
 bool read_text_file(String_noinit* str, const ochar_t* filename);
 
 bool read_utf16_file(WString_noinit* str, const wchar_t* filename);

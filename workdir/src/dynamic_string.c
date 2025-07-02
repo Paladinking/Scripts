@@ -185,12 +185,12 @@ bool String_copy(String* dest, String* source) {
 
 bool String_append_count(String* s, const char* buf, string_size_t count) {
     if (!String_reserve(s, s->length + count)) {
-        return FALSE;
+        return false;
     }
     memcpy(s->buffer + s->length, buf, count);
     s->length += count;
     s->buffer[s->length] = L'\0';
-    return TRUE;
+    return true;
 }
 
 
