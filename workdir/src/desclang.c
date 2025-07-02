@@ -31,36 +31,25 @@ typedef struct TokenSet {
     uint32_t cap;
 } TokenSet;
 
-bool reserve(void** dst, uint32_t* cap, uint32_t size, size_t elem_size) {
+void reserve(void** dst, uint32_t* cap, uint32_t size, size_t elem_size) {
     if (size <= *cap) {
-        return true;
-    }
-    if (size >= 0x7fffffff) {
-        return false;
+        return;
     }
     if (*cap == 0) {
         *cap = 4;
         while (*cap < size) {
             *cap *= 2;
         }
-        *dst = Mem_alloc(*cap * elem_size);
-        if (*dst == NULL) {
-            *cap = 0;
-            return false;
-        }
+        *dst = Mem_xalloc(*cap * elem_size);
     } else {
         uint32_t new_cap = *cap;
         while (new_cap < size) {
             new_cap *= 2;
         }
-        void* new_ptr = Mem_realloc(*dst, new_cap * elem_size);
-        if (new_ptr == NULL) {
-            return false;
-        }
+        void* new_ptr = Mem_xrealloc(*dst, new_cap * elem_size);
         *dst = new_ptr;
         *cap = new_cap;
     }
-    return true;
 }
 
 #define RESERVE(ptr, cap, size) reserve((void**)&(ptr), &(cap), size, sizeof(*(ptr)))
@@ -75,7 +64,7 @@ void TokenSet_free(TokenSet* set) {
     Mem_free(set->tokens);
     set->tokens = NULL;
     set->size = 0;
-    set->cap = 0;
+    set->cap = 0xafafafaf;
 }
 
 void TokenSet_clear(TokenSet* set) {
@@ -186,27 +175,18 @@ bool NodeRows_fully_equal(NodeRows* a, NodeRows* b) {
         return false;
     }
     for (uint32_t i = 0; i < a->count; ++i) {
-        bool same = false;
-        for (uint32_t j = 0; j < b->count; ++j) {
-            if (a->rows[i].rule != b->rows[j].rule) {
-                continue;
-            }
-            if (a->rows[i].ix != b->rows[j].ix) {
-                continue;
-            }
-            if (!TokenSet_equals(&a->rows[i].lookahead,
-                                 &b->rows[j].lookahead)) {
-                continue;
-            }
-            same = true;
-            break;
+        if (a->rows[i].rule != b->rows[i].rule) {
+            return false;
         }
-        if (!same) {
+        if (a->rows[i].ix != b->rows[i].ix) {
+            return false;
+        }
+        if (!TokenSet_equals(&a->rows[i].lookahead,
+                             &b->rows[i].lookahead)) {
             return false;
         }
     }
     return true;
-
 }
 
 // Check if the LR(0) items are equal
@@ -215,18 +195,10 @@ bool NodeRows_equal(NodeRows* a, NodeRows* b) {
         return false;
     }
     for (uint32_t i = 0; i < a->count; ++i) {
-        bool same = false;
-        for (uint32_t j = 0; j < b->count; ++j) {
-            if (a->rows[i].rule != b->rows[j].rule) {
-                continue;
-            }
-            if (a->rows[i].ix != b->rows[j].ix) {
-                continue;
-            }
-            same = true;
-            break;
+        if (a->rows[i].rule != b->rows[i].rule) {
+            return false;
         }
-        if (!same) {
+        if (a->rows[i].ix != b->rows[i].ix) {
             return false;
         }
     }
@@ -302,17 +274,10 @@ typedef struct Node {
 } Node;
 
 Node* Node_create(NodeRows rows) {
-    Node* node = Mem_alloc(sizeof(Node));
-    if (node == NULL) {
-        return NULL;
-    }
+    Node* node = Mem_xalloc(sizeof(Node));
     node->rows = rows;
     node->accept = false;
-    node->edges = Mem_alloc(8 * sizeof(NodeEdge));
-    if (node->edges == NULL) {
-        Mem_free(node);
-        return NULL;
-    }
+    node->edges = Mem_xalloc(8 * sizeof(NodeEdge));
     node->edge_cap = 8;
     node->edge_count = 0;
     node->ix = 0;
@@ -331,54 +296,42 @@ typedef struct Graph {
     uint32_t cap;
 } Graph;
 
-bool Graph_create(Graph* g) {
-    g->nodes = Mem_alloc(8 * sizeof(Node*));
-    if (g->nodes == NULL) {
-        return false;
-    }
+Graph* Graph_create() {
+    Graph* g = Mem_xalloc(sizeof(Graph));
+    g->nodes = Mem_xalloc(8 * sizeof(Node*));
     g->count = 0;
     g->cap = 8;
-    return true;
+    return g;
 }
 
-bool Graph_addNode(Graph* g, Node* n) {
-    if (!reserve((void**)&g->nodes, &g->cap, g->count + 1, sizeof(Node*))) {
-        return false;
-    }
+void Graph_addNode(Graph* g, Node* n) {
+    reserve((void**)&g->nodes, &g->cap, g->count + 1, sizeof(Node*));
     g->nodes[g->count] = n;
     n->ix = g->count;
     g->count += 1;
-    return true;
 }
 
-bool Node_add_children(Node* node, Graph* g, Rule* rules);
+void Node_add_children(Node* node, Graph* g, Rule* rules);
 
-bool Graph_addEdge(Graph* g, Node* source, Node* dest, rule_id token,
+void Graph_addEdge(Graph* g, Node* source, Node* dest, rule_id token,
                    Rule* rules) {
-    if (!RESERVE(source->edges, source->edge_cap,
-                 source->edge_count + 1)) {
-        return false;
-    }
+    RESERVE(source->edges, source->edge_cap,
+            source->edge_count + 1);
     for (uint32_t ix = 0; ix < g->count; ++ix) {
         if (NodeRows_fully_equal(&g->nodes[ix]->rows, &dest->rows)) {
             Mem_free(dest);
             source->edges[source->edge_count].dest = g->nodes[ix];
             source->edges[source->edge_count].token = token;
             source->edge_count += 1;
-            return true;
+            return;
 
         }
     }
-    if (!Graph_addNode(g, dest)) {
-        return false;
-    }
+    Graph_addNode(g, dest);
     source->edges[source->edge_count].dest = dest;
     source->edges[source->edge_count].token = token;
     source->edge_count += 1;
-    if (!Node_add_children(dest, g, rules)) {
-        return false;
-    }
-    return true;
+    Node_add_children(dest, g, rules);
 }
 
 void Graph_free(Graph* g) {
@@ -389,97 +342,136 @@ void Graph_free(Graph* g) {
     g->nodes = NULL;
     g->count = 0;
     g->cap = 0;
+    Mem_free(g);
 }
 
-bool Node_expand(Node* node, Rule* rules) {
-    bool changed = true;
 
-    uint8_t checked[MAX_RULES];
-    rule_id* stack = Mem_xalloc(16 * sizeof(rule_id));
-    uint32_t stack_size = 0;
-    uint32_t stack_cap = 16;
+enum CheckState {
+    UNCHECKED = 0,
+    PENDING, CHECKED_EMPTY, CHECKED_NONEMPTY
+};
+
+enum CheckState get_first_tokens(Rule* rules, rule_id id, TokenSet* set,
+                                 int8_t* checked) {
+    if (checked[id] != UNCHECKED) {
+        return checked[id];
+    }
+    if (rules[id].type != RULE_MAPPING) {
+        TokenSet_insert(set, id);
+        checked[id] = CHECKED_NONEMPTY;
+        return CHECKED_NONEMPTY;
+    }
+
+    checked[id] = PENDING;
+
+    int8_t own_checked[MAX_RULES];
+
+    uint32_t pending_count = MAX_RULES + 1;
+    uint32_t last_pending_count;
+    while (pending_count > 0) {
+        rule_id r = id;
+        uint32_t ix = 0;
+        last_pending_count = pending_count;
+        pending_count = 0;
+        memcpy(own_checked, checked, sizeof(own_checked));
+        while (r != RULE_ID_NONE) {
+            if (ix >= rules[r].count) {
+                checked[id] = CHECKED_EMPTY;
+                own_checked[id] = CHECKED_EMPTY;
+                r = rules[r].next;
+                ix = 0;
+                continue;
+            }
+            rule_id rule = rules[r].data[ix];
+            if (own_checked[rule] == UNCHECKED) {
+                get_first_tokens(rules, rule, set, own_checked);
+            }
+            if (own_checked[rule] == PENDING) {
+                r = rules[r].next;
+                ++pending_count;
+            } else if (own_checked[rule] == CHECKED_NONEMPTY) {
+                r = rules[r].next;
+            } else if (own_checked[rule] == CHECKED_EMPTY) {
+                ++ix;
+            }
+        }
+        if (pending_count == last_pending_count) {
+            checked[id] = PENDING;
+            return PENDING;
+        }
+    }
+
+    if (checked[id] != CHECKED_EMPTY) {
+        checked[id] = CHECKED_NONEMPTY;
+    }
+    return checked[id];
+}
+
+void NodeRow_get_lookahead(NodeRow* row, TokenSet* look, Rule* rules) {
+    if (row->ix + 1 >= rules[row->rule].count) {
+        TokenSet_copy(look, &row->lookahead);
+        return;
+    }
+
+    int8_t checked[MAX_RULES];
+
+    TokenSet_create(look);
+    bool has_empty = false;
+    uint32_t ix = row->ix + 1;
+    do {
+        has_empty = false;
+        if (ix >= rules[row->rule].count) {
+            for (uint32_t i = 0; i < row->lookahead.size; ++i) {
+                TokenSet_insert(look, row->lookahead.tokens[i]);
+            }
+            break;
+        }
+        memset(checked, 0, sizeof(checked));
+        rule_id r = rules[row->rule].data[ix];
+        enum CheckState s = get_first_tokens(rules, r, look, checked);
+        if (s == CHECKED_EMPTY) {
+            has_empty = true;
+        } else if (s != CHECKED_NONEMPTY) {
+            _printf_e("Recusrive pattern '%s'\n", rules[row->rule].redhook);
+        }
+        ++ix;
+    } while (has_empty);
+}
+
+
+void Node_expand(Node* node, Rule* rules) {
+    bool changed = true;
 
     while (changed) {
         changed = false;
         for (uint32_t ix = 0; ix < node->rows.count; ++ix) {
             NodeRow* row = &node->rows.rows[ix];
-            rule_id r, next_rule;
-            uint32_t ncount = NodeRow_get_next_rules(row, rules, &r, &next_rule);
-            if (ncount == 0 || rules[r].type != RULE_MAPPING) {
+            rule_id r = NodeRow_get_next(row, rules);
+            if (r == RULE_ID_NONE || rules[r].type != RULE_MAPPING) {
                 continue;
             }
+            TokenSet look;
+            NodeRow_get_lookahead(row, &look, rules);
             for (;r != RULE_ID_NONE; r = rules[r].next) {
-                TokenSet look;
-                TokenSet_copy(&look, &row->lookahead);
-                if (ncount > 1 && rules[next_rule].type == RULE_MAPPING) {
-                    TokenSet_clear(&look);
-                    memset(checked, 0, sizeof(checked));
-                    checked[next_rule] = 1;
-                    stack_size = 0;
-                    for (rule_id i = next_rule; i != RULE_ID_NONE; i = rules[i].next) {
-                        ++stack_size;
-                    }
-                    if (!RESERVE(stack, stack_cap, stack_size)) {
-                        Mem_free(stack);
-                        TokenSet_free(&look);
-                        return false;
-                    }
-                    stack_size = 0;
-                    for (rule_id i = next_rule; i != RULE_ID_NONE; i = rules[i].next) {
-                        stack[stack_size++] = i;
-                    }
-                    while (stack_size > 0) {
-                        rule_id top = stack[stack_size - 1];
-                        --stack_size;
-                        if (rules[top].count == 0) {
-                            continue;
-                        }
-                        top = rules[top].data[0];
-                        if (rules[top].type != RULE_MAPPING) {
-                            TokenSet_insert(&look, top);
-                            continue;
-                        }
-                        if (checked[top]) {
-                            continue;
-                        }
-                        checked[top] = 1;
-                        rule_id i = top;
-                        uint32_t c = 0;
-                        for (; i != RULE_ID_NONE; i = rules[i].next, ++c) {}
-                        if (!RESERVE(stack, stack_cap, stack_size + c)) {
-                            Mem_free(stack);
-                            TokenSet_free(&look);
-                            return false;
-                        }
-                        for (i = top; i != RULE_ID_NONE; i = rules[i].next) {
-                            stack[stack_size++] = i;
-                        }
-                    }
-                } else if (ncount > 1) {
-                    TokenSet_clear(&look);
-                    TokenSet_insert(&look, next_rule);
-                }
-                uint32_t i = 0;
-                NodeRow new_row = {r, 0, look};
+                NodeRow new_row = {r, 0};
+                TokenSet_copy(&new_row.lookahead, &look);
                 if (NodeRows_append(&node->rows, &new_row)) {
                     changed = true;
                 }
+                row = &node->rows.rows[ix];
             }
+            TokenSet_free(&look);
         }
     }
-    return true;
 }
 
-bool Node_add_children(Node* node, Graph* g, Rule* rules) {
+void Node_add_children(Node* node, Graph* g, Rule* rules) {
     struct NewNode {
         rule_id token;
         NodeRows rows;
     };
 
-    struct NewNode* consumed = Mem_alloc(4 * sizeof(struct NewNode));
-    if (consumed == NULL) {
-        return false;
-    }
+    struct NewNode* consumed = Mem_xalloc(4 * sizeof(struct NewNode));
     uint32_t cleared = 0;
     uint32_t size = 0;
     uint32_t cap = 4;
@@ -492,18 +484,15 @@ bool Node_add_children(Node* node, Graph* g, Rule* rules) {
         }
         NodeRow advanced;
         NodeRow_get_advanced(row, &advanced);
-        if (!RESERVE(consumed, cap, size + 1)) {
-            TokenSet_free(&advanced.lookahead);
-            goto fail;
-        }
-        uint32_t ix = 0;
-        for (; ix < size; ++ix) {
-            if (consumed[ix].token == to_consume) {
-                NodeRows_append(&consumed[ix].rows, &advanced);
+        RESERVE(consumed, cap, size + 1);
+        uint32_t i = 0;
+        for (; i < size; ++i) {
+            if (consumed[i].token == to_consume) {
+                NodeRows_append(&consumed[i].rows, &advanced);
                 break;
             }
         }
-        if (ix == size) {
+        if (i == size) {
             NodeRows_create(&consumed[size].rows);
             consumed[size].token = to_consume;
             ++size;
@@ -513,28 +502,12 @@ bool Node_add_children(Node* node, Graph* g, Rule* rules) {
 
     while (cleared < size) {
         Node* n = Node_create(consumed[cleared].rows);
-        if (n == NULL) {
-            goto fail;
-        }
         ++cleared;
-        if (!Node_expand(n, rules)) {
-            Node_free(n);
-            goto fail;
-        }
-        if (!Graph_addEdge(g, node, n, consumed[cleared - 1].token, rules)) {
-            Node_free(n);
-            goto fail;
-        }
+        Node_expand(n, rules);
+        Graph_addEdge(g, node, n, consumed[cleared - 1].token, rules);
 
     }
     Mem_free(consumed);
-    return true;
-fail:
-    for (uint32_t ix = cleared; ix < size; ++ix) {
-        NodeRows_free(&consumed[ix].rows);
-    }
-    Mem_free(consumed);
-    return false;
 }
 
 bool is_space(char c) {
@@ -688,7 +661,7 @@ void output_header(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
         if (rules[ix].type != RULE_MAPPING) {
             continue;
         }
-        if (rules[ix].redhook == NULL) {
+        if (rules[ix].redhook == NULL || rules[ix].redhook[0] == '$') {
             continue;
         }
         _printf_h(h, "%s %s(void* ctx, uint64_t start, uint64_t end", 
@@ -741,23 +714,73 @@ void output_reduce(rule_id r, Rule* rules, uint32_t* map_ix,
         while (rules[id].next != RULE_ID_NONE) {
             id = rules[id].next;
         }
-        _printf_h(h, "%sn.m%lu = %s(ctx, n.start, n.end",
-                  i, id, rules[r].redhook);
-        for (uint32_t i2 = 0; i2 < rules[r].count; ++i2) {
-            if (rules[rules[r].data[i2]].type == RULE_LITERAL) {
-                continue;
+        _printf_h(h, "%sn.m%lu = ", i, id);
+        if (rules[r].redhook[0] == '$') {
+            const char* hook = rules[r].redhook + 1;
+            while (is_space(*hook)) {
+                ++hook;
             }
-            rule_id id = rules[r].data[i2];
-            if (rules[id].type == RULE_MAPPING) {
-                while (rules[id].next != RULE_ID_NONE) {
-                    id = rules[id].next;
+            while (*hook != '\0') {
+                if (*hook == '$') {
+                    ++hook;
+                    uint32_t ix;
+                    char c = *hook;
+                    if (c == '\0') {
+                        break;
+                    }
+                    if (c < '0' || c > '9') {
+                        continue;
+                    }
+                    ++hook;
+                    ix = c - '0';
+                    // Accept up to 2 digits.
+                    if ((*hook) >= '0' && (*hook) <= '9') {
+                        ix = ix * 10 + (*hook) - '0';
+                        ++hook;
+                    }
+                    uint32_t count = 0;
+                    for (uint32_t i2 = 0; i2 < rules[r].count; ++i2) {
+                        if (rules[rules[r].data[i2]].type != RULE_LITERAL) {
+                            if (count < ix) {
+                                ++count;
+                                continue;
+                            }
+                            rule_id id = rules[r].data[i2];
+                            if (rules[id].type == RULE_MAPPING) {
+                                while (rules[id].next != RULE_ID_NONE) {
+                                    id = rules[id].next;
+                                }
+                            }
+                            uint32_t s_ix = rules[r].count - i2;
+                            _printf_h(h, "stack.b[stack.size - %lu].m%lu",
+                                      s_ix, id);
+                            break;
+                        }
+                    }
+                } else {
+                    _printf_h(h, "%c", *hook);
+                    ++hook;
                 }
             }
-            uint32_t s_ix = rules[r].count - i2;
-            _printf_h(h, ", stack.b[stack.size - %lu].m%lu",
-                    s_ix, id);
+            _printf_h(h, ";\n");
+        } else {
+            _printf_h(h, "%s(ctx, n.start, n.end", rules[r].redhook);
+            for (uint32_t i2 = 0; i2 < rules[r].count; ++i2) {
+                if (rules[rules[r].data[i2]].type == RULE_LITERAL) {
+                    continue;
+                }
+                rule_id id = rules[r].data[i2];
+                if (rules[id].type == RULE_MAPPING) {
+                    while (rules[id].next != RULE_ID_NONE) {
+                        id = rules[id].next;
+                    }
+                }
+                uint32_t s_ix = rules[r].count - i2;
+                _printf_h(h, ", stack.b[stack.size - %lu].m%lu",
+                        s_ix, id);
+            }
+            _printf_h(h, ");\n");
         }
-        _printf_h(h, ");\n");
     }
     if (rules[r].count > 0) {
         _printf_h(h, "%sstack.size -= %lu;\n", i,
@@ -835,10 +858,10 @@ void output_reduce_table(Graph* graph, Rule* rules, uint32_t rule_count,
     _printf_h(h, "\n};\n\n");
 }
 
-bool output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
-                 String* includes, const char* header) {
+void output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
+                 String* includes, const ochar_t* header) {
     if (header != NULL) {
-        _printf_h(h, "#include \"%s\"\n", header);
+        oprintf_h(h, "#include \"%s\"\n", header);
     }
     _printf_h(h, "#include \"mem.h\"\n\n");
 
@@ -1001,8 +1024,6 @@ bool output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
     _printf_h(h, "failure:\n");
     _printf_h(h, "    __debugbreak();\n");
     _printf_h(h, "}\n");
-    
-    return true;
 }
 
 bool validate_graph(Rule* rules, rule_id rule_count, Graph* graph, Rule* start) {
@@ -1103,14 +1124,19 @@ loop:
                 }
                 n->ix = k;
             }
+            for (uint32_t r = 0; r < n1->rows.count; ++r) {
+                for (uint32_t t = 0; t < n2->rows.rows[r].lookahead.size; ++t) {
+                    TokenSet_insert(&n1->rows.rows[r].lookahead,
+                                    n2->rows.rows[r].lookahead.tokens[t]);
+                }
+            }
             Node_free(n2);
             goto loop;
         }
     }
 }
 
-bool create_graph(Rule* rules, rule_id rule_count, Rule* start_rule, HANDLE out,
-                  String* includes) {
+Graph* create_graph(Rule* rules, rule_id rule_count, Rule* start_rule) {
     NodeRows inital_row;
     NodeRows_create(&inital_row);
     TokenSet look;
@@ -1119,51 +1145,30 @@ bool create_graph(Rule* rules, rule_id rule_count, Rule* start_rule, HANDLE out,
     TokenSet_insert(&look, rule_count - 1);
     for (rule_id id = start_rule - rules; id != RULE_ID_NONE; id = rules[id].next) {
         NodeRow row = {id, 0, look};
-        if (!NodeRows_append(&inital_row, &row)) {
-            NodeRows_free(&inital_row);
-            TokenSet_free(&look);
-            return false;
-        }
         if (rules[id].next != RULE_ID_NONE) {
             TokenSet_copy(&look, &row.lookahead);
         }
+        NodeRows_append(&inital_row, &row);
     }
 
     Node* start_node = Node_create(inital_row);
-    if (start_node == NULL) {
-        NodeRows_free(&inital_row);
-        return false;
-    }
+    Node_expand(start_node, rules);
+    Graph* graph = Graph_create();
 
-    if (!Node_expand(start_node, rules)) {
-        Node_free(start_node);
-        return false;
-    }
-    Graph graph;
-    if (!Graph_create(&graph)) {
-        Node_free(start_node);
-        return false;
-    }
+    Graph_addNode(graph, start_node);
+    Node_add_children(start_node, graph, rules);
 
-    if (!Graph_addNode(&graph, start_node) || 
-        !Node_add_children(start_node, &graph, rules)) {
-        Graph_free(&graph);
-        return false;
-    }
+    merge_states(graph);
 
-    merge_states(&graph);
-
-    for (uint32_t ix = 0; ix < graph.count; ++ix) {
+    for (uint32_t ix = 0; ix < graph->count; ++ix) {
         _printf("%lu\n", ix);
-        fmt_rows(rules, &graph.nodes[ix]->rows);
+        fmt_rows(rules, &graph->nodes[ix]->rows);
     }
 
-    if (validate_graph(rules, rule_count, &graph, start_rule)) {
-        output_code(&graph, rules, rule_count, out, includes, NULL);
-        Graph_free(&graph);
-        return true;
+    if (validate_graph(rules, rule_count, graph, start_rule)) {
+        return graph;
     }
-    Graph_free(&graph);
+    Graph_free(graph);
     return false;
 }
 
@@ -1185,7 +1190,7 @@ char* scan_memchr(char* s, char c, uint64_t len) {
     return NULL;
 }
 
-// 0: success, 1: out of rules, 2: other parse errror, 3: out of memory
+// 0: success, 1: out of rules, 2: other parse errror
 int parse_lang(String* data, Rule* rules, rule_id* rule_len, HashMap* rule_map,
                String* headers) {
     uint64_t rule_count = 0;
@@ -1220,9 +1225,7 @@ int parse_lang(String* data, Rule* rules, rule_id* rule_len, HashMap* rule_map,
                 --end;
             }
             *end = '\0';
-            if (!String_append_count(headers, line + ix, 1 + end - (line + ix))) {
-                return 3;
-            }
+            String_append_count(headers, line + ix, 1 + end - (line + ix));
             continue;
         }
         if (len - ix >= 5 && memcmp(line + ix, "type:", 5) == 0) {
@@ -1249,9 +1252,6 @@ int parse_lang(String* data, Rule* rules, rule_id* rule_len, HashMap* rule_map,
                 continue;
             }
             HashElement* e = HashMap_Get(rule_map, line + ix);
-            if (e == NULL) {
-                return 3;
-            }
             Rule* rule = e->value;
             if (e->value == NULL) {
                 if (rule_count == MAX_RULES) {
@@ -1293,9 +1293,6 @@ int parse_lang(String* data, Rule* rules, rule_id* rule_len, HashMap* rule_map,
                     return 1;
                 }
                 HashElement* e = HashMap_Get(rule_map, line + ix);
-                if (e == NULL) {
-                    return 3;
-                }
                 Rule* r = e->value;
                 if (r == NULL) {
                     r = rules + rule_count;
@@ -1328,7 +1325,7 @@ int parse_lang(String* data, Rule* rules, rule_id* rule_len, HashMap* rule_map,
         name[name_len] = '\0';
 
         ix = name_sep - line + 1;
-        if (ix >= len || scan_memchr(line + ix, '=', len - ix) != NULL) {
+        if (ix >= len) {
             _printf_e("Invalid rule '%s'\n", name);
             continue;
         }
@@ -1365,7 +1362,7 @@ int parse_lang(String* data, Rule* rules, rule_id* rule_len, HashMap* rule_map,
                     ++max_parts;
                 }
             }
-            rule_id* ids = Mem_alloc(max_parts * sizeof(rule_id));
+            rule_id* ids = Mem_xalloc(max_parts * sizeof(rule_id));
             if (ids == NULL) {
                 return 3;
             }
@@ -1399,10 +1396,6 @@ int parse_lang(String* data, Rule* rules, rule_id* rule_len, HashMap* rule_map,
                     e = HashMap_Get(rule_map, cur);
                     sep[-1] = '\0';
                     ++cur;
-                    if (e == NULL) {
-                        Mem_free(ids);
-                        return 3;
-                    }
                     if (e->value == NULL) {
                         if (rule_count == MAX_RULES) {
                             Mem_free(ids);
@@ -1424,10 +1417,6 @@ int parse_lang(String* data, Rule* rules, rule_id* rule_len, HashMap* rule_map,
                 } else {
                     *sep = '\0';
                     e = HashMap_Get(rule_map, cur);
-                    if (e == NULL) {
-                        Mem_free(ids);
-                        return 3;
-                    }
                     if (e->value == NULL) {
                         if (rule_count == MAX_RULES) {
                             Mem_free(ids);
@@ -1447,10 +1436,6 @@ int parse_lang(String* data, Rule* rules, rule_id* rule_len, HashMap* rule_map,
                 ++part_ix;
             }
             HashElement* e = HashMap_Get(rule_map, name);
-            if (e == NULL) {
-                Mem_free(ids);
-                return 3;
-            }
             Rule* new_rule = e->value;
             if (e->value == NULL) {
                 if (rule_count == MAX_RULES) {
@@ -1494,6 +1479,10 @@ int parse_lang(String* data, Rule* rules, rule_id* rule_len, HashMap* rule_map,
                 new_rule->count = part_ix;
                 if (hook_start != NULL && hook_start != hook_end) {
                     *hook_end = '\0';
+                    // xyz => function xyz
+                    // $xyz => literal xyz, where $<n> is substituted
+                    // e.g $$1,
+                    // $ 1 + $1
                     new_rule->redhook = hook_start;
                 }
             }
@@ -1521,13 +1510,15 @@ int generate(ochar_t** argv, int argc) {
     }
     FlagValue startnode = {FLAG_STRING};
     FlagValue outfile = {FLAG_STRING};
+    FlagValue header = {FLAG_STRING};
     FlagInfo flags[] = {
         {oL('s'), oL("startnode"), &startnode},
         {oL('o'), oL("output"), &outfile},
+        {oL('H'), oL("header"), &header}
     };
     ErrorInfo err;
-    if (!find_flags(argv, &argc, flags, 2, &err)) {
-        ochar_t* e = format_error(&err, flags, 2);
+    if (!find_flags(argv, &argc, flags, 3, &err)) {
+        ochar_t* e = format_error(&err, flags, 3);
         if (e != NULL) {
             oprintf_e("%s\n", e);
             oprintf_e("Run '%s' --help for more information\n", argv[0]);
@@ -1537,6 +1528,9 @@ int generate(ochar_t** argv, int argc) {
     }
     if (flags[0].count == 0) {
         startnode.str = oL("PROGRAM");
+    }
+    if (flags[2].count == 0) {
+        header.str = NULL;
     }
 
     if (argc < 2 || argv == NULL) {
@@ -1555,11 +1549,8 @@ int generate(ochar_t** argv, int argc) {
     }
 
     String data;
-    if (!String_create(&data)) {
-        oprintf_e("Out of memory\n");
-        LineIter_abort(&ctx);
-        return 2;
-    }
+    String_create(&data);
+
     char* line;
     uint64_t len;
     while ((line = LineIter_next(&ctx, &len)) != NULL) {
@@ -1584,19 +1575,10 @@ int generate(ochar_t** argv, int argc) {
     Rule rules[MAX_RULES];
 
     HashMap rule_map;
-    if (!HashMap_Create(&rule_map)) {
-        oprintf_e("Out of memory\n");
-        String_free(&data);
-        return 3;
-    }
+    HashMap_Create(&rule_map);
 
     String includes;
-    if (!String_create(&includes)) {
-        oprintf_e("Out of memory\n");
-        String_free(&data);
-        HashMap_Free(&rule_map);
-        return 3;
-    }
+    String_create(&includes);
 
     rule_id rule_count;
     int status = parse_lang(&data, rules, &rule_count, &rule_map, &includes);
@@ -1606,8 +1588,6 @@ int generate(ochar_t** argv, int argc) {
         HashMap_Free(&rule_map);
         if (status == 1) {
             oprintf_e("Too many rules used in spec\n");
-        } else if (status == 3) {
-            oprintf_e("Out of memory\n");
         }
         return status;
     }
@@ -1617,10 +1597,7 @@ int generate(ochar_t** argv, int argc) {
     start_rule = HashMap_Value(&rule_map, startnode.str);
 #else
     String s;
-    if (!String_create(&s)) {
-        HashMap_Free(&rule_map);
-        goto fail;
-    }
+    String_create(&s);
     if (!String_from_utf16_str(&s, startnode.str)) {
         String_free(&s);
         HashMap_Free(&rule_map);
@@ -1648,21 +1625,50 @@ int generate(ochar_t** argv, int argc) {
         }
     }
 
-    HANDLE out;
-    if (flags[1].count == 0) {
-        out = GetStdHandle(STD_OUTPUT_HANDLE);
-    } else {
-        out = open_file_write(outfile.str);
-        if (out == INVALID_HANDLE_VALUE) {
-            oprintf_e("Failed opening '%s'\n", outfile.str);
-            goto fail;
+    Graph* g = create_graph(rules, rule_count, start_rule);
+    if (g != NULL) {
+        HANDLE out;
+
+        if (header.str != NULL) {
+            out = open_file_write(header.str);
+            if (out == INVALID_HANDLE_VALUE) {
+                oprintf_e("Failed opening '%s'\n", header.str);
+                Graph_free(g);
+                goto fail;
+            }
+            output_header(g, rules, rule_count, out, &includes);
+
+            // Find filename component
+            ochar_t* o = ostrrchr(header.str, '/');
+#ifdef WIN32
+            ochar_t* o2 = ostrrchr(header.str, '\\');
+            if (o2 != NULL && (o == NULL || o2 > o)) {
+                o = o2;
+            }
+#endif
+            if (o != NULL) {
+                header.str = o + 1;
+            }
+        }
+
+        if (flags[1].count == 0) {
+            out = GetStdHandle(STD_OUTPUT_HANDLE);
+        } else {
+            out = open_file_write(outfile.str);
+            if (out == INVALID_HANDLE_VALUE) {
+                oprintf_e("Failed opening '%s'\n", outfile.str);
+                Graph_free(g);
+                goto fail;
+            }
+        }
+
+        output_code(g, rules, rule_count, out, &includes, header.str);
+        if (flags[1].count > 0) {
+            CloseHandle(out);
         }
     }
 
-    bool sucess = create_graph(rules, rule_count, start_rule, out, &includes);
-    if (flags[1].count > 0) {
-        CloseHandle(out);
-    }
+    Graph_free(g);
     String_free(&data);
     String_free(&includes);
 
@@ -1672,7 +1678,7 @@ int generate(ochar_t** argv, int argc) {
         }
     }
 
-    return sucess ? 0 : 2;
+    return g != NULL ? 0 : 2;
 fail:
     String_free(&data);
     String_free(&includes);
