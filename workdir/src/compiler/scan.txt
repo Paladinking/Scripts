@@ -1,32 +1,31 @@
 // + is concatenation
 // | means or
 
-// atoms: a, b;
-
-// S = L ;
-// L = L + '-' + E;
-// L = E;
-// E = a;
-// E = b;
+include: "parser.h";
 
 atoms: identifier, statements;
 
-type: PROGRAM = Program*;
+type: identifier = StrWithLength;
+type: FUNCTION = FunctionDef*;
+type: ARG_LIST = uint64_t;
+type: ?ARG_LIST = uint64_t;
 
-PROGRAM = '' : Prog1 |
-          PROGRAM + FUNCTION : Prog2;
+PROGRAM = '' |
+          PROGRAM + FUNCTION : OnProgram;
+
+PROGRAM = PROGRAM + error + FUNCTION;
 
 FUNCTION = 'fn' + identifier + 
             '(' + ?ARG_LIST + ')' + 
-            ?RET_TYPE + statements;
+            ?RET_TYPE + statements : OnFunction;
 
 ?RET_TYPE = '' |
             '->' + identifier;
 
-?ARG_LIST = '' |
-            ARG_LIST;
+?ARG_LIST = '' : $ 0 |
+            ARG_LIST : $ $0;
 
-ARG_LIST = ARG |
-           ARG_LIST + ',' + ARG;
+ARG_LIST = ARG : $ 1;
+ARG_LIST = ARG_LIST + ',' + ARG : $ $0 + 1;
 
 ARG = identifier + identifier;

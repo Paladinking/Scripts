@@ -388,7 +388,7 @@ bool peek_keyword(Parser* parser, name_id keyword) {
 }
 
 
-static bool parse_uint(Parser* parser, uint64_t* i, uint8_t base) {
+static bool parser_parse_uint(Parser* parser, uint64_t* i, uint8_t base) {
     *i = 0;
     uint64_t n = 0;
     expect_data(parser);
@@ -485,7 +485,6 @@ const uint8_t* parse_name(Parser* parser, uint32_t* len) {
         add_error(parser, PARSE_ERROR_INVALID_CHAR, current_pos(parser));
         return NULL;
     }
-    expect_data(parser);
 
     while (parser->pos < parser->input_size) {
         uint8_t c = parser->indata[parser->pos];
@@ -678,7 +677,7 @@ bool parse_number_literal(Parser* parser, uint64_t* i, double* d, bool* is_int) 
     *is_int = true;
 
     if (base != 10) {
-        return parse_uint(parser, i, base);
+        return parser_parse_uint(parser, i, base);
     }
     for (uint64_t ix = parser->pos; ix < parser->input_size; ++ix) {
         if (parser->indata[ix] >= '0' && parser->indata[ix] <= '9') {
@@ -691,7 +690,7 @@ bool parse_number_literal(Parser* parser, uint64_t* i, double* d, bool* is_int) 
         break;
     }
     if (*is_int) {
-        return parse_uint(parser, i, 10);
+        return parser_parse_uint(parser, i, 10);
     }
 
     if (c != '.' && (c < '0' || c > '9')) {
