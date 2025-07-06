@@ -1,35 +1,31 @@
-// builtins: type, name, number, string, space
 // + is concatenation
 // | means or
 
+atoms: type, name, number, string, unop, binop;
+
 PROGRAM = '' |
-          PROGRAM + ?space + FUNCTION + ?space;
+          PROGRAM + FUNCTION;
 
-?space = '' |
-         space;
-
-FUNCTION = 'fn' + space + FUNCTION_NAME + ?space +
-           '(' + ?space + ARG_LIST + ?space + ')' +
-           ?space + ?RET_TYPE + ?space + STATEMENTS;
-
-FUNCTION_NAME = name;
+FUNCTION = 'fn' + name + 
+           '(' + ?ARG_LIST + ')' +
+           ?RET_TYPE + STATEMENTS;
 
 ?RET_TYPE = '' |
-            '->' + ?space + name;
+            '->' + type;
 
 
-ARG_LIST = '' |
-           ARG + TRAILING_ARGS;
+?ARG_LIST = '' |
+            ARG_LIST;
 
-TRAILING_ARGS = '' |
-                ',' + ?space + ARG + ?space + TRAILING_ARGS;
+ARG_LIST = ARG |
+           ARG_LIST + ',' + ARG;
 
-ARG = type + space + name;
+ARG = type + name;
 
-STATEMENTS = '{' + ?space + STATEMENT_LIST + ?space + '}';
+STATEMENTS = '{' + STATEMENT_LIST + '}';
 
 STATEMENT_LIST = '' |
-                 STATEMENT_LIST + ?space + STATEMENT;
+                 STATEMENT_LIST + STATEMENT;
 
 STATEMENT = WHILE |
             IF |
@@ -38,53 +34,44 @@ STATEMENT = WHILE |
             EXPRESSION + ';' |
             RETURN + ';';
 
-DECLARATION = type + space + name + ?ASSIGN;
+DECLARATION = type + name + ?ASSIGN;
 
 ?ASSIGN = '' |
-          ?space + '=' + ?space + EXPRESSION;
+          '=' + EXPRESSION;
 
-ASSIGNMENT = EXPRESSION + ?space + '=' + ?space + EXPRESSION;
+ASSIGNMENT = EXPRESSION + '=' + EXPRESSION;
 
-COND = '(' + ?space + EXPRESSION + ?space + ')';
+COND = '(' + EXPRESSION + ')';
 
-IF = 'if' + ?space + COND + ?space + STATEMENTS + ?ELSE;
+IF = 'if' + COND + STATEMENTS + ?ELSE;
 
 ?ELSE = '' |
-        ?space + ELSE;
+        ELSE;
 
-ELSE = 'else' + ?space + ?IFCOND;
+ELSE = 'else' + ?IFCOND;
 
 ?IFCOND = STATEMENTS | IF;
 
-WHILE = 'while' + ?space + COND + ?space + STATEMENTS;
+WHILE = 'while' + COND + STATEMENTS;
 
 RETURN = 'return' + EXPRESSION;
 
-EXPRESSION = name | BINOP | UNOP | number | string | CALL | ARRAY_INDEX;
+EXPR = name | number | string | CALL | ARRAY_INDEX | '(' + EXPRESSION + ')';
 
-BINOP = EXPRESSION + ?space + BIN_OPERATOR + ?space + EXPRESSION;
+EXPRESSION = EXPR | BINOP | UNOP;
 
-BIN_OPERATOR = '/'  | '*'  | '%' |
-               '-'  | '+'  | 
-               '>>' | '<<' |
-               '<=' | '>=' | '>' | '<' |
-               '==' | '!=' |
-               '&'  | '|'  | '^' |
-               '&&' | '||';
+BINOP = EXPRESSION + binop + EXPR |
+        EXPRESSION + binop + UNOP;
 
-UNOP = UN_OPERATOR + ?space + EXPRESSION |
-       '(' + ?space + EXPRESSION + ?space + ')';
+UNOP = unop + EXPR |
+       unop + UNOP;
 
-UN_OPERATOR = '~' | '!' | '-' | '+';
+CALL = EXPR + '(' + ?PARAM_LIST + ')';
 
-CALL = EXPRESSION + ?space + '(' + ?space + PARAM_LIST + ?space + ')';
+?PARAM_LIST = '' |
+              PARAM_LIST;
 
-PARAM_LIST = '' |
-             EXPRESSION + TRAILING_PARAMS;
+PARAM_LIST = EXPRESSION |
+             PARAM_LIST + ',' + EXPRESSION;
 
-TRAILING_PARAMS = '' |
-                  ',' + ?space + EXPRESSION + ?space + TRAILING_PARAMS;
-
-ARRAY_INDEX = EXPRESSION + ?space + '[' + ?space + EXPRESSION + ?space + ']';
-
-
+ARRAY_INDEX = EXPR + '[' + EXPRESSION + ']';

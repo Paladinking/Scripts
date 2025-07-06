@@ -14,6 +14,11 @@
 
 #define pinned
 
+typedef struct {
+    const uint8_t* str;
+    uint32_t len;
+} StrWithLength;
+
 typedef struct Expression Expression;
 typedef struct Statement Statement;
 typedef struct FunctionDef FunctionDef;
@@ -74,6 +79,7 @@ typedef uint64_t name_id;
 #define NAME_ID_RETURN 5
 #define NAME_ID_TRUE 6
 #define NAME_ID_FALSE 7
+#define NAME_ID_BUILTIN_COUNT 8
 
 // Index into var_table (part of quads)
 typedef uint64_t var_id;
@@ -410,6 +416,9 @@ Statement** parse_statements(Parser* parser, uint64_t* count, func_id function);
 bool parse_program(Parser* parser);
 
 // TODO: move?
+
+name_id insert_function_name(Parser* parser, const uint8_t* name, uint32_t name_len,
+                             FunctionDef* def);
 
 void find_row_col(const Parser* parser, uint64_t pos, uint64_t* row, uint64_t* col);
 

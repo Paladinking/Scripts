@@ -29,7 +29,7 @@ int compiler(char** argv, int argc) {
     }
 
     String s;
-    if (!read_text_file(&s, L"src\\compiler\\program.txt")) {
+    if (!read_text_file(&s, oL("src\\compiler\\program.txt"))) {
         _printf_e("Failed to read program.txt\n");
         return 1;
     }
