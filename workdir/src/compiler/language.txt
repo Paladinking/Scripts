@@ -1,70 +1,103 @@
 // + is concatenation
 // | means or
 
-atoms: type, name, number, string, unop, binop;
+include: "parser.h";
+
+atoms: kFn, kStruct, kIf, kWhile, kElse, kReturn, kTrue, kFalse,
+       typeid, identifier, integer, real, string;
+
+type: kFn = name_id;
+type: kStruct = name_id;
+type: kIf = name_id;
+type: kWhile = name_id;
+type: kElse = name_id;
+type: kReturn = name_id;
+type: kTrue = name_id;
+type: kFalse = name_id;
+
+type: typeid = type_id;
+type: identifier = StrWithLength;
+type: integer = uint64_t;
+type: real = double;
+type: string = StrWithLength;
+
+type: BINOPERATOR = enum BinaryOperator;
+type: UNARYOPERATOR = enum UnaryOperator;
+
+type: FUNCTION = FunctionDef*;
+type: ?RET_TYPE = type_id;
 
 PROGRAM = '' |
           PROGRAM + FUNCTION;
 
-FUNCTION = 'fn' + name + 
+FUNCTION = kFn + identifier + 
            '(' + ?ARG_LIST + ')' +
            ?RET_TYPE + STATEMENTS;
 
-?RET_TYPE = '' |
-            '->' + type;
+?RET_TYPE = '' :$ TYPE_ID_NONE |
+            '->' + typeid :$ $0;
 
 
 ?ARG_LIST = '' |
             ARG_LIST;
 
-ARG_LIST = ARG |
-           ARG_LIST + ',' + ARG;
-
-ARG = type + name;
+ARG_LIST = typeid + identifier |
+           ARG_LIST + ',' + typeid + identifier;
 
 STATEMENTS = '{' + STATEMENT_LIST + '}';
 
 STATEMENT_LIST = '' |
                  STATEMENT_LIST + STATEMENT;
 
-STATEMENT = WHILE |
+STATEMENT = kWhile + COND + STATEMENTS |
             IF |
-            DECLARATION + ';' |
-            ASSIGNMENT + ';' |
+            typeid + ARRAYDECL + identifier + ?ASSIGN + ';' |
+            EXPRESSION + '=' + EXPRESSION + ';' |
             EXPRESSION + ';' |
-            RETURN + ';';
+            kReturn + EXPRESSION + ';';
 
-DECLARATION = type + name + ?ASSIGN;
+ARRAYDECL = '' |
+            ARRAYDECL + '[' + integer + ']';
 
 ?ASSIGN = '' |
           '=' + EXPRESSION;
 
-ASSIGNMENT = EXPRESSION + '=' + EXPRESSION;
-
 COND = '(' + EXPRESSION + ')';
 
-IF = 'if' + COND + STATEMENTS + ?ELSE;
-
 ?ELSE = '' |
-        ELSE;
+        kElse + ?IFCOND;
 
-ELSE = 'else' + ?IFCOND;
+IF = kIf + COND + STATEMENTS + ?ELSE;
 
 ?IFCOND = STATEMENTS | IF;
 
-WHILE = 'while' + COND + STATEMENTS;
-
-RETURN = 'return' + EXPRESSION;
-
-EXPR = name | number | string | CALL | ARRAY_INDEX | '(' + EXPRESSION + ')';
+EXPR = kTrue | kFalse | identifier | integer | real | string | 
+       CALL | ARRAY_INDEX | '(' + EXPRESSION + ')';
 
 EXPRESSION = EXPR | BINOP | UNOP;
 
-BINOP = EXPRESSION + binop + EXPR |
-        EXPRESSION + binop + UNOP;
+BINOPERATOR = '/' :$ BINOP_DIV | '*' :$ BINOP_MUL | '%' :$ BINOP_MOD |
+              '-' :$ BINOP_SUB | '+' :$ BINOP_ADD |
+              '<<' :$ BINOP_BIT_LSHIFT| '>>' :$ BINOP_BIT_RSHIFT |
+              '<=' :$ BINOP_CMP_LE | '>=' :$ BINOP_CMP_GE | 
+              '>' :$ BINOP_CMP_G | '<' :$ BINOP_CMP_L |
+              '==' :$ BINOP_CMP_EQ | '!=' :$ BINOP_CMP_NEQ |
+              '&'  :$ BINOP_BIT_AND |
+              '^'  :$ BINOP_BIT_XOR |
+              '|'  :$ BINOP_BIT_OR |
+              '&&' :$ BINOP_BOOL_AND |
+              '||' :$ BINOP_BOOL_OR;
 
-UNOP = unop + EXPR |
-       unop + UNOP;
+UNARYOPERATOR = '~' :$ UNOP_BITNOT |
+                '!' :$ UNOP_BOOLNOT |
+                '-' :$ UNOP_NEGATIVE |
+                '+' :$ UNOP_POSITIVE;
+
+BINOP = EXPRESSION + BINOPERATOR + EXPR |
+        EXPRESSION + BINOPERATOR + UNOP;
+
+UNOP = UNARYOPERATOR + EXPR |
+       UNARYOPERATOR + UNOP;
 
 CALL = EXPR + '(' + ?PARAM_LIST + ')';
 

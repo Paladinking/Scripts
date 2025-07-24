@@ -149,12 +149,25 @@ def main():
               "script/xkcd-titles.txt", "script/vcvarsall.ps1")
     translate("cmdrc.bat", "password.bat", "vcvarsall.bat")
 
+    desc = Executable("desclang.exe", "src/desclang.c", "src/glob.c", *arg_src, ntdll,
+                      "src/hashmap.c", defines=["MEM_ABORT_ERROR"],
+                      namespace="desclang")
+
+    json_src, json_h = Command(["jsonparse.c", "jsonparse.h"], 
+                        f"{desc.product} expr.txt -s FILE -o src/jsonparse.c -H src/jsonparse.h",
+                        "expr.txt", desc,
+                        directory="src")
+
+    Executable("genparse.exe", "src/parse_gen.c", "src/glob.c", "src/mem.c",
+               "src/dynamic_string.c", "src/args.c", "src/printf.c", ntdll)
+
     with Context(group="tests", directory=f"{bin_dir()}/tests",
                  includes=["src"], namespace="tests"):
         Executable("test_regex.exe", "src/tests/test_regex.c", "src/regex.c", *unicode,
                    "src/printf.c", "src/dynamic_string.c", "src/args.c", ntdll)
 
-    with Context(group="compiler", includes=["src"], namespace="compiler"):
+    with Context(group="compiler", includes=["src"], namespace="compiler",
+                 defines=["NARROW_OCHAR"]):
         link = "WS2_32.lib" if backend().name == "msvc" else "-lws2_32"
         comp_src = ["src/compiler/parser.c", "src/compiler/format.c",
                     "src/compiler/quads.c", "src/compiler/utils.c",
@@ -164,8 +177,46 @@ def main():
                     "src/glob.c", "src/arena.c", ntdll]
         Executable("parser.exe", "src/compiler/compiler.c", *comp_src,
                    extra_link_flags=link)
-        Executable("tests/test_parser.exe", "src/compiler/tests/test_parser.c", *comp_src,
-                   extra_link_flags=link)
+        Executable("tests/test_parser.exe", "src/compiler/tests/test_parser.c",
+                   *comp_src, extra_link_flags=link)
+
+        scan_c, scan_h = Command(["scan.c", "scan.h"],
+                                 f"{desc.product} src/compiler/scan.txt -o " +
+                                 "src/compiler/scan.c -H src/compiler/scan.h -s PROGRAM",
+                                 desc, "src/compiler/scan.txt",
+                                 directory="src/compiler")
+        
+        parse_c, parse_h = Command(["parse.c", "parse.h"],
+                                    f"{desc.product} src/compiler/language.txt -o " +
+                                   "src/compiler/parse.c -H src/compiler/parse.h -s PROGRAM",
+                                   desc, "src/compiler/language.txt",
+                                   directory="src/compiler")
+
+        scan_defs: List[Union[str, Tuple[str, str]]] = \
+                                [("parse", "scanner_parse"), ("parser_error", "scanner_error"),
+                                 ("peek_token", "scanner_peek_token"),
+                                 ("consume_token", "scanner_consume_token")]
+
+        scan_o = Object("scan.obj", scan_c.product, depends=[scan_h.product],
+                        defines=scan_defs)
+        parse_o = Object("parse.obj", parse_c.product, depends=[parse_h.product])
+
+        scan_test_o = Object("scan_test.obj", "src/compiler/scan_test.c",
+                             depends=[scan_h.product], defines=scan_defs)
+        parse_test_o = Object("parse_test.obj", "src/compiler/parse_test.c",
+                              depends=[parse_h.product])
+
+        Executable("parse_test.exe", parse_o, parse_test_o,
+                   *comp_src, extra_link_flags=link)
+
+        Executable("scanner.exe", scan_o, scan_test_o,
+                   *comp_src, extra_link_flags=link)
+        #jsonp = Object("jsonp.obj", "jsonp.c", depends=[json_h.product])
+        #json_parse = Object("jsonparse.obj", json_src.product, depends=[json_h.product])
+
+        #Executable("jscanner.exe", jsonp, "src/dynamic_string.c",
+        #           "src/args.c", "src/glob.c", "src/mem.c", "src/printf.c",
+        #           "src/json.c", json_parse, lhashmap, ntdll)
     
     build(__file__)
 

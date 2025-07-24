@@ -8,6 +8,7 @@
 typedef uint32_t rule_id;
 
 #define MAX_RULES 512
+#define RULE_ID_ERROR 0
 #define RULE_ID_NONE ((rule_id) -1)
 
 typedef struct Rule {
@@ -636,48 +637,18 @@ void output_header(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
     _printf_h(h, "    };\n");
     _printf_h(h, "} Token;\n\n");
 
-    _printf_h(h, "struct StackEntry {\n");
-    _printf_h(h, "    int32_t state;\n");
+    _printf_h(h, "typedef struct SyntaxError {\n");
+    _printf_h(h, "    Token token;\n");
     _printf_h(h, "    uint64_t start;\n");
     _printf_h(h, "    uint64_t end;\n");
-    _printf_h(h, "    union {\n");
-    for (uint32_t ix = 0; ix < rule_count - 1; ++ix) {
-        if (rules[ix].type == RULE_LITERAL ||
-            (rules[ix].type == RULE_MAPPING && 
-             rules[ix].next != RULE_ID_NONE)) {
-            continue;
-        }
-        _printf_h(h, "        %s m%lu;\n", rules[ix].ctype, ix);
-    }
-    _printf_h(h, "    };\n");
-    _printf_h(h, "};\n\n");
-    _printf_h(h, "struct Stack {\n");
-    _printf_h(h, "    struct StackEntry* b;\n");
-    _printf_h(h, "    uint32_t size;\n");
-    _printf_h(h, "    uint32_t cap;\n");
-    _printf_h(h, "};\n\n");
-
-    for (uint32_t ix = 0; ix < rule_count - 1; ++ix) {
-        if (rules[ix].type != RULE_MAPPING) {
-            continue;
-        }
-        if (rules[ix].redhook == NULL || rules[ix].redhook[0] == '$') {
-            continue;
-        }
-        _printf_h(h, "%s %s(void* ctx, uint64_t start, uint64_t end", 
-                rules[ix].ctype, rules[ix].redhook);
-        for (uint32_t j = 0; j < rules[ix].count; ++j) {
-            if (rules[rules[ix].data[j]].type == RULE_LITERAL) {
-                continue;
-            }
-            _printf_h(h, ", %s", rules[rules[ix].data[j]].ctype);
-        }
-        _printf_h(h, ");\n\n");
-    }
+    _printf_h(h, "    const Token* expected;\n");
+    _printf_h(h, "    uint64_t expected_count;\n");
+    _printf_h(h, "} SyntaxError;\n\n");
 
     _printf_h(h, "Token peek_token(void* ctx, uint64_t* start, uint64_t* end);\n\n");
     _printf_h(h, "void consume_token(void* ctx, uint64_t* start, uint64_t* end);\n\n");
-    _printf_h(h, "bool parse(void* ctx);\n\n");
+    _printf_h(h, "void parser_error(void* ctx, SyntaxError e);\n\n");
+    _printf_h(h, "bool parse(void* ctx);\n");
 }
 
 const static char* INDENTS[8] =  {
@@ -804,7 +775,6 @@ void output_reduce(rule_id r, Rule* rules, uint32_t* map_ix,
     }
 }
 
-
 void output_reduce_table(Graph* graph, Rule* rules, uint32_t rule_count,
                          uint32_t* map_ix, uint32_t mapping_count,
                          HANDLE h) {
@@ -858,6 +828,225 @@ void output_reduce_table(Graph* graph, Rule* rules, uint32_t rule_count,
     _printf_h(h, "\n};\n\n");
 }
 
+NodeEdge* get_error_shift(Node* n) {
+    for (uint32_t ix = 0; ix < n->edge_count; ++ix) {
+        if (n->edges[ix].token == RULE_ID_ERROR) {
+            return &n->edges[ix];
+        }
+    }
+    return NULL;
+}
+
+void output_error_shifts(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h) {
+    _printf_h(h, "        while(1) {\n");
+    _printf_h(h, "            uint32_t i = stack.size;\n");
+    _printf_h(h, "            while (i > 0) {\n");
+    _printf_h(h, "                --i;\n");
+    _printf_h(h, "                switch(stack.b[i].state) {\n");
+    for (uint32_t ix = 0; ix < graph->count; ++ix) {
+        Node* n = graph->nodes[ix];
+        NodeEdge* e = get_error_shift(n);
+        if (e == NULL) {
+            continue;
+        }
+        Node* d = e->dest;
+        bool has_action = false;
+        for (uint32_t edge_ix = 0; edge_ix < d->edge_count; ++edge_ix) {
+            if (d->edges[edge_ix].token == RULE_ID_ERROR) {
+                continue;
+            }
+            if (rules[d->edges[edge_ix].token].type == RULE_MAPPING) {
+                continue;
+            }
+            if (!has_action) {
+                has_action = true;
+                _printf_h(h, "                case %u:\n", n->ix);
+                _printf_h(h, "                    if (");
+            } else {
+                _printf_h(h, " || ");
+            }
+            rule_id r = d->edges[edge_ix].token;
+            if (rules[r].type == RULE_LITERAL) {
+                const char* s = rules[r].name;
+                uint64_t l = strlen(s);
+                _printf_h(h, "(t.id == TOKEN_LITERAL && len == %llu", l);
+                for (uint64_t i = 0; i < l; ++i) {
+                    _printf_h(h, " && t.literal[%llu] == '%c'", i, s[i]);
+                }
+                _printf_h(h, ")");
+            } else {
+                _printf_h(h, "t.id == TOKEN_");
+                for (const char* c = rules[r].name; *c != '\0'; ++c) {
+                    _printf_h(h, "%c", upper(*c));
+                }
+            }
+        }
+        for (uint32_t row_ix = 0; row_ix < d->rows.count; ++row_ix) {
+            NodeRow* row = &d->rows.rows[row_ix];
+            if (row->ix < rules[row->rule].count) {
+                continue;
+            }
+            for (uint32_t k = 0; k < row->lookahead.size; ++k) {
+                rule_id id = row->lookahead.tokens[k];
+                if (id == RULE_ID_ERROR || rules[id].type == RULE_MAPPING) {
+                    continue;
+                }
+                if (!has_action) {
+                    has_action = true;
+                    _printf_h(h, "                case %u:\n", n->ix);
+                    _printf_h(h, "                    if (");
+                } else {
+                    _printf_h(h, " || ");
+                }
+                if (rules[id].type == RULE_LITERAL) {
+                    const char* s = rules[id].name;
+                    uint64_t l = strlen(s);
+                    _printf_h(h, "(t.id == TOKEN_LITERAL && len == %llu", l);
+                    for (uint64_t i = 0; i < l; ++i) {
+                        _printf_h(h, " && t.literal[%llu] == '%c'", i, s[i]);
+                    }
+                    _printf_h(h, ")");
+                } else if (id == rule_count - 1) {
+                    _printf_h(h, "t.id == TOKEN_END");
+                } else {
+                    _printf_h(h, "t.id == TOKEN_");
+                    for (const char* c = rules[id].name; *c != '\0'; ++c) {
+                        _printf_h(h, "%c", upper(*c));
+                    }
+                }
+            }
+        }
+        if (has_action) {
+            _printf_h(h, ") {\n");
+            _printf_h(h, "                        stack.size = i + 1;\n");
+            _printf_h(h, "                        n.state = %lu;\n", e->dest->ix);
+            _printf_h(h, "                        push_state(&stack, n);\n");
+            _printf_h(h, "                        goto loop;\n");
+            _printf_h(h, "                    }\n");
+        }
+    }
+
+
+    _printf_h(h, "                default:\n");
+    _printf_h(h, "                    break;\n");
+    _printf_h(h, "                }\n");
+    _printf_h(h, "            }\n");
+    _printf_h(h, "            if (t.id != TOKEN_END) {\n");
+    _printf_h(h, "                consume_token(ctx, &n.start, &n.end);\n");
+    _printf_h(h, "                t = peek_token(ctx, &start, &end);\n");
+    _printf_h(h, "                len = end - start;\n");
+    _printf_h(h, "                continue;\n");
+    _printf_h(h, "            }\n");
+    _printf_h(h, "            Mem_free(stack.b);\n");
+    _printf_h(h, "            return false;\n");
+    _printf_h(h, "        }\n");
+}
+
+void output_syntax_error(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h) {
+    uint8_t included[MAX_RULES];
+    uint32_t* counts = Mem_xalloc(graph->count * sizeof(uint32_t));
+
+    for (uint32_t ix = 0; ix < graph->count; ++ix) {
+        memset(included, 0, sizeof(included));
+        _printf_h(h, "const static Token state%u_expected[] = {", ix);
+        bool has_entry = false;
+        counts[ix] = 0;
+
+        Node* n = graph->nodes[ix];
+        for (uint32_t edge_ix = 0; edge_ix < n->edge_count; ++edge_ix) {
+            NodeEdge* e = &n->edges[edge_ix];
+            if (included[e->token]) {
+                continue;
+            }
+            if (e->token == RULE_ID_ERROR || rules[e->token].type == RULE_MAPPING) {
+                continue;
+            }
+            included[e->token] = 1;
+            if (has_entry) {
+                _printf_h(h, ", ");
+            } else {
+                has_entry = true;
+            }
+            ++counts[ix];
+            if (rules[e->token].type == RULE_LITERAL) {
+                _printf_h(h, "{ TOKEN_LITERAL, .literal = \"%s\" }", rules[e->token].name);
+            } else {
+                _printf_h(h, "{ TOKEN_");
+                if (e->token == rule_count - 1) {
+                    _printf_h(h, "END");
+                } else {
+                    for (const char* c = rules[e->token].name; *c != '\0'; ++c) {
+                        _printf_h(h, "%c", upper(*c));
+                    }
+                }
+                _printf_h(h, "}");
+            }
+        }
+        for (uint32_t row_ix = 0; row_ix < n->rows.count; ++row_ix) {
+            NodeRow* row = &n->rows.rows[row_ix];
+            if (row->ix < rules[row->rule].count) {
+                continue;
+            }
+            for (uint32_t token_ix = 0; token_ix < row->lookahead.size; ++token_ix) {
+                rule_id r = row->lookahead.tokens[token_ix];
+                if (included[r] || r == RULE_ID_ERROR || rules[r].type == RULE_MAPPING) {
+                    continue;
+                }
+                included[r] = 1;
+                if (has_entry) {
+                    _printf_h(h, ", ");
+                } else {
+                    has_entry = true;
+                }
+                ++counts[ix];
+                if (rules[r].type == RULE_LITERAL) {
+                    _printf_h(h, "{ TOKEN_LITERAL, .literal = \"%s\" }", rules[r].name);
+                } else {
+                    _printf_h(h, "{ TOKEN_");
+                    if (r == rule_count - 1) {
+                        _printf_h(h, "END");
+                    } else {
+                        for (const char* c = rules[r].name; *c != '\0'; ++c) {
+                            _printf_h(h, "%c", upper(*c));
+                        }
+                    }
+                    _printf_h(h, "}");
+                }
+            }
+        }
+
+        _printf_h(h, "};\n");
+    }
+    _printf_h(h, "static const Token* expected[] = {");
+    for (uint32_t ix = 0; ix < graph->count; ++ix) {
+        _printf_h(h, "state%u_expected", ix);
+        if (ix < graph->count - 1) {
+            _printf_h(h, ", ");
+        }
+    }
+    _printf_h(h, "};\n");
+    _printf_h(h, "static const uint32_t expected_count[] = {");
+    for (uint32_t ix = 0; ix < graph->count; ++ix) {
+        _printf_h(h, "%u", counts[ix]);
+        if (ix < graph->count - 1) {
+            _printf_h(h, ", ");
+        }
+    }
+    _printf_h(h, "};\n\n");
+    Mem_free(counts);
+
+    _printf_h(h, "static SyntaxError get_syntax_error(int32_t state, Token t"
+                 ", uint64_t start, uint64_t end) {\n");
+    _printf_h(h, "    SyntaxError e = {t, start, end, NULL, 0};\n");
+    _printf_h(h, "    if (state < 0 || state > %u) {\n", graph->count);
+    _printf_h(h, "        return e;\n");
+    _printf_h(h, "    }\n");
+    _printf_h(h, "    e.expected = expected[state];\n");
+    _printf_h(h, "    e.expected_count = expected_count[state];\n");
+    _printf_h(h, "    return e;\n");
+    _printf_h(h, "}\n\n");
+}
+
 void output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
                  String* includes, const ochar_t* header) {
     if (header != NULL) {
@@ -878,8 +1067,49 @@ void output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
             ++mapping_count;
         }
     }
+
+    _printf_h(h, "struct StackEntry {\n");
+    _printf_h(h, "    int32_t state;\n");
+    _printf_h(h, "    uint64_t start;\n");
+    _printf_h(h, "    uint64_t end;\n");
+    _printf_h(h, "    union {\n");
+    for (uint32_t ix = 0; ix < rule_count - 1; ++ix) {
+        if (rules[ix].type == RULE_LITERAL ||
+            (rules[ix].type == RULE_MAPPING && 
+             rules[ix].next != RULE_ID_NONE)) {
+            continue;
+        }
+        _printf_h(h, "        %s m%lu;\n", rules[ix].ctype, ix);
+    }
+    _printf_h(h, "    };\n");
+    _printf_h(h, "};\n\n");
+    _printf_h(h, "struct Stack {\n");
+    _printf_h(h, "    struct StackEntry* b;\n");
+    _printf_h(h, "    uint32_t size;\n");
+    _printf_h(h, "    uint32_t cap;\n");
+    _printf_h(h, "};\n\n");
+
+    for (uint32_t ix = 0; ix < rule_count - 1; ++ix) {
+        if (rules[ix].type != RULE_MAPPING) {
+            continue;
+        }
+        if (rules[ix].redhook == NULL || rules[ix].redhook[0] == '$') {
+            continue;
+        }
+        _printf_h(h, "%s %s(void* ctx, uint64_t start, uint64_t end", 
+                rules[ix].ctype, rules[ix].redhook);
+        for (uint32_t j = 0; j < rules[ix].count; ++j) {
+            if (rules[rules[ix].data[j]].type == RULE_LITERAL) {
+                continue;
+            }
+            _printf_h(h, ", %s", rules[rules[ix].data[j]].ctype);
+        }
+        _printf_h(h, ");\n\n");
+    }
     
     output_reduce_table(graph, rules, rule_count, MAP_IX, mapping_count, h);
+
+    output_syntax_error(graph, rules, rule_count, h);
 
     _printf_h(h, "static void push_state(struct Stack* stack, struct StackEntry n) {\n");
     _printf_h(h, "    if (stack->size == stack->cap) {\n");
@@ -906,13 +1136,14 @@ void output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
     _printf_h(h, "    stack.cap = 16;\n");
     _printf_h(h, "    struct StackEntry n = {0, 0, 0};\n");
     _printf_h(h, "    while (1) {\n");
+    _printf_h(h, "loop:\n");
     _printf_h(h, "        uint64_t start, end;\n");
     _printf_h(h, "        Token t = peek_token(ctx, &start, &end);\n");
     _printf_h(h, "        uint64_t len = end - start;\n");
     _printf_h(h, "        switch (n.state) {\n");
     for (uint32_t ix = 0; ix < graph->count; ++ix) {
         Node* n = graph->nodes[ix];
-        _printf_h(h, "        case %lu: {\n", ix);
+        _printf_h(h, "        case %lu: \n", ix);
         _printf_h(h, "            switch (t.id) {\n");
         bool has_literal = false;
         for (uint32_t j = 0; j < n->edge_count; ++j) {
@@ -968,7 +1199,7 @@ void output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
         }
         for (uint32_t j = 0; j < n->edge_count; ++j) {
             rule_id id = n->edges[j].token;
-            if (rules[id].type != RULE_ATOM) {
+            if (id == RULE_ID_ERROR || rules[id].type != RULE_ATOM) {
                 continue;
             }
             _printf_h(h, "            case TOKEN_");
@@ -988,7 +1219,7 @@ void output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
             }
             for (uint32_t k = 0; k < row->lookahead.size; ++k) {
                 rule_id id = row->lookahead.tokens[k];
-                if (rules[id].type != RULE_ATOM) {
+                if (id == RULE_ID_ERROR || rules[id].type != RULE_ATOM) {
                     continue;
                 }
                 _printf_h(h, "            case TOKEN_");
@@ -1012,17 +1243,18 @@ void output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
         _printf_h(h, "                goto failure;\n");
         _printf_h(h, "            }\n");
         _printf_h(h, "            break;\n");
-        _printf_h(h, "        }\n");
     }
     _printf_h(h, "        default:\n");
     _printf_h(h, "            goto failure;\n");
     _printf_h(h, "        }\n");
+    _printf_h(h, "        continue;\n");
+    _printf_h(h, "    failure:\n");
+    _printf_h(h, "        parser_error(ctx, get_syntax_error(n.state, t, start, end));\n");
+    output_error_shifts(graph, rules, rule_count, h);
     _printf_h(h, "    }\n");
     _printf_h(h, "accept:\n");
     _printf_h(h, "    Mem_free(stack.b);\n");
     _printf_h(h, "    return true;\n");
-    _printf_h(h, "failure:\n");
-    _printf_h(h, "    __debugbreak();\n");
     _printf_h(h, "}\n");
 }
 
@@ -1193,7 +1425,10 @@ char* scan_memchr(char* s, char c, uint64_t len) {
 // 0: success, 1: out of rules, 2: other parse errror
 int parse_lang(String* data, Rule* rules, rule_id* rule_len, HashMap* rule_map,
                String* headers) {
-    uint64_t rule_count = 0;
+    uint64_t rule_count = 1;
+    rules[RULE_ID_ERROR] = (Rule) 
+        {RULE_ATOM, "error", RULE_ID_NONE, 0, NULL, NULL, NULL};
+    HashMap_Insert(rule_map, "error", &rules[0]);
 
     char* line;
     char* next = data->buffer;

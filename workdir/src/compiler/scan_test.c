@@ -11,22 +11,7 @@ struct Tokenizer {
     uint64_t end;
 };
 
-void skip_spaces(Parser* parser);
 void skip_statement(Parser* parser);
-
-static inline bool is_identifier(uint8_t c) {
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-             c == '_' || (c >= '0' && c <= '9');
-}
-
-static inline bool is_identifier_start(uint8_t c) {
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-            (c == '_');
-}
-
-const uint8_t* parse_name(Parser* parser, uint32_t* len);
-
-name_id find_name(Parser* parser, const uint8_t* name, uint32_t len);
 
 Token scanner_peek_token(void* ctx, uint64_t* start, uint64_t* end) {
     struct Tokenizer* t = ctx;

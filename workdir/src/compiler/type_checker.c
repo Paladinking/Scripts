@@ -87,7 +87,7 @@ type_id typecheck_unop(Parser* parser, Expression* op) {
         return op->type;
     case UNOP_BITNOT:
         return require_interger(parser, op->unop.expr, true, true);
-    case UNOP_NEGATVIE:
+    case UNOP_NEGATIVE:
         // TODO: add warning on unsigned
         return require_number(parser, op->unop.expr);
     case UNOP_POSITIVE: {
