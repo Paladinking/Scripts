@@ -125,10 +125,18 @@ void Log_LogAtLevel(enum LogLevel level, const char* file, int32_t line, const c
     int fm_size = _vsnprintf_s(args_buf + size + 4, 2048 - size - 2, _TRUNCATE, fmt, args);
     if (fm_size < 0) {
         fm_size = 2047 - size - 2;
+        if (level >= LOG_LEVEL_WARNING) {
+            outputUtf8_e(args_buf + size + 4, fm_size);
+        }
         size = 2047;
     } else {
+        if (level >= LOG_LEVEL_WARNING) {
+            outputUtf8_e(args_buf + size + 4, fm_size);
+        }
         size = size + fm_size + 2;
     }
+
+
     uint32_t s = size;
     args_buf[0] = 0;
     args_buf[1] = 0;
