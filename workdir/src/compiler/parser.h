@@ -445,6 +445,8 @@ void scan_program(Parser* parser, String* indata);
 
 bool parse_program(Parser* parser);
 
+uint32_t binop_precedence(enum BinaryOperator op);
+
 // TODO: move?
 void skip_spaces(Parser* parser);
 
