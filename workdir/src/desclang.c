@@ -1467,16 +1467,16 @@ Graph* create_graph(Rule* rules, rule_id rule_count, Rule* start_rule) {
 
     merge_states(graph);
 
-    for (uint32_t ix = 0; ix < graph->count; ++ix) {
-        _printf("%lu\n", ix);
-        fmt_rows(rules, &graph->nodes[ix]->rows);
-    }
 
     if (validate_graph(rules, rule_count, graph, start_rule)) {
+        for (uint32_t ix = 0; ix < graph->count; ++ix) {
+            _printf("%lu\n", ix);
+            fmt_rows(rules, &graph->nodes[ix]->rows);
+        }
         return graph;
     }
     Graph_free(graph);
-    return false;
+    return NULL;
 }
 
 // Like memchr, but skips '' literals. 
@@ -1976,9 +1976,9 @@ int generate(ochar_t** argv, int argc) {
         if (flags[1].count > 0) {
             CloseHandle(out);
         }
+        Graph_free(g);
     }
 
-    Graph_free(g);
     String_free(&data);
     String_free(&includes);
 
