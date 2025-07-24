@@ -1,6 +1,3 @@
-// + is concatenation
-// | means or
-
 include: "parser.h";
 
 atoms: kFn, kStruct, kIf, kWhile, kElse, kReturn, kTrue, kFalse,
@@ -24,57 +21,96 @@ type: string = StrWithLength;
 type: BINOPERATOR = enum BinaryOperator;
 type: UNARYOPERATOR = enum UnaryOperator;
 
+type: EXPRESSION = Expression*;
+type: EXPR = Expression*;
+type: BINOP = Expression*;
+type: UNOP = Expression*;
+type: CALL = Expression*;
+type: ARRAY_INDEX = Expression*;
+
+type: COND = Expression*;
+
+type: ?ASSIGN = Expression*;
+type: STATEMENT = Statement*;
+type: IF = Statement*;
+type: ?ELSE = Statement*;
+type: ELSE = void*;
+
+type: STATEMENTS = Statements;
+type: STATEMENT_LIST = StatementList*;
+
 type: FUNCTION = FunctionDef*;
+type: FN_HEAD = name_id;
 type: ?RET_TYPE = type_id;
+
+type: PARAM_LIST = ExpressionList*;
+type: ?PARAM_LIST = ExpressionList*;
+
+type: ?ARG_LIST = ArgList*;
+type: ARG_LIST = ArgList*;
+
+type: ARRAYDECL = ArraySizes*;
 
 PROGRAM = '' |
           PROGRAM + FUNCTION;
 
-FUNCTION = kFn + identifier + 
+FN_HEAD = kFn + identifier : OnFnHead;
+
+FUNCTION = FN_HEAD + 
            '(' + ?ARG_LIST + ')' +
-           ?RET_TYPE + STATEMENTS;
+           ?RET_TYPE + STATEMENTS : OnFunction;
 
 ?RET_TYPE = '' :$ TYPE_ID_NONE |
             '->' + typeid :$ $0;
 
 
-?ARG_LIST = '' |
-            ARG_LIST;
+?ARG_LIST = '' :$ NULL |
+            ARG_LIST :$ $0;
 
-ARG_LIST = typeid + identifier |
-           ARG_LIST + ',' + typeid + identifier;
+ARG_LIST = typeid + identifier : OnArgList |
+           ARG_LIST + ',' + typeid + identifier : OnAddArgList;
 
-STATEMENTS = '{' + STATEMENT_LIST + '}';
+STATEMENTS = '{' + STATEMENT_LIST + '}' : OnStatements;
 
-STATEMENT_LIST = '' |
-                 STATEMENT_LIST + STATEMENT;
+STATEMENT_LIST = '' :$ NULL |
+                 STATEMENT_LIST + STATEMENT : OnStatementList;
 
-STATEMENT = kWhile + COND + STATEMENTS |
-            IF |
-            typeid + ARRAYDECL + identifier + ?ASSIGN + ';' |
-            EXPRESSION + '=' + EXPRESSION + ';' |
-            EXPRESSION + ';' |
-            kReturn + EXPRESSION + ';';
+STATEMENT = kWhile + COND + STATEMENTS : OnWhile |
+            IF :$ $0 |
+            typeid + ARRAYDECL + identifier + ?ASSIGN + ';' : OnDecl |
+            EXPRESSION + '=' + EXPRESSION + ';' : OnAssign |
+            EXPRESSION + ';' : OnExprStatement |
+            kReturn + EXPRESSION + ';' : OnReturn;
 
-ARRAYDECL = '' |
-            ARRAYDECL + '[' + integer + ']';
+ARRAYDECL = '' :$ NULL |
+            ARRAYDECL + '[' + integer + ']' : OnArrayDecl;
 
-?ASSIGN = '' |
-          '=' + EXPRESSION;
+?ASSIGN = '' :$ NULL |
+          '=' + EXPRESSION :$ $0;
 
-COND = '(' + EXPRESSION + ')';
+COND = '(' + EXPRESSION + ')' : OnCond;
 
-?ELSE = '' |
-        kElse + ?IFCOND;
+ELSE = kElse: OnElseHead;
 
-IF = kIf + COND + STATEMENTS + ?ELSE;
+?ELSE = '' :$ NULL |
+        kElse + IF :$ $1 |
+        ELSE + STATEMENTS : OnElse;
 
-?IFCOND = STATEMENTS | IF;
+IF = kIf + COND + STATEMENTS + ?ELSE : OnIf;
 
-EXPR = kTrue | kFalse | identifier | integer | real | string | 
-       CALL | ARRAY_INDEX | '(' + EXPRESSION + ')';
+EXPR = kTrue : OnTrue |
+       kFalse : OnFalse | 
+       identifier : OnIdentExpr | 
+       integer : OnInt |
+       real : OnReal |
+       string : OnString | 
+       CALL :$ $0 |
+       ARRAY_INDEX :$ $0 |
+       '(' + EXPRESSION + ')' : OnParen;
 
-EXPRESSION = EXPR | BINOP | UNOP;
+EXPRESSION = EXPR  :$ $0 |
+             BINOP :$ $0 |
+             UNOP  :$ $0;
 
 BINOPERATOR = '/' :$ BINOP_DIV | '*' :$ BINOP_MUL | '%' :$ BINOP_MOD |
               '-' :$ BINOP_SUB | '+' :$ BINOP_ADD |
@@ -93,18 +129,18 @@ UNARYOPERATOR = '~' :$ UNOP_BITNOT |
                 '-' :$ UNOP_NEGATIVE |
                 '+' :$ UNOP_POSITIVE;
 
-BINOP = EXPRESSION + BINOPERATOR + EXPR |
-        EXPRESSION + BINOPERATOR + UNOP;
+BINOP = EXPRESSION + BINOPERATOR + EXPR : OnBinop1 |
+        EXPRESSION + BINOPERATOR + UNOP : OnBinop2;
 
-UNOP = UNARYOPERATOR + EXPR |
-       UNARYOPERATOR + UNOP;
+UNOP = UNARYOPERATOR + EXPR : OnUnop1 |
+       UNARYOPERATOR + UNOP : OnUnop2;
 
-CALL = EXPR + '(' + ?PARAM_LIST + ')';
+CALL = EXPR + '(' + ?PARAM_LIST + ')' : OnCall;
 
-?PARAM_LIST = '' |
-              PARAM_LIST;
+?PARAM_LIST = '' :$ NULL |
+              PARAM_LIST :$ $0;
 
-PARAM_LIST = EXPRESSION |
-             PARAM_LIST + ',' + EXPRESSION;
+PARAM_LIST = EXPRESSION : OnParamList |
+             PARAM_LIST + ',' + EXPRESSION : OnAddParamList;
 
-ARRAY_INDEX = EXPR + '[' + EXPRESSION + ']';
+ARRAY_INDEX = EXPR + '[' + EXPRESSION + ']' : OnArrayIndex;

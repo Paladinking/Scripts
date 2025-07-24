@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <arena.h>
+#include <dynamic_string.h>
 #include "log.h"
 
 #ifdef _MSC_VER
@@ -154,6 +155,16 @@ typedef struct VarList {
     VarData* data;
 } VarList;
 
+typedef struct ArgList {
+    name_id name;
+    LineInfo line;
+    struct ArgList* next;
+} ArgList;
+
+typedef struct ArraySizes {
+    uint64_t size;
+    struct ArraySizes* next;
+} ArraySizes;
 
 typedef struct VariableExpr {
     name_id ix;
@@ -170,6 +181,11 @@ typedef struct UnaryOperation {
     Expression* expr;
 } UnaryOperation;
 
+typedef struct ExpressionList {
+    Expression* expr;
+    struct ExpressionList* next;
+} ExpressionList;
+
 typedef struct CallExpr {
     Expression* function;
     uint64_t arg_count;
@@ -183,7 +199,7 @@ typedef struct ArrayIndexExpr {
 
 typedef struct LiteralExpr {
     union {
-        uint64_t uint;
+        uint64_t uint; // Also used by bool
         int64_t iint;
         double float64;
         struct {
@@ -216,12 +232,14 @@ struct Expression pinned {
     };
 };
 
+enum StatementKind {
+    STATEMENT_ASSIGN, STATEMENT_EXPRESSION,
+    STATEMENT_IF, STATEMENT_WHILE, STATEMENT_RETURN,
+    STATEMET_INVALID
+};
+
 struct Statement pinned {
-    enum {
-        STATEMENT_ASSIGN, STATEMENT_EXPRESSION,
-        STATEMENT_IF, STATEMENT_WHILE, STATEMENT_RETURN,
-        STATEMET_INVALID
-    } type;
+    enum StatementKind type;
     union {
         struct {
             Expression* lhs;
@@ -245,6 +263,16 @@ struct Statement pinned {
     };
     LineInfo line;
 };
+
+typedef struct StatementList {
+    Statement* statement;
+    struct StatementList* next;
+} StatementList; 
+
+typedef struct Statements {
+    Statement** statements;
+    uint64_t count;
+} Statements;
 
 typedef struct CallArg pinned {
     name_id name;
@@ -413,10 +441,15 @@ Expression* parse_expression(Parser* parser);
 
 Statement** parse_statements(Parser* parser, uint64_t* count, func_id function);
 
+void scan_program(Parser* parser, String* indata);
+
 bool parse_program(Parser* parser);
 
 // TODO: move?
 void skip_spaces(Parser* parser);
+
+void begin_scope(Parser* parser);
+void end_scope(Parser* parser);
 
 const uint8_t* parse_name(Parser* parser, uint32_t* len);
 
@@ -438,6 +471,9 @@ static inline bool is_identifier_start(uint8_t c) {
 
 name_id insert_function_name(Parser* parser, const uint8_t* name, uint32_t name_len,
                              FunctionDef* def);
+
+name_id insert_variable_name(Parser* parser, const uint8_t* name, uint32_t name_len, type_id t,
+                             uint64_t pos, func_id func_id);
 
 void find_row_col(const Parser* parser, uint64_t pos, uint64_t* row, uint64_t* col);
 

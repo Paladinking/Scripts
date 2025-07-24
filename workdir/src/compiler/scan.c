@@ -24,10 +24,6 @@ struct Stack {
     uint32_t cap;
 };
 
-FunctionDef* OnFunction(void* ctx, uint64_t start, uint64_t end, StrWithLength, uint64_t, int64_t, int64_t);
-
-int64_t OnProgram(void* ctx, uint64_t start, uint64_t end, int64_t, FunctionDef*);
-
 const static uint8_t reduce_table[220] = {
     -1, -1, -1, 1, 1, 1, -1, -1, -1, -1, -1,
     17, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
@@ -252,7 +248,7 @@ loop:
                 if (len == 2 && t.literal[0] == 'f' && t.literal[1] == 'n') {
                     n.start = stack.b[stack.size - 7].start;
                     n.end = stack.b[stack.size - 1].end;
-                    n.m3 = OnFunction(ctx, n.start, n.end, stack.b[stack.size - 6].m1, stack.b[stack.size - 4].m15, stack.b[stack.size - 2].m14, stack.b[stack.size - 1].m2);
+                    n.m3 = OnScanFunction(ctx, n.start, n.end, stack.b[stack.size - 6].m1, stack.b[stack.size - 4].m15, stack.b[stack.size - 2].m14, stack.b[stack.size - 1].m2);
                     stack.size -= 7;
                     n.state = stack.b[stack.size - 1].state;
                     n.state = reduce_table[n.state * 11 + 0];
@@ -265,7 +261,7 @@ loop:
             case TOKEN_END:
                 n.start = stack.b[stack.size - 7].start;
                 n.end = stack.b[stack.size - 1].end;
-                n.m3 = OnFunction(ctx, n.start, n.end, stack.b[stack.size - 6].m1, stack.b[stack.size - 4].m15, stack.b[stack.size - 2].m14, stack.b[stack.size - 1].m2);
+                n.m3 = OnScanFunction(ctx, n.start, n.end, stack.b[stack.size - 6].m1, stack.b[stack.size - 4].m15, stack.b[stack.size - 2].m14, stack.b[stack.size - 1].m2);
                 stack.size -= 7;
                 n.state = stack.b[stack.size - 1].state;
                 n.state = reduce_table[n.state * 11 + 0];
@@ -442,7 +438,7 @@ loop:
                 if (len == 2 && t.literal[0] == 'f' && t.literal[1] == 'n') {
                     n.start = stack.b[stack.size - 2].start;
                     n.end = stack.b[stack.size - 1].end;
-                    n.m8 = OnProgram(ctx, n.start, n.end, stack.b[stack.size - 2].m8, stack.b[stack.size - 1].m3);
+                    n.m8 = OnScanProgram(ctx, n.start, n.end, stack.b[stack.size - 2].m8, stack.b[stack.size - 1].m3);
                     stack.size -= 2;
                     n.state = stack.b[stack.size - 1].state;
                     n.state = reduce_table[n.state * 11 + 4];
@@ -455,7 +451,7 @@ loop:
             case TOKEN_END:
                 n.start = stack.b[stack.size - 2].start;
                 n.end = stack.b[stack.size - 1].end;
-                n.m8 = OnProgram(ctx, n.start, n.end, stack.b[stack.size - 2].m8, stack.b[stack.size - 1].m3);
+                n.m8 = OnScanProgram(ctx, n.start, n.end, stack.b[stack.size - 2].m8, stack.b[stack.size - 1].m3);
                 stack.size -= 2;
                 n.state = stack.b[stack.size - 1].state;
                 goto accept;

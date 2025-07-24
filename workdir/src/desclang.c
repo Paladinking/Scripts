@@ -272,12 +272,18 @@ typedef struct Node {
     uint32_t edge_cap;
     uint32_t ix;
     bool accept;
+    bool has_reduce;
+    bool has_shift;
+    bool reduct_reachable;
 } Node;
 
 Node* Node_create(NodeRows rows) {
     Node* node = Mem_xalloc(sizeof(Node));
     node->rows = rows;
     node->accept = false;
+    node->has_shift = false;
+    node->has_reduce = false;
+    node->reduct_reachable = false;
     node->edges = Mem_xalloc(8 * sizeof(NodeEdge));
     node->edge_cap = 8;
     node->edge_count = 0;
@@ -353,13 +359,36 @@ enum CheckState {
 };
 
 enum CheckState get_first_tokens(Rule* rules, rule_id id, TokenSet* set,
-                                 int8_t* checked) {
+                                 int8_t* checked, uint32_t verbose) {
+    if (verbose) {
+        for (int i = 0; i < verbose; ++i) {
+            _printf_e(" ");
+        }
+        _printf_e("get_first: %u (%s), ", id, rules[id].name);
+        if (checked[id] == UNCHECKED) {
+            _printf_e("UNCHECKED\n");
+        } else if (checked[id] == PENDING) {
+            _printf_e("PENDING\n");
+        } else if (checked[id] == CHECKED_EMPTY) {
+            _printf_e("CHECKED_EMPTY\n");
+        } else if (checked[id] == CHECKED_NONEMPTY) {
+            _printf_e("CHECKED_NONEMPTY\n");
+        } else {
+            _printf_e("UNKOWN\n");
+        }
+    }
     if (checked[id] != UNCHECKED) {
         return checked[id];
     }
     if (rules[id].type != RULE_MAPPING) {
         TokenSet_insert(set, id);
         checked[id] = CHECKED_NONEMPTY;
+        if (verbose) {
+            for (int i = 0; i < verbose; ++i) {
+                _printf_e(" ");
+            }
+            _printf_e("Return CHECKED_NONEMPTY\n");
+        }
         return CHECKED_NONEMPTY;
     }
 
@@ -372,6 +401,7 @@ enum CheckState get_first_tokens(Rule* rules, rule_id id, TokenSet* set,
     while (pending_count > 0) {
         rule_id r = id;
         uint32_t ix = 0;
+        bool has_nonempty = false;
         last_pending_count = pending_count;
         pending_count = 0;
         memcpy(own_checked, checked, sizeof(own_checked));
@@ -385,25 +415,56 @@ enum CheckState get_first_tokens(Rule* rules, rule_id id, TokenSet* set,
             }
             rule_id rule = rules[r].data[ix];
             if (own_checked[rule] == UNCHECKED) {
-                get_first_tokens(rules, rule, set, own_checked);
+                if (verbose) {
+                    get_first_tokens(rules, rule, set, own_checked, verbose + 1);
+                } else {
+                    get_first_tokens(rules, rule, set, own_checked, 0);
+                }
             }
             if (own_checked[rule] == PENDING) {
                 r = rules[r].next;
                 ++pending_count;
             } else if (own_checked[rule] == CHECKED_NONEMPTY) {
                 r = rules[r].next;
+                has_nonempty = true;
             } else if (own_checked[rule] == CHECKED_EMPTY) {
                 ++ix;
             }
         }
         if (pending_count == last_pending_count) {
-            checked[id] = PENDING;
-            return PENDING;
+            if (checked[id] != CHECKED_EMPTY && has_nonempty) {
+                checked[id] = CHECKED_NONEMPTY;
+                if (verbose) {
+                    for (int i = 0; i < verbose; ++i) {
+                        _printf_e(" ");
+                    }
+                    _printf_e("Return CHECKED_PENDING\n");
+                }
+            } else {
+                checked[id] = PENDING;
+                if (verbose) {
+                    for (int i = 0; i < verbose; ++i) {
+                        _printf_e(" ");
+                    }
+                    _printf_e("Return CHECKED_PENDING\n");
+                }
+            }
+            return checked[id];
         }
     }
 
+    if (verbose) {
+        for (int i = 0; i < verbose; ++i) {
+            _printf_e(" ");
+        }
+    }
     if (checked[id] != CHECKED_EMPTY) {
         checked[id] = CHECKED_NONEMPTY;
+        if (verbose) {
+            _printf_e("Return CHECKED_NONEMPTY\n");
+        }
+    } else if (verbose) {
+        _printf_e("Return CHECKED_EMPTY\n");
     }
     return checked[id];
 }
@@ -429,11 +490,16 @@ void NodeRow_get_lookahead(NodeRow* row, TokenSet* look, Rule* rules) {
         }
         memset(checked, 0, sizeof(checked));
         rule_id r = rules[row->rule].data[ix];
-        enum CheckState s = get_first_tokens(rules, r, look, checked);
+        enum CheckState s = get_first_tokens(rules, r, look, checked, 0);
         if (s == CHECKED_EMPTY) {
             has_empty = true;
         } else if (s != CHECKED_NONEMPTY) {
-            _printf_e("Recusrive pattern '%s'\n", rules[row->rule].redhook);
+            _printf_e("Recusrive pattern '%s'\n", rules[row->rule].name);
+            memset(checked, 0, sizeof(checked));
+            rule_id r = rules[row->rule].data[ix];
+            enum CheckState s = get_first_tokens(rules, r, look, checked, 1);
+            _printf_e("State: %d\n", s);
+            __debugbreak();
         }
         ++ix;
     } while (has_empty);
@@ -649,6 +715,25 @@ void output_header(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
     _printf_h(h, "void consume_token(void* ctx, uint64_t* start, uint64_t* end);\n\n");
     _printf_h(h, "void parser_error(void* ctx, SyntaxError e);\n\n");
     _printf_h(h, "bool parse(void* ctx);\n");
+
+
+    for (uint32_t ix = 0; ix < rule_count - 1; ++ix) {
+        if (rules[ix].type != RULE_MAPPING) {
+            continue;
+        }
+        if (rules[ix].redhook == NULL || rules[ix].redhook[0] == '$') {
+            continue;
+        }
+        _printf_h(h, "\n%s %s(void* ctx, uint64_t start, uint64_t end", 
+                rules[ix].ctype, rules[ix].redhook);
+        for (uint32_t j = 0; j < rules[ix].count; ++j) {
+            if (rules[rules[ix].data[j]].type == RULE_LITERAL) {
+                continue;
+            }
+            _printf_h(h, ", %s", rules[rules[ix].data[j]].ctype);
+        }
+        _printf_h(h, ");\n");
+    }
 }
 
 const static char* INDENTS[8] =  {
@@ -1088,24 +1173,6 @@ void output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
     _printf_h(h, "    uint32_t size;\n");
     _printf_h(h, "    uint32_t cap;\n");
     _printf_h(h, "};\n\n");
-
-    for (uint32_t ix = 0; ix < rule_count - 1; ++ix) {
-        if (rules[ix].type != RULE_MAPPING) {
-            continue;
-        }
-        if (rules[ix].redhook == NULL || rules[ix].redhook[0] == '$') {
-            continue;
-        }
-        _printf_h(h, "%s %s(void* ctx, uint64_t start, uint64_t end", 
-                rules[ix].ctype, rules[ix].redhook);
-        for (uint32_t j = 0; j < rules[ix].count; ++j) {
-            if (rules[rules[ix].data[j]].type == RULE_LITERAL) {
-                continue;
-            }
-            _printf_h(h, ", %s", rules[rules[ix].data[j]].ctype);
-        }
-        _printf_h(h, ");\n\n");
-    }
     
     output_reduce_table(graph, rules, rule_count, MAP_IX, mapping_count, h);
 
@@ -1124,7 +1191,6 @@ void output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
     _printf_h(h, "    stack->b[stack->size] = n;\n");
     _printf_h(h, "    stack->size += 1;\n");
     _printf_h(h, "}\n\n");
-
 
     _printf_h(h, "bool parse(void* ctx) {\n");
     _printf_h(h, "    struct Stack stack;\n");
@@ -1260,7 +1326,6 @@ void output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
 
 bool validate_graph(Rule* rules, rule_id rule_count, Graph* graph, Rule* start) {
     bool good = true;
-    bool accepting = false;
     rule_id s_id = start - rules;
     while (rules[s_id].next != RULE_ID_NONE) {
         s_id = rules[s_id].next;
@@ -1269,6 +1334,14 @@ bool validate_graph(Rule* rules, rule_id rule_count, Graph* graph, Rule* start) 
     for (uint32_t ix = 0; ix < graph->count; ++ix) {
         Node* n = graph->nodes[ix];
         for (rule_id id = 0; id < rule_count; ++id) {
+            if (rules[id].type == RULE_MAPPING) {
+                for (uint32_t e = 0; e < n->edge_count; ++e) {
+                    if (n->edges[e].token == id) {
+                        n->edges[e].dest->reduct_reachable = true;
+                    }
+                }
+                continue;
+            }
             if (rules[id].type != RULE_LITERAL && rules[id].type != RULE_ATOM) {
                 continue;
             }
@@ -1277,6 +1350,7 @@ bool validate_graph(Rule* rules, rule_id rule_count, Graph* graph, Rule* start) 
             for (uint32_t e = 0; e < n->edge_count; ++e) {
                 if (n->edges[e].token == id) {
                     shift = true;
+                    n->has_shift = true;
                     break;
                 }
             }
@@ -1308,13 +1382,14 @@ bool validate_graph(Rule* rules, rule_id rule_count, Graph* graph, Rule* start) 
                     }
                     if (s == s_id && id == rule_count - 1) {
                         n->accept = true;
-                        accepting = true;
                     }
                     reduce = true;
+                    n->has_reduce = true;
                 }
             }
         }
     }
+
     if (conf_count > 0) { 
         oprintf_e("Total %lu conflicts\n", conf_count);
     }
@@ -1479,12 +1554,12 @@ int parse_lang(String* data, Rule* rules, rule_id* rule_len, HashMap* rule_map,
             }
             if (line + ix == name_end) {
                 oprintf_e("Invalid rule name ''\n");
-                continue;
+                return 2;
             }
             *name_end = '\0';
             if (line[ix] == '\'') {
                 oprintf_e("Invalid rule name '%s'\n", line + ix);
-                continue;
+                return 2;
             }
             HashElement* e = HashMap_Get(rule_map, line + ix);
             Rule* rule = e->value;
@@ -1552,7 +1627,7 @@ int parse_lang(String* data, Rule* rules, rule_id* rule_len, HashMap* rule_map,
         uint64_t name_len = name_sep - name;
         if (name_sep == NULL) {
             _printf_e("Invalid rule '%.*s'\n", len - ix, line + ix);
-            continue;
+            return 2;
         }
         while (name_len > 0 && is_space(name[name_len - 1])) {
             --name_len;
@@ -1562,7 +1637,7 @@ int parse_lang(String* data, Rule* rules, rule_id* rule_len, HashMap* rule_map,
         ix = name_sep - line + 1;
         if (ix >= len) {
             _printf_e("Invalid rule '%s'\n", name);
-            continue;
+            return 2;
         }
         while (ix < len) {
             char* next = scan_memchr(line + ix, '|', len - ix);

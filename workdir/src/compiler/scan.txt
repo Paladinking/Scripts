@@ -11,13 +11,13 @@ type: ARG_LIST = uint64_t;
 type: ?ARG_LIST = uint64_t;
 
 PROGRAM = '' |
-          PROGRAM + FUNCTION : OnProgram;
+          PROGRAM + FUNCTION : OnScanProgram;
 
 PROGRAM = PROGRAM + error + FUNCTION;
 
 FUNCTION = 'fn' + identifier + 
             '(' + ?ARG_LIST + ')' + 
-            ?RET_TYPE + statements : OnFunction;
+            ?RET_TYPE + statements : OnScanFunction;
 
 ?RET_TYPE = '' |
             '->' + identifier;

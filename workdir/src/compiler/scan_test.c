@@ -82,12 +82,12 @@ void scanner_consume_token(void* ctx, uint64_t* start, uint64_t* end) {
     t->last_token.literal = (const char*)p->indata + t->start;
 }
 
-FunctionDef* OnFunction(void* ctx, uint64_t start, uint64_t end, StrWithLength name, 
+FunctionDef* OnScanFunction(void* ctx, uint64_t start, uint64_t end, StrWithLength name, 
                         uint64_t arg_count, int64_t ret, int64_t statements) {
     struct Tokenizer *t = ctx;
     Parser* parser = t->parser;
     uint64_t len = end - start;
-    _printf("Parsed function %.*s (%llu - %llu) with %llu args\n", 
+    _printf("Scanned function %.*s (%llu - %llu) with %llu args\n", 
             name.len, name.str, start, end, arg_count);
 
     FunctionDef* func = Arena_alloc_type(&parser->arena, FunctionDef);
@@ -107,51 +107,19 @@ FunctionDef* OnFunction(void* ctx, uint64_t start, uint64_t end, StrWithLength n
     return func;
 }
 
-int64_t OnProgram(void* ctx, uint64_t start, uint64_t end, int64_t i, FunctionDef* f) {
+int64_t OnScanProgram(void* ctx, uint64_t start, uint64_t end, int64_t i, FunctionDef* f) {
     return 0;
 }
 
-
-
-void dump_errors(Parser* parser) {
-    String s;
-    if (String_create(&s)) {
-        fmt_errors(parser, &s);
-        _printf_e("%s", s.buffer);
-        parser->first_error = NULL;
-        parser->last_error = NULL;
-        String_free(&s);
-    }
-}
-
-int main() {
-    Log_Init();
-
-    Parser parser;
-    if (!Parser_create(&parser)) {
-        _printf_e("Failed creating parser\n");
-        return 1;
-    }
-
-    String s;
-    if (!read_text_file(&s, oL("src\\compiler\\program.txt"))) {
-        _printf_e("Failed to read program.txt\n");
-        return 1;
-    }
-
-    parser.indata = s.buffer;
-    parser.input_size = s.length;
+void scan_program(Parser* parser, String* indata) {
+    parser->indata = (const uint8_t*)indata->buffer;
+    parser->pos = 0;
+    parser->input_size = indata->length;
 
     struct Tokenizer t;
-    t.parser = &parser;
+    t.parser = parser;
     uint64_t start, end;
     scanner_consume_token(&t, &start, &end);
 
     scanner_parse(&t);
-
-    if (parser.first_error != NULL) {
-        dump_errors(&parser);
-    }
-
-    Log_Shutdown();
 }
