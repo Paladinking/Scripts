@@ -1,6 +1,7 @@
 #pragma once
 #include <windows.h>
 #include <stdint.h>
+#define _NO_CRT_STDIO_INLINE
 #include "ochar.h"
 
 #ifdef NARROW_OCHAR

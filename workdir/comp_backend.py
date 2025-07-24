@@ -6,7 +6,7 @@ import sys
 import shutil
 import argparse
 
-from typing import Any, List, Optional, TextIO, Type, Union, Tuple, Dict
+from typing import Any, List, Optional, TextIO, Type, Union, Tuple, Dict, overload
 
 BUILD_DIR: pathlib.Path
 BIN_DIR: pathlib.Path
@@ -83,7 +83,8 @@ class Obj:
         return str(BUILD_DIR / self.name)
 
 class Cmd:
-    def __init__(self, name: str, cmd: str, depends: List[Union[str, Product]], 
+    def __init__(self, name: Union[str, List[str]], cmd: str, 
+                 depends: List[Union[str, Product]], 
                  directory: str) -> None:
         self.depends: List[str] = []
         for dep in depends:
@@ -92,8 +93,34 @@ class Cmd:
             else:
                 self.depends.append(dep.product)
         self.name = name
+        if isinstance(name, list):
+            assert len(name) > 0
         self.cmd = cmd
         self.dir = directory
+        self.rule: Optional[str] = None
+
+    @property
+    def all_products(self) -> List[str]:
+        p = pathlib.PurePath(self.dir)
+        if isinstance(self.name, str):
+            return [str(p / self.name)]
+        return [str(p / name) for name in self.name]
+
+    @property
+    def product(self) -> str:
+        if isinstance(self.name, list):
+            name = self.name[0]
+        else:
+            name = self.name
+        return str(pathlib.PurePath(self.dir) / name)
+
+class DummyCmd(Cmd):
+    def __init__(self, name: str, parent: Cmd, directory: str) -> None:
+        self.name = name
+        self.dir = directory
+        self.parent = parent
+        self.depends: List[str] = [parent.product]
+        self.cmd = ""
         self.rule: Optional[str] = None
 
     @property
@@ -185,8 +212,8 @@ class ZigCC(BackendBase):
 
     def import_lib_cmd(self, out: str, dll: str, symbols: List[str]) -> Cmd:
         def_path = BUILD_DIR / pathlib.PurePath(out).with_suffix(".def").name
-        def_path = def_path.relative_to(BUILD_DIR)
-        def_file = Command(str(def_path), f"python comp.py --deffile {def_path} {' '.join(symbols)}")
+        rel_def_path = def_path.relative_to(BUILD_DIR)
+        def_file = Command(str(rel_def_path), f"python comp.py --deffile {def_path} {' '.join(symbols)}")
         out_path = BUILD_DIR / out
         cmd = f"zig.exe dlltool -D {dll} -d {def_path} -l {out_path}"
         return Command(out, cmd, def_file)
@@ -269,8 +296,8 @@ class Mingw(BackendBase):
 
     def import_lib_cmd(self, out: str, dll: str, symbols: List[str]) -> Cmd:
         def_path = BUILD_DIR / pathlib.PurePath(out).with_suffix(".def").name
-        def_path = def_path.relative_to(BUILD_DIR)
-        def_file = Command(str(def_path), f"python comp.py --deffile {def_path} {' '.join(symbols)}")
+        rel_def_path = def_path.relative_to(BUILD_DIR)
+        def_file = Command(str(rel_def_path), f"python comp.py --deffile {def_path} {' '.join(symbols)}")
         out_path = BUILD_DIR / out
         cmd = f"dlltool.exe -D {dll} -d {def_path} -l {out_path}"
         return Command(out, cmd, def_file)
@@ -464,17 +491,42 @@ def Executable(name: str, *sources: Union[str, Obj, Cmd],
         TARGET_GROUPS[group].append(exe)
     return exe
 
-def Command(name: str, cmd: str, *depends: Union[str, Product],
+@overload
+def Command(output: List[str], cmd: str, *depends: Union[str, Product],
+            directory: Optional[str]=None) -> List[Cmd]:
+    ...
+@overload
+def Command(output: str, cmd: str, *depends: Union[str, Product],
             directory: Optional[str]=None) -> Cmd:
+    ...
+
+def Command(output: Union[str, List[str]], cmd: str, *depends: Union[str, Product],
+            directory: Optional[str]=None) -> Union[Cmd, List[Cmd]]:
     if directory is None:
         directory = str(BUILD_DIR)
     else:
         directory = str(pathlib.PurePath(directory))
-    if name in CUSTOMS:
-        raise RuntimeError(f"Duplicate command {name}")
     DIRECTORIES[directory] = None
-    command = Cmd(name, cmd, list(depends), directory)
-    CUSTOMS[name] = command
+    if isinstance(output, list):
+        assert len(output) > 1
+        command = Cmd(output, cmd, list(depends), directory)
+        if command.product in CUSTOMS:
+            raise RuntimeError(f"Duplicate command output {command.product}")
+        CUSTOMS[command.product] = command
+        if directory == str(BIN_DIR):
+            TARGET_GROUPS["all"].append(command)
+        res = [command]
+        for name in output[1:]:
+            dummy = DummyCmd(name, command, directory)
+            if dummy.product in CUSTOMS:
+                raise RuntimeError(f"Duplicate command output {command.product}")
+            CUSTOMS[dummy.product] = dummy
+            res.append(dummy)
+        return res
+    command = Cmd(output, cmd, list(depends), directory)
+    if command.product in CUSTOMS:
+        raise RuntimeError(f"Duplicate command {command.product}")
+    CUSTOMS[command.product] = command
     if directory == str(BIN_DIR):
         TARGET_GROUPS["all"].append(command)
     return command
@@ -688,6 +740,8 @@ def ninjafile(dest: TextIO = sys.stdout) -> None:
     print(file=dest)
     ix = 0
     for key, obj in CUSTOMS.items():
+        if isinstance(obj, DummyCmd):
+            continue
         if obj.rule is not None:
             rule = obj.rule
         else:
@@ -695,8 +749,9 @@ def ninjafile(dest: TextIO = sys.stdout) -> None:
             ix += 1
             print(f"rule {rule}", file=dest)
             print(f"    command = {obj.cmd}", file=dest)
+        prods = ' '.join(esc(p) for p in obj.all_products)
         deps = ' '.join(esc(d) for d in obj.depends)
-        print(f"build {esc(obj.product)}: {rule} {deps}", file=dest)
+        print(f"build {prods}: {rule} {deps}", file=dest)
 
         
 def makefile(dest: TextIO = sys.stdout) -> None:
@@ -941,6 +996,13 @@ def build(comp_file: str) -> None:
     except Exception as e:
         print(f"Failed building: {e}", file=sys.stderr)
         exit(1)
+
+    tgt = get_args().target
+    if tgt != "clean" and not any((tgt in c for c in (OBJECTS, EXECUTABLES, 
+                                                      CUSTOMS, DIRECTORIES, 
+                                                      TARGET_GROUPS))):
+        if str(BIN_DIR / tgt) in EXECUTABLES:
+            get_args().target = str(BIN_DIR / tgt)
 
     make_exe, args = get_make()
     if not get_args().make:

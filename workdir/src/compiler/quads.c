@@ -181,7 +181,7 @@ var_id quads_unop(Parser* parser, Expression* expr, QuadList* quads,
     case UNOP_BOOLNOT:
         quad |= QUAD_BOOL_NOT;
         break;
-    case UNOP_NEGATVIE:
+    case UNOP_NEGATIVE:
         quad |= QUAD_NEGATE;
         break;
     case UNOP_PAREN:

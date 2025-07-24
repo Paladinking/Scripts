@@ -1,6 +1,7 @@
 #ifndef OCHAR_H_00
 #define OCHAR_H_00
 #include <stdint.h>
+#include <wchar.h>
 
 #ifndef NARROW_OCHAR
     typedef wchar_t ochar_t;

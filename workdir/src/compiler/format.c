@@ -245,7 +245,7 @@ void fmt_unary_operator(enum UnaryOperator op, String *dest) {
     case UNOP_BOOLNOT:
         String_append(dest, '!');
         return;
-    case UNOP_NEGATVIE:
+    case UNOP_NEGATIVE:
         String_append(dest, '-');
         return;
     case UNOP_POSITIVE:

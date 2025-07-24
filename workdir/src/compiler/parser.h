@@ -53,7 +53,7 @@ enum BinaryOperator {
 };
 
 enum UnaryOperator {
-    UNOP_BITNOT, UNOP_BOOLNOT, UNOP_NEGATVIE, UNOP_POSITIVE, UNOP_PAREN
+    UNOP_BITNOT, UNOP_BOOLNOT, UNOP_NEGATIVE, UNOP_POSITIVE, UNOP_PAREN
 };
 
 #define PTR_SIZE 8
@@ -416,6 +416,25 @@ Statement** parse_statements(Parser* parser, uint64_t* count, func_id function);
 bool parse_program(Parser* parser);
 
 // TODO: move?
+void skip_spaces(Parser* parser);
+
+const uint8_t* parse_name(Parser* parser, uint32_t* len);
+
+uint8_t* parse_string_literal(Parser* parser, uint64_t* len);
+bool parse_number_literal(Parser* parser, uint64_t* i, double* d, bool* is_int);
+
+name_id find_name(Parser* parser, const uint8_t* name, uint32_t len);
+
+
+static inline bool is_identifier(uint8_t c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+             c == '_' || (c >= '0' && c <= '9');
+}
+
+static inline bool is_identifier_start(uint8_t c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c == '_');
+}
 
 name_id insert_function_name(Parser* parser, const uint8_t* name, uint32_t name_len,
                              FunctionDef* def);

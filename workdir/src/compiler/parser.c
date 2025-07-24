@@ -92,16 +92,6 @@ LineInfo current_pos(Parser* parser) {
     return i;
 }
 
-static inline bool is_identifier(uint8_t c) {
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-             c == '_' || (c >= '0' && c <= '9');
-}
-
-static inline bool is_identifier_start(uint8_t c) {
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-            (c == '_');
-}
-
 name_id insert_name(Parser* parser, const uint8_t* name, uint32_t len, type_id type, enum NameKind kind) {
     hash_id h = hash(name, len);
     NameTable* names = &parser->name_table;
@@ -1044,7 +1034,7 @@ bool prefix_operation(Expression* e, Parser* parser, LineInfo i) {
     } else if (c == '+') {
         op = UNOP_POSITIVE;
     } else if (c == '-') {
-        op = UNOP_NEGATVIE;
+        op = UNOP_NEGATIVE;
     } else if (c == '!') {
         op = UNOP_BOOLNOT;
     } else if (c == '~') {
