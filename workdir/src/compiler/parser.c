@@ -259,8 +259,8 @@ name_id find_name(Parser* parser, const uint8_t* name, uint32_t len) {
     return id;
 }
 
-name_id insert_variable_name(Parser* parser, const uint8_t* name, uint32_t name_len, type_id t, uint64_t pos,
-                             func_id func_id) {
+name_id insert_variable_name(Parser* parser, const uint8_t* name, uint32_t name_len, type_id t,
+                             uint64_t pos, func_id func_id) {
     name_id id = insert_name(parser, name, name_len,
                              t, NAME_VARIABLE);
     parser->name_table.data[id].function = func_id;

@@ -5,9 +5,9 @@ CLFLAGS="/GS- /GL /O1 /favor:AMD64"
 LINKFLAGS="kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main"
 DLLFLAGS="kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:DLLMain"
 
-CLFLAGS = "/favor:AMD64 /GL /O1 /GS- /arch:AVX2"
-LINKFLAGS = "kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:main"
-DLLFLAGS = "kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /LTCG /entry:DLLMain"
+CLFLAGS = "/GS- /arch:AVX2"
+LINKFLAGS = "kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /entry:main"
+DLLFLAGS = "kernel32.lib chkstk.obj /NODEFAULTLIB /SUBSYSTEM:CONSOLE /entry:DLLMain"
 
 BUILD_DIR = "build"
 BIN_DIR = "bin"
@@ -158,9 +158,6 @@ def main():
                         "expr.txt", desc,
                         directory="src")
 
-    Executable("genparse.exe", "src/parse_gen.c", "src/glob.c", "src/mem.c",
-               "src/dynamic_string.c", "src/args.c", "src/printf.c", ntdll)
-
     with Context(group="tests", directory=f"{bin_dir()}/tests",
                  includes=["src"], namespace="tests"):
         Executable("test_regex.exe", "src/tests/test_regex.c", "src/regex.c", *unicode,
@@ -206,10 +203,7 @@ def main():
         parse_test_o = Object("parse_test.obj", "src/compiler/parse_test.c",
                               depends=[parse_h.product])
 
-        Executable("parse_test.exe", parse_o, parse_test_o,
-                   *comp_src, extra_link_flags=link)
-
-        Executable("scanner.exe", scan_o, scan_test_o,
+        Executable("parse_test.exe", parse_o, parse_test_o, scan_o, scan_test_o,
                    *comp_src, extra_link_flags=link)
         #jsonp = Object("jsonp.obj", "jsonp.c", depends=[json_h.product])
         #json_parse = Object("jsonparse.obj", json_src.product, depends=[json_h.product])

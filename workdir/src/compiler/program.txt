@@ -19,7 +19,7 @@ fn main() -> uint64 {
 }
 
 fn x(int64 a, uint64 b) -> uint64 {
-    uint64 a = 10;
+    uint64 x = 10;
     uint64 __bee1 = 2 * 2;
     b = __bee1 * 3;
     a >> __bee1;

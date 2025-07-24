@@ -3,6 +3,9 @@
 #include "printf.h"
 #include "format.h"
 #include "parse.h"
+#include "type_checker.h"
+
+#define PARSER(ctx) (((struct Tokenizer*)ctx)->parser)
 
 struct Tokenizer {
     Parser* parser;
@@ -10,6 +13,378 @@ struct Tokenizer {
     uint64_t start;
     uint64_t end;
 };
+
+static inline Statement* create_stmt(Parser* p, enum StatementKind kind, uint64_t start,
+                                     uint64_t end) {
+    Statement* s = Arena_alloc_type(&p->arena, Statement);
+    s->type = kind;
+    s->line = (LineInfo){true, start, end};
+    return s;
+}
+
+static inline Expression* create_expr(Parser* p, enum ExpressionKind kind, uint64_t start,
+                                      uint64_t end) {
+
+    Expression* e = Arena_alloc_type(&p->arena, Expression);
+    e->type = TYPE_ID_INVALID;
+    e->kind = kind;
+    e->line = (LineInfo){true, start, end};
+    return e;
+}
+
+Expression* OnCond(void* ctx, uint64_t start, uint64_t end, Expression* c) {
+    begin_scope(PARSER(ctx));
+    return c;
+}
+
+void* OnElseHead(void* ctx, uint64_t start, uint64_t end, name_id kw) {
+    begin_scope(PARSER(ctx));
+    return NULL;
+}
+
+name_id OnFnHead(void* ctx, uint64_t start, uint64_t end, name_id kw, StrWithLength s) {
+    Parser* p = PARSER(ctx);
+    name_id name = find_name(p, s.str, s.len);
+    LineInfo l  = {true, start, end};
+    if (name == NAME_ID_INVALID) {
+        fatal_error(p, PARSE_ERROR_INTERNAL, l);
+        return NAME_ID_INVALID;
+    }
+
+    if (p->name_table.data[name].kind != NAME_FUNCTION) {
+        add_error(p, PARSE_ERROR_BAD_NAME, l);
+    }
+    begin_scope(p);
+    return name;
+}
+
+Statement* OnWhile(void* ctx, uint64_t start, uint64_t end, name_id kw,
+                   Expression* cond, Statements statements) {
+    Statement* s = create_stmt(PARSER(ctx), STATEMENT_WHILE, start, end);
+    s->while_.statements = statements.statements;
+    s->while_.statement_count = statements.count;
+    s->while_.condition = cond;
+    return s;
+}
+
+Statement* OnIf(void* ctx, uint64_t start, uint64_t end, name_id kw,
+                Expression* cond, Statements statements, Statement* else_) {
+    Statement* s = create_stmt(PARSER(ctx), STATEMENT_IF, start, end);
+    s->if_.condition = cond;
+    s->if_.statement_count = statements.count;
+    s->if_.statements = statements.statements;
+    s->if_.else_branch = else_;
+    return s;
+}
+
+Statement* OnElse(void* ctx, uint64_t start, uint64_t end, void* kw, Statements statements) {
+    Statement* s = create_stmt(PARSER(ctx), STATEMENT_IF, start, end);
+    s->if_.condition = NULL;
+    s->if_.else_branch = NULL;
+    s->if_.statements = statements.statements;
+    s->if_.statement_count = statements.count;
+    return s;
+}
+
+StatementList* OnStatementList(void* ctx, uint64_t start, uint64_t end, StatementList* list,
+                               Statement* s) {
+    if (s == NULL) {
+        return list;
+    }
+    StatementList* l = Arena_alloc_type(&PARSER(ctx)->arena, StatementList);
+    l->statement = s;
+    l->next = list;
+    return l;
+}
+
+Statement* OnAssign(void* ctx, uint64_t start, uint64_t end, Expression* lhs, Expression* rhs) {
+    Statement* s = create_stmt(PARSER(ctx), STATEMENT_ASSIGN, start, end);
+    s->assignment.lhs = lhs;
+    s->assignment.rhs = rhs;
+    return s;
+}
+
+Statement* OnReturn(void* ctx, uint64_t start, uint64_t end, name_id kw, Expression* e) {
+    Statement* s = create_stmt(PARSER(ctx), STATEMENT_RETURN, start, end);
+    s->return_.return_value = e;
+    return s;
+}
+
+Statement* OnExprStatement(void* ctx, uint64_t start, uint64_t end, Expression* e) {
+    Statement* s = create_stmt(PARSER(ctx), STATEMENT_EXPRESSION, start, end);
+    s->expression = e;
+    return s;
+}
+
+Statements OnStatements(void *ctx, uint64_t start, uint64_t end, StatementList * statements) {
+    Statements s;
+    uint64_t statement_count = 0;
+    StatementList* sl = statements;
+    while (sl != NULL) {
+        ++statement_count;
+        sl = sl->next;
+    }
+
+    s.count = statement_count;
+    s.statements = Arena_alloc_count(&PARSER(ctx)->arena, Statement*, statement_count);
+    sl = statements;
+    for (uint64_t ix = 0; ix < statement_count; ++ix) {
+        s.statements[statement_count - 1 - ix] = sl->statement;
+        sl = sl->next;
+    }
+    end_scope(PARSER(ctx));
+    return s;
+}
+
+
+ArgList* OnArgList(void* ctx, uint64_t start, uint64_t end, type_id type, StrWithLength s) {
+    Parser* p = PARSER(ctx);
+    name_id name = insert_variable_name(p, s.str, s.len, type, start, FUNC_ID_GLOBAL);
+    if (name == NAME_ID_INVALID) {
+        return NULL;
+    }
+    ArgList* l = Arena_alloc_type(&p->arena, ArgList);
+    l->name = name;
+    l->line = (LineInfo){true, start, end};
+    l->next = NULL;
+    return l;
+}
+
+ArgList* OnAddArgList(void* ctx, uint64_t start, uint64_t end, ArgList* l,
+                      type_id type, StrWithLength s) {
+    if (l == NULL) {
+        return OnArgList(ctx, start, end, type, s);
+    }
+    Parser* p = PARSER(ctx);
+    name_id name = insert_variable_name(p, s.str, s.len, type, start, FUNC_ID_GLOBAL);
+    if (name == NAME_ID_INVALID) {
+        return l;
+    }
+    ArgList* l2 = Arena_alloc_type(&p->arena, ArgList);
+    l2->next = l;
+    l2->line = (LineInfo){true, start, end};
+    l2->name = name;
+    return l2;
+}
+
+
+FunctionDef* OnFunction(void* ctx, uint64_t start, uint64_t end,
+                        name_id fn_name, ArgList* arglist, type_id ret_type, 
+                        Statements statements) {
+    Parser* p = PARSER(ctx);
+    if (fn_name == NAME_ID_INVALID) {
+        return NULL;
+    }
+    LineInfo l = {true, start, end};
+    if (p->name_table.data[fn_name].kind != NAME_FUNCTION) {
+        return NULL;
+    }
+
+    FunctionDef* f = p->name_table.data[fn_name].func_def;
+    func_id id = p->function_table.size;
+
+    uint64_t arg_count = 0;
+    ArgList* a = arglist;
+    while (a != NULL) {
+        ++arg_count;
+        a = a->next;
+    }
+
+    f->arg_count = arg_count;
+    a = arglist;
+    f->args = Arena_alloc_count(&p->arena, CallArg, f->arg_count);
+    for (uint64_t ix = 0; ix < arg_count; ++ix) {
+        f->args[arg_count - 1 - ix].name = a->name;
+        f->args[arg_count - 1 - ix].type = p->name_table.data[a->name].type;
+        f->args[arg_count - 1 - ix].line = a->line;
+        a = a->next;
+    }
+
+    f->statements = statements.statements;
+    f->statement_count = statements.count;
+    f->return_type = ret_type;
+
+    if (p->function_table.size == p->function_table.capacity) {
+        uint64_t c = p->function_table.size * 2;
+        FunctionDef** ptr = Mem_realloc(p->function_table.data, c * sizeof(FunctionDef*));
+        if (ptr == NULL) {
+            out_of_memory(p);
+            return NULL;
+        }
+        p->function_table.data = ptr;
+        p->function_table.capacity = c;
+    }
+
+    p->function_table.data[p->function_table.size++] = f;
+    return f;
+}
+
+Statement* OnDecl(void* ctx, uint64_t start, uint64_t end, type_id t, ArraySizes* arr,
+                  StrWithLength ident, Expression* value) {
+    Parser* p = PARSER(ctx);
+    while (arr != NULL) {
+        t = array_of(p, t, arr->size);
+        arr = arr->next;
+    }
+    name_id name = insert_variable_name(p, ident.str, ident.len, t, start,
+                                        p->function_table.size);
+    if (name == NAME_ID_INVALID) {
+        LineInfo l = {true, start, end};
+        add_error(p, PARSE_ERROR_BAD_NAME, l);
+    }
+    if (value == NULL) {
+        return NULL;
+    }
+
+    Statement* s = create_stmt(p, STATEMENT_ASSIGN, start, end);
+    Expression* lhs = create_expr(p, EXPRESSION_VARIABLE, start, end);
+    lhs->variable.ix = name;
+    s->assignment.lhs = lhs;
+    s->assignment.rhs = value;
+
+    return s;
+}
+
+ArraySizes* OnArrayDecl(void* ctx, uint64_t start, uint64_t end, ArraySizes* sizes, uint64_t i) {
+    ArraySizes* s = Arena_alloc_type(&PARSER(ctx)->arena, ArraySizes);
+    s->size = i;
+    s->next = sizes;
+    return s;
+}
+
+Expression* OnTrue(void* ctx, uint64_t start, uint64_t end, name_id name) {
+    Expression* e = create_expr(PARSER(ctx), EXPRESSION_LITERAL_BOOL, start, end);
+    e->literal.uint = 1;
+    return e;
+}
+
+Expression* OnFalse(void* ctx, uint64_t start, uint64_t end, name_id name) {
+    Expression* e = create_expr(PARSER(ctx), EXPRESSION_LITERAL_BOOL, start, end);
+    e->literal.uint = 0;
+    return e;
+}
+
+
+Expression* OnInt(void* ctx, uint64_t start, uint64_t end, uint64_t i) {
+    Expression* e = create_expr(PARSER(ctx), EXPRESSION_LITERAL_UINT, start, end);
+    e->literal.uint = i;
+    return e;
+}
+
+Expression* OnReal(void* ctx, uint64_t start, uint64_t end, double r) {
+    Expression* e = create_expr(PARSER(ctx), EXPRESSION_LITERAL_FLOAT, start, end);
+    e->literal.uint = r;
+    return e;
+}
+
+Expression* OnString(void* ctx, uint64_t start, uint64_t end, StrWithLength s) {
+    Expression* e = create_expr(PARSER(ctx), EXPRESSION_LITERAL_STRING, start, end);
+    uint8_t* bytes = Arena_alloc_count(&PARSER(ctx)->arena, uint8_t, s.len);
+    e->literal.string.len = s.len;
+    e->literal.string.bytes = bytes;
+    return e;
+}
+
+Expression* OnIdentExpr(void* ctx, uint64_t start, uint64_t end, StrWithLength ident) {
+    Parser* p = PARSER(ctx);
+    name_id name = find_name(p, ident.str, ident.len);
+    LineInfo l = {true, start, end};
+
+    Expression* e = create_expr(PARSER(ctx), EXPRESSION_VARIABLE, start, end);
+    if (name == NAME_ID_INVALID) {
+        add_error(p, PARSE_ERROR_BAD_NAME, e->line);
+        e->kind = EXPRESSION_INVALID;
+    } else {
+        e->variable.ix = name;
+    }
+    return e;
+}
+
+Expression* OnParen(void* ctx, uint64_t start, uint64_t end, Expression* child) {
+    Expression* e = create_expr(PARSER(ctx), EXPRESSION_UNOP, start, end);
+    e->unop.op = UNOP_PAREN;
+    e->unop.expr = child;
+    return e;
+}
+
+ExpressionList* OnParamList(void* ctx, uint64_t start, uint64_t end, Expression* e) {
+    ExpressionList* l = Arena_alloc_type(&PARSER(ctx)->arena, ExpressionList);
+    l->expr = e;
+    l->next = NULL;
+    return l;
+}
+
+ExpressionList* OnAddParamList(void* ctx, uint64_t start, uint64_t end,
+                               ExpressionList* l, Expression* e) {
+
+    ExpressionList* l2 = Arena_alloc_type(&PARSER(ctx)->arena, ExpressionList);
+    l2->expr = e;
+    l2->next = l;
+    return l2;
+}
+
+Expression* OnCall(void* ctx, uint64_t start, uint64_t end, Expression* f, ExpressionList* l) {
+    Expression* e = create_expr(PARSER(ctx), EXPRESSION_CALL, start, end);
+    e->kind = EXPRESSION_CALL;
+    e->call.function = f;
+
+    // TODO: Use linked list everywhere?
+    uint64_t arg_count = 0;
+    ExpressionList* list = l;
+    while (list != NULL) {
+        ++arg_count;
+        list = list->next;
+    }
+
+    e->call.arg_count = arg_count;
+    e->call.args = Arena_alloc_count(&PARSER(ctx)->arena, Expression*, arg_count);
+    list = l;
+    for (uint64_t ix = 0; ix < arg_count; ++ix) {
+        e->call.args[arg_count - 1 - ix] = list->expr;
+        list = list->next;
+    }
+
+    return e;
+}
+
+
+Expression* OnArrayIndex(void* ctx, uint64_t start, uint64_t end,
+                         Expression* arr, Expression* ix) {
+    Expression* e = create_expr(PARSER(ctx), EXPRESSION_ARRAY_INDEX, start, end);
+    e->array_index.array = arr;
+    e->array_index.index = ix;
+    return e;
+}
+
+Expression* OnBinop1(void* ctx, uint64_t start, uint64_t end, Expression* e1,
+                     enum BinaryOperator op, Expression* e2) {
+    Expression* e = create_expr(PARSER(ctx), EXPRESSION_BINOP, start, end);
+    // TODO: balance
+    e->binop.lhs = e1;
+    e->binop.op = op;
+    e->binop.rhs = e2;
+    return e;
+}
+
+Expression* OnBinop2(void* ctx, uint64_t start, uint64_t end, Expression* e1,
+                     enum BinaryOperator op, Expression* e2) {
+    return OnBinop1(ctx, start, end, e1, op, e2);
+}
+
+Expression* OnUnop1(void* ctx, uint64_t start, uint64_t end,
+                    enum UnaryOperator op, Expression* child) {
+    Expression* e = create_expr(PARSER(ctx), EXPRESSION_UNOP, start, end);
+    e->unop.op = op;
+    e->unop.expr = child;
+    return e;
+}
+
+Expression* OnUnop2(void* ctx, uint64_t start, uint64_t end,
+                    enum UnaryOperator op, Expression* child) {
+    return OnUnop1(ctx, start, end, op, child);
+
+}
+
 
 bool is_pair(uint8_t c1, uint8_t c2) {
     if (c1 == '=' || c1 == '!') {
@@ -151,21 +526,44 @@ int main() {
         return 1;
     }
 
-    parser.indata = s.buffer;
-    parser.input_size = s.length;
+    scan_program(&parser, &s);
 
-    struct Tokenizer t;
-    t.parser = &parser;
-    t.start = 0;
-    t.end = 0;
-    uint64_t start, end;
-    consume_token(&t, &start, &end);
-
-    parse(&t);
-
-    if (parser.first_error != NULL) {
-        dump_errors(&parser);
+    if (parser.first_error == NULL)  {
+        parser.pos = 0;
+        parser.indata = s.buffer;
+        parser.input_size = s.length;
+        struct Tokenizer t;
+        t.parser = &parser;
+        t.start = 0;
+        t.end = 0;
+        uint64_t start, end;
+        consume_token(&t, &start, &end);
+        parse(&t);
+    }
+    if (parser.first_error == NULL) {
+        String s;
+        if (String_create(&s)) {
+            for (uint64_t i = 0; i < parser.function_table.size; ++i) {
+                String_clear(&s);
+                FunctionDef* f = parser.function_table.data[i];
+                fmt_functiondef(f, &parser, &s);
+                _printf("%s\n", s.buffer);
+            }
+        }
+        TypeChecker_run(&parser);
     }
 
+    int status = 0;
+    if (parser.first_error != NULL) {
+        dump_errors(&parser);
+        status = 1;
+    } else {
+
+    }
+
+    String_free(&s);
+
     Log_Shutdown();
+
+    return status;
 }

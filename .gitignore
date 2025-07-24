@@ -15,6 +15,8 @@ workdir/build
 workdir/buildg
 workdir/bin-gcc
 workdir/build-gcc
+workdir/build-zig
+workdir/bin-zig
 workdir/old
 workdir/script/translations
 workdir/.cache
@@ -22,3 +24,4 @@ workdir/__pycache__
 workdir/compile_commands.json
 workdir/comp_cache.json
 workdir/helpers
+workdir/tools

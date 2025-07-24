@@ -30,3 +30,7 @@ void consume_token(void* ctx, uint64_t* start, uint64_t* end);
 void parser_error(void* ctx, SyntaxError e);
 
 bool parse(void* ctx);
+
+FunctionDef* OnScanFunction(void* ctx, uint64_t start, uint64_t end, StrWithLength, uint64_t, int64_t, int64_t);
+
+int64_t OnScanProgram(void* ctx, uint64_t start, uint64_t end, int64_t, FunctionDef*);
