@@ -359,11 +359,33 @@ Expression* OnArrayIndex(void* ctx, uint64_t start, uint64_t end,
 Expression* OnBinop1(void* ctx, uint64_t start, uint64_t end, Expression* e1,
                      enum BinaryOperator op, Expression* e2) {
     Expression* e = create_expr(PARSER(ctx), EXPRESSION_BINOP, start, end);
-    // TODO: balance
     e->binop.lhs = e1;
     e->binop.op = op;
     e->binop.rhs = e2;
-    return e;
+
+    Expression* root = e;
+    if (e1->kind == EXPRESSION_BINOP && 
+           binop_precedence(e1->binop.op) > binop_precedence(op)) {
+        Expression* rhs = e1->binop.rhs;
+        e1->binop.rhs = e;
+        e->binop.lhs = rhs;
+        e->line.start = e->binop.lhs->line.start;
+        e1->line.end = e->binop.rhs->line.end;
+        root = e1;
+
+        e1 = e->binop.lhs;
+        while (e1->kind == EXPRESSION_BINOP &&
+              binop_precedence(e1->binop.op > binop_precedence(e->binop.op))) {
+            rhs = e1->binop.rhs;
+            e1->binop.rhs = e;
+            e->binop.lhs = rhs;
+            e->line.start = e->binop.lhs->line.start;
+            e1->line.end = e->binop.rhs->line.end;
+            e1 = e->binop.lhs;
+        }
+    }
+
+    return root;
 }
 
 Expression* OnBinop2(void* ctx, uint64_t start, uint64_t end, Expression* e1,
@@ -420,7 +442,8 @@ void dump_errors(Parser* parser) {
     String s;
     if (String_create(&s)) {
         fmt_errors(parser, &s);
-        _printf_e("%s", s.buffer);
+        LOG_DEBUG("%s", s.buffer);
+        outputUtf8_e(s.buffer, s.length);
         parser->first_error = NULL;
         parser->last_error = NULL;
         String_free(&s);
@@ -511,35 +534,41 @@ void consume_token(void* ctx, uint64_t* start, uint64_t* end) {
 }
 
 
-int main() {
-    Log_Init();
-
+int compiler(int argc, char** argv) {
     Parser parser;
     if (!Parser_create(&parser)) {
-        _printf_e("Failed creating parser\n");
+        LOG_ERROR("Failed creating parser");
         return 1;
     }
 
     String s;
     if (!read_text_file(&s, oL("src\\compiler\\program.txt"))) {
-        _printf_e("Failed to read program.txt\n");
+        LOG_ERROR("Failed reading program.txt\n");
         return 1;
     }
 
     scan_program(&parser, &s);
-
-    if (parser.first_error == NULL)  {
-        parser.pos = 0;
-        parser.indata = s.buffer;
-        parser.input_size = s.length;
-        struct Tokenizer t;
-        t.parser = &parser;
-        t.start = 0;
-        t.end = 0;
-        uint64_t start, end;
-        consume_token(&t, &start, &end);
-        parse(&t);
+    if (parser.first_error != NULL) {
+        dump_errors(&parser);
+        return 1;
     }
+
+    parser.pos = 0;
+    parser.indata = s.buffer;
+    parser.input_size = s.length;
+    struct Tokenizer t;
+    t.parser = &parser;
+    t.start = 0;
+    t.end = 0;
+    uint64_t start, end;
+    consume_token(&t, &start, &end);
+
+    parse(&t);
+    if (parser.first_error != NULL) {
+        dump_errors(&parser);
+        return 1;
+    }
+
     if (parser.first_error == NULL) {
         String s;
         if (String_create(&s)) {
@@ -547,23 +576,64 @@ int main() {
                 String_clear(&s);
                 FunctionDef* f = parser.function_table.data[i];
                 fmt_functiondef(f, &parser, &s);
-                _printf("%s\n", s.buffer);
+                outputUtf8(s.buffer, s.length);
+            }
+            String_free(&s);
+        }
+        Quads q;
+        q.quads_count = 0;
+        Quad_GenerateQuads(&parser, &q, &parser.arena);
+
+        if (parser.first_error != NULL) {
+            String s;
+            if (String_create(&s)) {
+                fmt_quads(&q, &s);
+                outputUtf8(s.buffer, s.length);
+                String_free(&s);
             }
         }
-        TypeChecker_run(&parser);
     }
+
 
     int status = 0;
     if (parser.first_error != NULL) {
         dump_errors(&parser);
         status = 1;
-    } else {
-
     }
 
     String_free(&s);
 
-    Log_Shutdown();
-
     return status;
 }
+
+#ifdef WIN32
+int main() {
+    // Obtain utf8 command line
+
+    wchar_t* cmd = GetCommandLineW();
+    String argbuf;
+    String_create(&argbuf);
+    if (!String_from_utf16_str(&argbuf, cmd)) {
+        return 1;
+    }
+    int argc;
+    char** argv = parse_command_line(argbuf.buffer, &argc);
+    String_free(&argbuf);
+    Log_Init();
+    int status = compiler(argc, argv);
+    Log_Shutdown();
+    Mem_free(argv);
+
+    // Force shutdown to avoid potential threadpool deadlock
+    ExitProcess(status);
+}
+
+#else
+int main(char** argv, int argc) {
+    Log_Init();
+    int status = compiler(argv, argc);
+    Log_Shutdown();
+    return status;
+}
+#endif
+

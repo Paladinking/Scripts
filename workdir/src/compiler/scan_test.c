@@ -1,7 +1,4 @@
 #include "parser.h"
-#include "glob.h"
-#include "printf.h"
-#include "format.h"
 #include "scan.h"
 
 struct Tokenizer {
@@ -87,8 +84,8 @@ FunctionDef* OnScanFunction(void* ctx, uint64_t start, uint64_t end, StrWithLeng
     struct Tokenizer *t = ctx;
     Parser* parser = t->parser;
     uint64_t len = end - start;
-    _printf("Scanned function %.*s (%llu - %llu) with %llu args\n", 
-            name.len, name.str, start, end, arg_count);
+    LOG_DEBUG("Scanned function %.*s (%llu - %llu) with %llu args\n", 
+              name.len, name.str, start, end, arg_count);
 
     FunctionDef* func = Arena_alloc_type(&parser->arena, FunctionDef);
     func->arg_count = arg_count;

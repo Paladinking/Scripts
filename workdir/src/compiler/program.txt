@@ -10,6 +10,9 @@ fn main() -> uint64 {
         array[ix] = ix;
         ix = ix + 1;
     }
+    ix = 1 >> 2 + 3 * 4;
+    ix = 1 * 2 + 3 >> 4;
+    ix = 1 + 2 >> 3 * aois;
 
     if (!a) {
         array[13] = array[14] + array[29];
