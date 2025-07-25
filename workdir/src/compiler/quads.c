@@ -1,4 +1,5 @@
 #include "quads.h"
+#include "ast.h"
 #include "mem.h"
 
 
@@ -74,7 +75,7 @@ var_id QuadList_addvar(QuadList* quads, name_id name, type_id type, Parser* pars
         LOG_DEBUG("'%.*s' is %llu", parser->name_table.data[name].name_len, 
                   parser->name_table.data[name].name, id);
     }
-    AllocInfo alloc = allocation_of(parser, type);
+    AllocInfo alloc = type_allocation(&parser->type_table, type);
     quads->vars.data[id].alignment = alloc.allignment;
     quads->vars.data[id].byte_size = alloc.size;
 
@@ -111,8 +112,7 @@ uint64_t quad_datatype(Parser* parser, type_id type) {
     case TYPE_ID_NONE:
         return QUAD_0_BIT | QUAD_UINT;
     }
-    LineInfo l = {0, 0, false};
-    fatal_error(parser, PARSE_ERROR_INTERNAL, l);
+    fatal_error(parser, PARSE_ERROR_INTERNAL, LINE_INFO_NONE);
     return 0;
 }
 
@@ -684,8 +684,7 @@ void quads_statements(Parser* parser, QuadList* quads, Statement** statements,
                 q->op1.var = a;
                 q->op2 = v;
             } else {
-                LineInfo l = {0, 0, false};
-                fatal_error(parser, PARSE_ERROR_INTERNAL, l);
+                fatal_error(parser, PARSE_ERROR_INTERNAL, LINE_INFO_NONE);
             }
             continue;
         } else if (s->type == STATEMENT_EXPRESSION) {
@@ -868,7 +867,7 @@ void Quad_GenerateQuads(Parser* parser, Quads* quads, Arena* arena) {
     if (v.data == NULL) {
         out_of_memory(parser);
     }
-    assert(parser->scope_count);
+    assert(parser->name_table.scope_count);
 
 
     for (func_id ix = 0; ix < parser->function_table.size; ++ix) {

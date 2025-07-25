@@ -72,7 +72,7 @@ static const uint32_t expected_count[] = {2, 1, 1, 1, 2, 1, 2, 1, 2, 1, 1, 2, 2,
 
 static SyntaxError get_syntax_error(int32_t state, Token t, uint64_t start, uint64_t end) {
     SyntaxError e = {t, start, end, NULL, 0};
-    if (state < 0 || state > 20) {
+    if (state < 0 || state >= 20) {
         return e;
     }
     e.expected = expected[state];

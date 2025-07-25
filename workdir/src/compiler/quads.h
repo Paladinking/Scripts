@@ -3,7 +3,7 @@
 #include <stdint.h>
 #include <arena.h>
 
-#include "parser.h"
+#include "tables.h"
 #include "varset.h"
 
 

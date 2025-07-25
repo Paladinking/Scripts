@@ -1,7 +1,7 @@
 // + is concatenation
 // | means or
 
-include: "parser.h";
+include: "ast.h";
 
 atoms: identifier, statements;
 

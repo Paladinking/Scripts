@@ -10,9 +10,6 @@ fn main() -> uint64 {
         array[ix] = ix;
         ix = ix + 1;
     }
-    ix = 1 >> 2 + 3 * 4;
-    ix = 1 * 2 + 3 >> 4;
-    ix = 1 + 2 >> 3 * aois;
 
     if (!a) {
         array[13] = array[14] + array[29];
@@ -21,7 +18,7 @@ fn main() -> uint64 {
     return array[13] + array[88];
 }
 
-fn x(int64 a, uint64 b) -> uint64 {
+fn x(int64 a, uint64 b) -> int64 {
     uint64 x = 10;
     uint64 __bee1 = 2 * 2;
     b = __bee1 * 3;

@@ -1,6 +1,6 @@
 #ifndef CODE_GENERATION_H_00
 #define CODE_GENERATION_H_00
-#include "parser.h"
+#include "tables.h"
 #include "quads.h"
 
 typedef struct ConflictGraph {

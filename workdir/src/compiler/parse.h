@@ -1,6 +1,6 @@
 #include <stdint.h>
 #include <stdbool.h>
-#include "parser.h"
+#include "ast.h"
 
 enum TokenType {
     TOKEN_LITERAL, TOKEN_END, TOKEN_ERROR, TOKEN_KFN, TOKEN_KSTRUCT, TOKEN_KIF, TOKEN_KWHILE, TOKEN_KELSE, TOKEN_KRETURN, TOKEN_KTRUE, TOKEN_KFALSE, TOKEN_TYPEID, TOKEN_IDENTIFIER, TOKEN_INTEGER, TOKEN_REAL, TOKEN_STRING
@@ -68,9 +68,11 @@ name_id OnFnHead(void* ctx, uint64_t start, uint64_t end, name_id, StrWithLength
 
 ExpressionList* OnParamList(void* ctx, uint64_t start, uint64_t end, Expression*);
 
-ArgList* OnArgList(void* ctx, uint64_t start, uint64_t end, type_id, StrWithLength);
+Arg* OnArg(void* ctx, uint64_t start, uint64_t end, type_id, StrWithLength);
 
-ArgList* OnAddArgList(void* ctx, uint64_t start, uint64_t end, ArgList*, type_id, StrWithLength);
+ArgList* OnArgList(void* ctx, uint64_t start, uint64_t end, Arg*);
+
+ArgList* OnAddArgList(void* ctx, uint64_t start, uint64_t end, ArgList*, Arg*);
 
 StatementList* OnStatementList(void* ctx, uint64_t start, uint64_t end, StatementList*, Statement*);
 

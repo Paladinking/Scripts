@@ -34,10 +34,11 @@ int compiler(char** argv, int argc) {
         return 1;
     }
 
-    parser.indata = s.buffer;
-    parser.input_size = s.length;
+    scan_program(&parser, &s);
+    if (parser.first_error == NULL) {
+        parse_program(&parser, &s);
+    }
 
-    parse_program(&parser);
     if (parser.first_error != NULL) {
         dump_errors(&parser);
         Log_Shutdown();
@@ -65,7 +66,7 @@ int compiler(char** argv, int argc) {
         String s;
         if (String_create(&s)) {
             fmt_functiondef(parser.function_table.data[i], &parser, &s);
-            //outputUtf8(s.buffer, s.length);
+            outputUtf8(s.buffer, s.length);
             String_free(&s);
         }
     }
