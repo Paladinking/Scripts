@@ -167,25 +167,27 @@ def main():
                  defines=["NARROW_OCHAR"]):
         link = "WS2_32.lib" if backend().name == "msvc" else "-lws2_32"
 
+        langdir = "src/compiler/language"
         scan_c, scan_h = Command(["scan.c", "scan.h"],
-                                 f"{desc.product} src/compiler/scan.txt -o " +
-                                 "src/compiler/scan.c -H src/compiler/scan.h -s PROGRAM",
-                                 desc, "src/compiler/scan.txt",
-                                 directory="src/compiler")
+                                 f"{desc.product} {langdir}/scan.txt -o " +
+                                 f"{langdir}/scan.c -H {langdir}/scan.h -s PROGRAM",
+                                 desc, f"{langdir}/scan.txt",
+                                 directory=langdir)
 
         parse_c, parse_h = Command(["parse.c", "parse.h"],
-                                    f"{desc.product} src/compiler/language.txt -o " +
-                                   "src/compiler/parse.c -H src/compiler/parse.h -s PROGRAM",
-                                   desc, "src/compiler/language.txt",
-                                   directory="src/compiler")
+                                    f"{desc.product} {langdir}/language.txt -o " +
+                                   f"{langdir}/parse.c -H {langdir}/parse.h -s PROGRAM",
+                                   desc, f"{langdir}/language.txt",
+                                   directory=langdir)
 
         scan_defs: List[Union[str, Tuple[str, str]]] = \
                                 [("parse", "scanner_parse"), ("parser_error", "scanner_error"),
                                  ("peek_token", "scanner_peek_token"),
                                  ("consume_token", "scanner_consume_token")]
         scan_o = Object("scan.obj", scan_c.product, depends=[scan_h.product],
-                        defines=scan_defs)
-        parse_o = Object("parse.obj", parse_c.product, depends=[parse_h.product])
+                        defines=scan_defs, includes=["src/compiler"])
+        parse_o = Object("parse.obj", parse_c.product, depends=[parse_h.product],
+                         includes=["src/compiler"])
 
         scanner_o = Object("scanner.obj", "src/compiler/scanner.c",
                              depends=[scan_h.product], defines=scan_defs)
