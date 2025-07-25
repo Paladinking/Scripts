@@ -1,9 +1,5 @@
-#include "glob.h"
-#include "printf.h"
-#include "format.h"
 #include "language/parse.h"
 #include "tokenizer.h"
-#include "type_checker.h"
 
 const LineInfo LINE_INFO_NONE = {-1, -1};
 
@@ -24,6 +20,7 @@ void parser_add_builtin(Parser* parser, type_id id, enum TypeDefKind kind,
     parser->type_table.data[id].array_size = 0;
     parser->type_table.data[id].parent = TYPE_ID_INVALID;
     parser->type_table.data[id].type_def = def;
+    parser->type_table.data[id].ptr_type = TYPE_ID_INVALID;
 
     StrWithLength str = {(const uint8_t*)name, strlen(name)};
 
@@ -277,6 +274,34 @@ Statements OnStatements(void *ctx, uint64_t start, uint64_t end, StatementList *
     return s;
 }
 
+Statement* declare_variable(Parser* p, uint64_t start, uint64_t end,
+                      StrWithLength ident, type_id type, Expression* val) {
+    LineInfo l = {start, end};
+    name_id name = name_variable_insert(&p->name_table, ident, type,
+                                        p->function_table.size, &p->arena);
+    if (name == NAME_ID_INVALID) {
+        name_id prev = name_find(&p->name_table, ident);
+        assert(prev != NAME_ID_INVALID);
+        if (p->name_table.data[prev].kind == NAME_KEYWORD) {
+            add_error(p, PARSE_ERROR_RESERVED_NAME, l);
+        } else {
+            add_error(p, PARSE_ERROR_REDEFINITION, l);
+        }
+    }
+    if (val == NULL) {
+        return NULL;
+    }
+
+    Statement* s = create_stmt(p, STATEMENT_ASSIGN, start, end);
+    Expression* lhs = create_expr(p, EXPRESSION_VARIABLE, start, end);
+    lhs->variable.ix = name;
+    s->assignment.lhs = lhs;
+    s->assignment.rhs = val;
+
+    return s;
+}
+
+
 Arg* OnArg(void* ctx, uint64_t start, uint64_t end, type_id type, StrWithLength s) {
     Parser* p = PARSER(ctx);
     LineInfo pos = {start, end};
@@ -376,6 +401,15 @@ FunctionDef* OnFunction(void* ctx, uint64_t start, uint64_t end,
     return f;
 }
 
+Statement* OnPtrDecl(void* ctx, uint64_t start, uint64_t end, type_id type, uint64_t ptr,
+                     StrWithLength ident, Expression* value) {
+    Parser* p = PARSER(ctx);
+    for (uint64_t i = 0; i < ptr; ++i) {
+        type = type_ptr_of(&p->type_table, type);
+    }
+    return declare_variable(p, start, end, ident, type, value);
+}
+
 Statement* OnDecl(void* ctx, uint64_t start, uint64_t end, type_id type, ArraySizes* arr,
                   StrWithLength ident, Expression* value) {
     Parser* p = PARSER(ctx);
@@ -383,29 +417,7 @@ Statement* OnDecl(void* ctx, uint64_t start, uint64_t end, type_id type, ArraySi
         type = type_array_of(&p->type_table, type, arr->size);
         arr = arr->next;
     }
-    LineInfo l = {start, end};
-    name_id name = name_variable_insert(&p->name_table, ident, type,
-                                        p->function_table.size, &p->arena);
-    if (name == NAME_ID_INVALID) {
-        name_id prev = name_find(&p->name_table, ident);
-        assert(prev != NAME_ID_INVALID);
-        if (p->name_table.data[prev].kind == NAME_KEYWORD) {
-            add_error(p, PARSE_ERROR_RESERVED_NAME, l);
-        } else {
-            add_error(p, PARSE_ERROR_REDEFINITION, l);
-        }
-    }
-    if (value == NULL) {
-        return NULL;
-    }
-
-    Statement* s = create_stmt(p, STATEMENT_ASSIGN, start, end);
-    Expression* lhs = create_expr(p, EXPRESSION_VARIABLE, start, end);
-    lhs->variable.ix = name;
-    s->assignment.lhs = lhs;
-    s->assignment.rhs = value;
-
-    return s;
+    return declare_variable(p, start, end, ident, type, value);
 }
 
 ArraySizes* OnArrayDecl(void* ctx, uint64_t start, uint64_t end, ArraySizes* sizes, uint64_t i) {
@@ -516,6 +528,7 @@ Expression* OnArrayIndex(void* ctx, uint64_t start, uint64_t end,
     Expression* e = create_expr(PARSER(ctx), EXPRESSION_ARRAY_INDEX, start, end);
     e->array_index.array = arr;
     e->array_index.index = ix;
+    e->array_index.get_addr = false;
     return e;
 }
 

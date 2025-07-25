@@ -174,10 +174,11 @@ typedef struct TypeDef {
 
 typedef struct TypeData {
     enum {
-        TYPE_NORMAL, TYPE_ARRAY
+        TYPE_NORMAL, TYPE_ARRAY, TYPE_PTR
     } kind;
     TypeDef* type_def;
     type_id parent;
+    type_id ptr_type;
     uint64_t array_size;
 } TypeData;
 
@@ -217,6 +218,8 @@ typedef struct Parser {
 type_id type_of(NameTable* name_table, name_id name);
 
 type_id type_array_of(TypeTable* type_table, type_id id, uint64_t size);
+
+type_id type_ptr_of(TypeTable* type_table, type_id id);
 
 type_id type_function_create(TypeTable* type_table, FunctionDef* def, Arena* arena);
 

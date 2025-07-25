@@ -83,6 +83,22 @@ type_id merge_numbers(Parser* parser, type_id a, type_id b, Expression* expr_a, 
 
 type_id typecheck_unop(Parser* parser, Expression* op) {
     switch(op->unop.op) {
+    case UNOP_ADDROF:
+        if (op->unop.expr->kind != EXPRESSION_VARIABLE &&
+            op->unop.expr->kind != EXPRESSION_ARRAY_INDEX) {
+            add_error(parser, TYPE_ERROR_ILLEGAL_TYPE, op->unop.expr->line);
+        }
+        if (op->unop.expr->kind == EXPRESSION_ARRAY_INDEX) {
+            *op = *op->unop.expr;
+            op->array_index.get_addr = true;
+            return type_ptr_of(&parser->type_table, op->type);
+        }
+        return type_ptr_of(&parser->type_table, op->unop.expr->type);
+    case UNOP_DEREF:
+        if (parser->type_table.data[op->unop.expr->type].kind != TYPE_PTR) {
+            add_error(parser, TYPE_ERROR_ILLEGAL_TYPE, op->unop.expr->line);
+        }
+        return parser->type_table.data[op->unop.expr->type].parent;
     case UNOP_PAREN:
         *op = *op->unop.expr;
         return op->type;
@@ -334,8 +350,10 @@ void typecheck_statements(Parser* parser, Statement** statements, uint64_t state
             type_id src = typecheck_expression(parser, top->assignment.rhs);
             type_id dst = typecheck_expression(parser, top->assignment.lhs);
             if (top->assignment.lhs->kind != EXPRESSION_VARIABLE &&
-                top->assignment.lhs->kind != EXPRESSION_ARRAY_INDEX) {
-                add_error(parser, TYPE_ERROR_ILLEGAL_TYPE, top->assignment.rhs->line);
+                top->assignment.lhs->kind != EXPRESSION_ARRAY_INDEX && 
+                (top->assignment.lhs->kind != EXPRESSION_UNOP ||
+                 top->assignment.lhs->unop.op != UNOP_DEREF)) {
+                add_error(parser, TYPE_ERROR_ILLEGAL_TYPE, top->assignment.lhs->line);
             } else if (src != dst) {
                 cast_to(parser, top->assignment.rhs, dst);
                 typecheck_cast(parser, top->assignment.rhs);

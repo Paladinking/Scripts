@@ -5,6 +5,15 @@ fn main() -> uint64 {
 
     bool a = false;
 
+    bool* b = &a;
+    *b = true;
+
+    bool c = *b;
+
+    uint64* ptr = &array[10];
+    bool** ptrptr = &b;
+    **ptrptr = false;
+
     uint64 ix = 0;
     while (ix < 100) {
         array[ix] = ix;
