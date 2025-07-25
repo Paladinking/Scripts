@@ -3,8 +3,7 @@
 #include <mem.h>
 
 static inline type_id require_number(Parser* parser, Expression* e) {
-    if (e->type == TYPE_ID_INT64 || e->type == TYPE_ID_UINT64 ||
-        e->type == TYPE_ID_FLOAT64) {
+    if (e->type < TYPE_ID_NUMBER_COUNT) {
         return e->type;
     }
     add_error(parser, TYPE_ERROR_ILLEGAL_TYPE, e->line);
@@ -12,11 +11,14 @@ static inline type_id require_number(Parser* parser, Expression* e) {
 }
 
 static inline type_id require_interger(Parser* parser, Expression* e, bool sign, bool unsign) {
-    if (sign && e->type == TYPE_ID_INT64) {
-        return e->type;
-    }
-    if (unsign && e->type == TYPE_ID_UINT64) {
-        return e->type;
+    if (e->type < TYPE_ID_INTEGER_COUNT) {
+        if (e->type < TYPE_ID_UNSIGNED_COUNT) {
+            if (unsign) {
+                return e->type;
+            }
+        } else if (sign) {
+            return e->type;
+        }
     }
     add_error(parser, TYPE_ERROR_ILLEGAL_TYPE, e->line);
     if (sign) {
@@ -37,10 +39,8 @@ static inline type_id require_bool(Parser* parser, Expression* e) {
 type_id typecheck_cast(Parser* parser, Expression* op) {
     type_id type = op->cast.type;
     type_id t = op->cast.e->type;
-    if (type == TYPE_ID_FLOAT64 || type == TYPE_ID_INT64 ||
-        type == TYPE_ID_UINT64 || type == TYPE_ID_BOOL) {
-        if (t == TYPE_ID_FLOAT64 || t == TYPE_ID_INT64 ||
-            t == TYPE_ID_UINT64 || t == TYPE_ID_BOOL) {
+    if (type < TYPE_ID_NUMBER_COUNT || type == TYPE_ID_BOOL) {
+        if (t < TYPE_ID_NUMBER_COUNT || t == TYPE_ID_BOOL) {
             return type;
         }
     }
@@ -61,22 +61,24 @@ type_id merge_numbers(Parser* parser, type_id a, type_id b, Expression* expr_a, 
     if (a == b) {
         return a;
     }
-    if (a == TYPE_ID_FLOAT64) {
-        cast_to(parser, expr_b, TYPE_ID_FLOAT64);
-        return TYPE_ID_FLOAT64;
+    type_id order[] = {
+        TYPE_ID_FLOAT64, TYPE_ID_FLOAT32,
+        TYPE_ID_INT64, TYPE_ID_UINT64,
+        TYPE_ID_INT32, TYPE_ID_UINT32,
+        TYPE_ID_INT16, TYPE_ID_UINT16,
+        TYPE_ID_INT8, TYPE_ID_UINT8
+    };
+    for (uint32_t i = 0; i < 8; ++i) {
+        if (a == order[i]) {
+            cast_to(parser, expr_b, order[i]);
+            return order[i];
+        }
+        if (b == order[i]) {
+            cast_to(parser, expr_a, order[i]);
+            return order[i];
+        }
     }
-    if (b == TYPE_ID_FLOAT64) {
-        cast_to(parser, expr_a, TYPE_ID_FLOAT64);
-        return TYPE_ID_FLOAT64;
-    }
-    if (a == TYPE_ID_INT64) {
-        cast_to(parser, expr_b, TYPE_ID_INT64);
-        return TYPE_ID_INT64;
-    }
-    if (b == TYPE_ID_INT64) {
-        cast_to(parser, expr_a, TYPE_ID_INT64);
-        return TYPE_ID_INT64;
-    }
+
     fatal_error(parser, PARSE_ERROR_INTERNAL, expr_a->line);
     return TYPE_ID_UINT64;
 }
@@ -167,9 +169,8 @@ type_id typecheck_binop(Parser* parser, Expression* op) {
 
 type_id typecheck_array_index(Parser* parser, Expression* e) {
     type_id ix = require_interger(parser, e->array_index.index, true, true);
-    if (ix != TYPE_ID_UINT64) {
-        cast_to(parser, e->array_index.index, TYPE_ID_UINT64);
-        // No need to check validity of cast, require_interger makes sure it's valid.
+    if (ix > TYPE_ID_UNSIGNED_COUNT) {
+        cast_to(parser, e->array_index.index, ix - TYPE_ID_UNSIGNED_COUNT);
     }
     type_id a = e->array_index.array->type;
     if (parser->type_table.data[a].kind != TYPE_ARRAY) {

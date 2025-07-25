@@ -69,8 +69,15 @@ enum QuadType {
     QUAD_BIT_NOT, // <op1>, x -> <dest>
 
     QUAD_CAST_TO_FLOAT64, // <val>, x -> <dest>
+    QUAD_CAST_TO_FLOAT32, // <val>, x -> <dest>
     QUAD_CAST_TO_INT64, // <val>, x -> <dest>
+    QUAD_CAST_TO_INT32, // <val>, x -> <dest>
+    QUAD_CAST_TO_INT16, // <val>, x -> <dest>
+    QUAD_CAST_TO_INT8, // <val>, x -> <dest>
     QUAD_CAST_TO_UINT64, // <val>, x -> <dest>
+    QUAD_CAST_TO_UINT32, // <val>, x -> <dest>
+    QUAD_CAST_TO_UINT16, // <val>, x -> <dest>
+    QUAD_CAST_TO_UINT8, // <val>, x -> <dest>
     QUAD_CAST_TO_BOOL, // <val>, x -> <dest>
     
     QUAD_PUT_ARG, // [argNr], <var> -> x

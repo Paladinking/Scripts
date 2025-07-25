@@ -28,4 +28,6 @@ FUNCTION = 'fn' + identifier +
 ARG_LIST = ARG : $ 1;
 ARG_LIST = ARG_LIST + ',' + ARG : $ $0 + 1;
 
-ARG = identifier + identifier;
+ARG = identifier + PTRDECL + identifier;
+
+PTRDECL = '' | PTRDECL + '*';

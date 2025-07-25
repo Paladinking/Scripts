@@ -193,17 +193,11 @@ type_id type_array_of(TypeTable* type_table, type_id id, uint64_t size) {
 }
 
 static AllocInfo allocation_of_type(TypeDef* def) {
-    if (def->kind == TYPEDEF_UINT64 || def->kind == TYPEDEF_INT64 || def->kind == TYPEDEF_FLOAT64) {
-        return (AllocInfo){8, 8};
-    } 
-    if (def->kind == TYPEDEF_BOOL) {
-        return (AllocInfo){1, 1};
+    if (def->kind == TYPEDEF_BUILTIN) {
+        return (AllocInfo){def->builtin.byte_size, def->builtin.byte_alignment};
     }
-    if (def->kind == TYPEDEF_NONE || def->kind == TYPEDEF_FUNCTION) {
+    if (def->kind == TYPEDEF_FUNCTION) {
         return (AllocInfo){0, 1};
-    }
-    if (def->kind == TYPEDEF_CSTRING) {
-        return (AllocInfo){PTR_SIZE, PTR_SIZE};
     }
     // TODO: struct
     LOG_ERROR("Unkown typedef %d", def->kind);
