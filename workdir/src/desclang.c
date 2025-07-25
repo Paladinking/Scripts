@@ -1469,10 +1469,10 @@ Graph* create_graph(Rule* rules, rule_id rule_count, Rule* start_rule) {
 
 
     if (validate_graph(rules, rule_count, graph, start_rule)) {
-        for (uint32_t ix = 0; ix < graph->count; ++ix) {
+        /*for (uint32_t ix = 0; ix < graph->count; ++ix) {
             _printf("%lu\n", ix);
             fmt_rows(rules, &graph->nodes[ix]->rows);
-        }
+        }*/
         return graph;
     }
     Graph_free(graph);

@@ -1,7 +1,7 @@
 #include "glob.h"
 #include "printf.h"
 #include "format.h"
-#include "parse.h"
+#include "language/parse.h"
 #include "tokenizer.h"
 #include "type_checker.h"
 
@@ -698,3 +698,4 @@ void parse_program(Parser* parser, String *indata) {
 
     parse(&t);
 }
+

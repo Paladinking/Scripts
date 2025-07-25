@@ -1,4 +1,4 @@
-#include "scan.h"
+#include "language/scan.h"
 #include "tokenizer.h"
 
 struct Tokenizer {
