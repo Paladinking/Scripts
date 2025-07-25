@@ -24,6 +24,7 @@ type_id type_function_create(TypeTable *type_table, FunctionDef *def, Arena* are
     TypeData* d = &type_table->data[t];
     d->parent = TYPE_ID_INVALID;
     d->kind = TYPE_NORMAL;
+    d->ptr_type = TYPE_ID_INVALID;
     d->array_size = 0;
     d->type_def = Arena_alloc_type(arena, TypeDef);
     d->type_def->kind = TYPEDEF_FUNCTION;
@@ -165,13 +166,27 @@ type_id type_of(NameTable* name_table, name_id name) {
         return TYPE_ID_INVALID;
     }
     return name_table->data[name].type;
-} 
+}
+
+type_id type_ptr_of(TypeTable *type_table, type_id id) {
+    if (type_table->data[id].ptr_type == TYPE_ID_INVALID) {
+        type_id t = create_type_id(type_table);
+        type_table->data[id].ptr_type = t;
+        type_table->data[t].kind = TYPE_PTR;
+        type_table->data[t].type_def = type_table->data[id].type_def;
+        type_table->data[t].parent = id;
+        type_table->data[t].ptr_type = TYPE_ID_INVALID;
+        type_table->data[t].array_size = 0;
+    }
+    return type_table->data[id].ptr_type;
+}
 
 type_id type_array_of(TypeTable* type_table, type_id id, uint64_t size) {
     type_id t = create_type_id(type_table);
     type_table->data[t].kind = TYPE_ARRAY;
     type_table->data[t].type_def = type_table->data[id].type_def;
     type_table->data[t].parent = id;
+    type_table->data[t].ptr_type = TYPE_ID_INVALID;
     type_table->data[t].array_size = size;
 
     return t;
@@ -201,7 +216,7 @@ AllocInfo type_allocation(TypeTable* type_table, type_id id) {
     TypeDef* def = type_table->data[id].type_def;
     if (type_table->data[id].kind == TYPE_NORMAL) {
         return allocation_of_type(def);
-    } else {
+    } else if (type_table->data[id].kind == TYPE_ARRAY) {
         AllocInfo root = allocation_of_type(def);
         uint64_t scale = type_table->data[id].array_size;
         // For now...
@@ -209,5 +224,9 @@ AllocInfo type_allocation(TypeTable* type_table, type_id id) {
 
         root.size *= scale;
         return root;
+    } else if (type_table->data[id].kind == TYPE_PTR) {
+        return (AllocInfo){PTR_SIZE, PTR_SIZE};
+    } else {
+        assert(false);
     }
 }

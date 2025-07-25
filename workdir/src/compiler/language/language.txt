@@ -30,6 +30,8 @@ type: ARRAY_INDEX = Expression*;
 
 type: COND = Expression*;
 
+type: PTRDECL = uint64_t;
+
 type: ?ASSIGN = Expression*;
 type: STATEMENT = Statement*;
 type: IF = Statement*;
@@ -80,9 +82,13 @@ STATEMENT_LIST = '' :$ NULL |
 STATEMENT = kWhile + COND + STATEMENTS : OnWhile |
             IF :$ $0 |
             typeid + ARRAYDECL + identifier + ?ASSIGN + ';' : OnDecl |
+            typeid + PTRDECL + identifier + ?ASSIGN + ';' : OnPtrDecl |
             EXPRESSION + '=' + EXPRESSION + ';' : OnAssign |
             EXPRESSION + ';' : OnExprStatement |
             kReturn + EXPRESSION + ';' : OnReturn;
+
+PTRDECL = '*' :$ 1 | 
+          PTRDECL + '*' :$ 1 + $0;
 
 ARRAYDECL = '' :$ NULL |
             ARRAYDECL + '[' + integer + ']' : OnArrayDecl;
@@ -129,7 +135,9 @@ BINOPERATOR = '/' :$ BINOP_DIV | '*' :$ BINOP_MUL | '%' :$ BINOP_MOD |
 UNARYOPERATOR = '~' :$ UNOP_BITNOT |
                 '!' :$ UNOP_BOOLNOT |
                 '-' :$ UNOP_NEGATIVE |
-                '+' :$ UNOP_POSITIVE;
+                '+' :$ UNOP_POSITIVE |
+                '*' :$ UNOP_DEREF |
+                '&' :$ UNOP_ADDROF;
 
 BINOP = EXPRESSION + BINOPERATOR + EXPR : OnBinop1 |
         EXPRESSION + BINOPERATOR + UNOP : OnBinop2;

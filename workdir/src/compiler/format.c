@@ -11,12 +11,12 @@ const static char* quadnames[] = {
     "QCAST_TO_FLOAT64", "QCAST_TO_INT64", "QCAST_TO_UINT64",
     "QCAST_TO_BOOL", "QPUT_ARG",  "QCALL", "QRETURN",
     "QGET_RET", "QGET_ARG", "QMOVE", "QGET_ADDR", "QCALC_ADDR",
-    "QSET_ADDR", "QCREATE"
+    "QSET_ADDR", "QCREATE", "QADDROF", "QDEREF"
 };
 
 void fmt_quad(const Quad* quad, String* dest) {
     enum QuadType type = quad->type & QUAD_TYPE_MASK;
-    if (type >= 0 && type < 39) {
+    if (type >= 0 && type < 41) {
         String_extend(dest, quadnames[type]);
     } else {
         String_extend(dest, "QUNKOWN");
@@ -82,6 +82,8 @@ void fmt_quad(const Quad* quad, String* dest) {
     case QUAD_CAST_TO_UINT64:
     case QUAD_CAST_TO_BOOL:
     case QUAD_MOVE:
+    case QUAD_ADDROF:
+    case QUAD_DEREF:
         String_format_append(dest, "<%llu> -> <%llu>", quad->op1.var, quad->dest);
         break;
     }
@@ -93,6 +95,8 @@ void fmt_quad(const Quad* quad, String* dest) {
         String_extend(dest, " FLOAT");
     } else if (quad->type & QUAD_BOOL) {
         String_extend(dest, " BOOL");
+    } else if (quad->type & QUAD_PTR) {
+        String_extend(dest, " PTR");
     }
     if (quad->type & QUAD_64_BIT) {
         String_extend(dest, " 64");
@@ -175,6 +179,10 @@ void fmt_type(type_id type, const Parser* parser, String* dest) {
         String_append_count(dest, "[]", 2);
         type = parser->type_table.data[type].parent;
     }
+    while (parser->type_table.data[type].kind == TYPE_PTR) {
+        String_append(dest, '*');
+        type = parser->type_table.data[type].parent;
+    }
 }
 
 void fmt_errors(const Parser* parser, String* dest) {
@@ -251,6 +259,12 @@ void fmt_unary_operator(enum UnaryOperator op, String *dest) {
         return;
     case UNOP_POSITIVE:
         String_append(dest, '+');
+        return;
+    case UNOP_DEREF:
+        String_append(dest, '*');
+        return;
+    case UNOP_ADDROF:
+        String_append(dest, '&');
         return;
     case UNOP_PAREN:
         return;

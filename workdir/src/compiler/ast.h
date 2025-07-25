@@ -33,7 +33,8 @@ enum BinaryOperator {
 };
 
 enum UnaryOperator {
-    UNOP_BITNOT, UNOP_BOOLNOT, UNOP_NEGATIVE, UNOP_POSITIVE, UNOP_PAREN
+    UNOP_BITNOT, UNOP_BOOLNOT, UNOP_NEGATIVE, UNOP_POSITIVE, UNOP_PAREN,
+    UNOP_ADDROF, UNOP_DEREF
 };
 
 typedef struct Expression Expression;
@@ -83,6 +84,9 @@ typedef struct CallExpr {
 typedef struct ArrayIndexExpr {
     Expression* array;
     Expression* index;
+    // set for expressions like &array[2]
+    // In that case only the address is needed
+    bool get_addr;
 } ArrayIndexExpr;
 
 typedef struct LiteralExpr {

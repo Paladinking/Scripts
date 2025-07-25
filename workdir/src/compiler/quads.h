@@ -84,7 +84,10 @@ enum QuadType {
     QUAD_CALC_ADDR, // <ptr>, <offset> -> <dest>
     QUAD_SET_ADDR, // <ptr>, <data> -> x
 
-    QUAD_CREATE // [val], x -> <dest>
+    QUAD_CREATE, // [val], x -> <dest>
+    
+    QUAD_ADDROF, // <val>, x -> <dest>
+    QUAD_DEREF // <ptr>, x -> <dest>
 };
 
 typedef struct Quad {

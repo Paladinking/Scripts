@@ -102,13 +102,37 @@ void requre_gen_reg(ConflictGraph* graph, uint64_t reg, var_id var) {
     }
 }
 
+// Require <var> uses memory
+void require_mem(ConflictGraph* graph, var_id var) {
+    for (uint64_t ix = 0; ix < graph->reg_count; ++ix) {
+        ConflictGraph_add_edge(graph, var + graph->reg_count, ix);
+    }
+}
+
+uint64_t move_type(var_id var, VarList* vars) {
+    // TODO: this is not good, should read type_table instead
+    if (vars->data[var].type == TYPE_ID_FLOAT64) {
+        return QUAD_64_BIT | QUAD_FLOAT;
+    }
+    if (vars->data[var].byte_size == 1) {
+        return QUAD_8_BIT | QUAD_UINT;
+    } else if (vars->data[var].byte_size == 2) {
+        return QUAD_16_BIT | QUAD_UINT;
+    } else if (vars->data[var].byte_size == 4) {
+        return QUAD_32_BIT | QUAD_UINT;
+    } else if (vars->data[var].byte_size == 8) {
+        return QUAD_64_BIT | QUAD_UINT;
+    }
+    assert(false);
+}
+
 void preinsert_move(ConflictGraph* graph, var_id* var, VarSet* live_set,
                     Quad* quad, FlowNode* node, VarList* vars, Arena* arena) {
 
     var_id tmp = create_temp_var(graph, vars, node, live_set, *var);
     ConflictGraph_add_edge(graph, RSP, tmp + graph->reg_count);
     Quad* nq = Arena_alloc_type(arena, Quad);
-    nq->type = QUAD_MOVE | (quad->type & (~QUAD_TYPE_MASK));
+    nq->type = QUAD_MOVE | move_type(*var, vars);
     nq->op1.var = *var;
     nq->dest = tmp;
     nq->last_quad = quad->last_quad;
@@ -130,7 +154,7 @@ void postinsert_move(ConflictGraph* graph, var_id* dest, VarSet* live_set,
     var_id tmp = create_temp_var(graph, vars, node, live_set, *dest);
     ConflictGraph_add_edge(graph, RSP, tmp + graph->reg_count);
     Quad* nq = Arena_alloc_type(arena, Quad);
-    nq->type = QUAD_MOVE | (quad->type & (~QUAD_TYPE_MASK));
+    nq->type = QUAD_MOVE | move_type(*dest, vars);
     nq->op1.var = tmp;
     nq->dest = *dest;
     nq->last_quad = quad;
@@ -447,6 +471,18 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
     } else if (q == QUAD_GET_RET) {
         requre_gen_reg_dest(graph, RAX, &quad->dest, live_set, quad, 
                             node, vars, arena);
+    } else if (q == QUAD_ADDROF) {
+        if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
+            postinsert_move(graph, &quad->dest, live_set, quad, node, vars, arena);
+        }
+        require_mem(graph, quad->op1.var);
+    } else if (q == QUAD_DEREF) {
+        if (vars->data[quad->op1.var].alloc_type == ALLOC_MEM) {
+            preinsert_move(graph, &quad->op1.var, live_set, quad, node, vars, arena);
+        }
+        if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
+            postinsert_move(graph, &quad->dest, live_set, quad, node, vars, arena);
+        }
     } else if (q == QUAD_RETURN) {
         // Readd this once allocation is better.
         // For now extra move is probably cheaper than a likely spill
@@ -1038,7 +1074,23 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena,
             assert(vars[q->op2].alloc_type == ALLOC_REG);
             emit_instr_name("mov");
             emit_var_deref(vars[q->op1.var].reg, datasize, 0);
-            emit_var_reg(vars[q->op2].reg, datasize, 1);
+            emit_var(&vars[q->op2], datatype, datasize, 1);
+            emit_instr_end();
+            break;
+        case QUAD_ADDROF:
+            assert(vars[q->dest].alloc_type == ALLOC_REG);
+            assert(vars[q->op1.var].alloc_type == ALLOC_MEM);
+            emit_instr_name("lea");
+            emit_var_reg(vars[q->dest].reg, QUAD_PTR_SIZE, 0);
+            emit_var(&vars[q->op1.var], datatype, datasize, 1);
+            emit_instr_end();
+            break;
+        case QUAD_DEREF:
+            assert(vars[q->dest].alloc_type == ALLOC_REG);
+            assert(vars[q->op1.var].alloc_type == ALLOC_REG);
+            emit_instr_name("mov");
+            emit_var_reg(vars[q->dest].reg, datasize, 0);
+            emit_var_deref(vars[q->op1.var].reg, datasize, 1);
             emit_instr_end();
             break;
         default:
