@@ -8,7 +8,11 @@ const static char* quadnames[] = {
     "QCMP_LE", "QJMP", "QJMP_FALSE", "QJMP_TRUE",
     "QLABEL", "QBOOL_AND", "QBOOL_OR", "QBOOL_NOT",
     "QBIT_AND", "QBIT_OR", "QBIT_XOR", "QBIT_NOT",
-    "QCAST_TO_FLOAT64", "QCAST_TO_INT64", "QCAST_TO_UINT64",
+    "QCAST_TO_FLOAT64", "QCAST_TO_FLOAT32", 
+    "QCAST_TO_INT64", "QCAST_TO_INT32",
+    "QCAST_TO_INT16", "QCAST_TO_INT8",
+    "QCAST_TO_UINT64", "QCAST_TO_UINT32",
+    "QCAST_TO_UINT16", "QCAST_TO_UINT8",
     "QCAST_TO_BOOL", "QPUT_ARG",  "QCALL", "QRETURN",
     "QGET_RET", "QGET_ARG", "QMOVE", "QGET_ADDR", "QCALC_ADDR",
     "QSET_ADDR", "QCREATE", "QADDROF", "QDEREF"
@@ -16,7 +20,7 @@ const static char* quadnames[] = {
 
 void fmt_quad(const Quad* quad, String* dest) {
     enum QuadType type = quad->type & QUAD_TYPE_MASK;
-    if (type >= 0 && type < 41) {
+    if (type >= 0 && type < 48) {
         String_extend(dest, quadnames[type]);
     } else {
         String_extend(dest, "QUNKOWN");
@@ -78,8 +82,15 @@ void fmt_quad(const Quad* quad, String* dest) {
     case QUAD_BOOL_NOT:
     case QUAD_BIT_NOT:
     case QUAD_CAST_TO_FLOAT64:
+    case QUAD_CAST_TO_FLOAT32:
     case QUAD_CAST_TO_INT64:
+    case QUAD_CAST_TO_INT32:
+    case QUAD_CAST_TO_INT16:
+    case QUAD_CAST_TO_INT8:
     case QUAD_CAST_TO_UINT64:
+    case QUAD_CAST_TO_UINT32:
+    case QUAD_CAST_TO_UINT16:
+    case QUAD_CAST_TO_UINT8:
     case QUAD_CAST_TO_BOOL:
     case QUAD_MOVE:
     case QUAD_ADDROF:
@@ -169,7 +180,7 @@ void fmt_type(type_id type, const Parser* parser, String* dest) {
         String_extend(dest, "<Function type '");
         name = def->func->name;
     } else {
-        name = def->name;
+        name = def->builtin.name;
     }
     fmt_name(name, parser, dest);
     if (def->kind == TYPEDEF_STRUCT || def->kind == TYPEDEF_FUNCTION) {

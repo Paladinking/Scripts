@@ -12,13 +12,31 @@ typedef struct StrWithLength {
 // Index into type_table
 typedef uint64_t type_id;
 #define TYPE_ID_INVALID ((type_id) -1)
+
+// DO NOT REORDER THESE
 #define TYPE_ID_UINT64 0
-#define TYPE_ID_INT64 1
-#define TYPE_ID_FLOAT64 2
-#define TYPE_ID_CSTRING 3
-#define TYPE_ID_NONE 4
-#define TYPE_ID_BOOL 5
-#define TYPE_ID_BUILTIN_COUNT 6
+#define TYPE_ID_UINT32 1
+#define TYPE_ID_UINT16 2
+#define TYPE_ID_UINT8 3
+
+#define TYPE_ID_UNSIGNED_COUNT 4
+
+#define TYPE_ID_INT64 4
+#define TYPE_ID_INT32 5
+#define TYPE_ID_INT16 6
+#define TYPE_ID_INT8 7
+
+#define TYPE_ID_INTEGER_COUNT 8
+
+#define TYPE_ID_FLOAT64 8
+#define TYPE_ID_FLOAT32 9
+
+#define TYPE_ID_NUMBER_COUNT 10
+
+#define TYPE_ID_CSTRING 10
+#define TYPE_ID_NONE 11
+#define TYPE_ID_BOOL 12
+#define TYPE_ID_BUILTIN_COUNT 13
 
 // Index into var_table (part of quads)
 typedef uint64_t var_id;
@@ -155,9 +173,14 @@ typedef struct StructDef {
     type_id* fields;
 } StructDef;
 
+typedef struct BuiltinDef {
+    name_id name;
+    uint32_t byte_size;
+    uint32_t byte_alignment;
+} BuiltinDef;
+
 enum TypeDefKind {
-    TYPEDEF_UINT64, TYPEDEF_INT64, TYPEDEF_FLOAT64,
-    TYPEDEF_CSTRING, TYPEDEF_NONE, TYPEDEF_BOOL,
+    TYPEDEF_BUILTIN,
     TYPEDEF_STRUCT,
     TYPEDEF_FUNCTION
 };
@@ -165,9 +188,9 @@ enum TypeDefKind {
 typedef struct TypeDef {
     enum TypeDefKind kind;
     union {
-        StructDef struct_; // Only valid if kind is TYPEDEF_STRUCT
-        FunctionDef* func; // Only valid if kind is TYPEDEF_FUNCTION
-        name_id name;      // Valid otherwise
+        StructDef struct_;  // Valid if kind is TYPEDEF_STRUCT
+        FunctionDef* func;  // Valid if kind is TYPEDEF_FUNCTION
+        BuiltinDef builtin; // Valid if kind is TYPEDEF_BUILTIN
     };
 } TypeDef;
 

@@ -12,10 +12,12 @@ void parser_add_keyword(Parser* parser, const char* keyword, name_id id) {
     }
 }
 
-void parser_add_builtin(Parser* parser, type_id id, enum TypeDefKind kind,
+void parser_add_builtin(Parser* parser, type_id id, uint32_t size, uint32_t align,
                         const char* name) {
     TypeDef* def = Arena_alloc_type(&parser->arena, TypeDef);
-    def->kind = kind;
+    def->kind = TYPEDEF_BUILTIN;
+    def->builtin.byte_size = size;
+    def->builtin.byte_alignment = align;
     parser->type_table.data[id].kind = TYPE_NORMAL;
     parser->type_table.data[id].array_size = 0;
     parser->type_table.data[id].parent = TYPE_ID_INVALID;
@@ -25,7 +27,7 @@ void parser_add_builtin(Parser* parser, type_id id, enum TypeDefKind kind,
     StrWithLength str = {(const uint8_t*)name, strlen(name)};
 
     name_id n = name_type_insert(&parser->name_table, str, id, def, &parser->arena);
-    def->name = n;
+    def->builtin.name = n;
 }
 
 bool Parser_create(Parser* parser) {
@@ -96,12 +98,19 @@ bool Parser_create(Parser* parser) {
     parser_add_keyword(parser, "true", NAME_ID_TRUE);
     parser_add_keyword(parser, "false", NAME_ID_FALSE);
 
-    parser_add_builtin(parser, TYPE_ID_UINT64, TYPEDEF_UINT64, "uint64");
-    parser_add_builtin(parser, TYPE_ID_INT64, TYPEDEF_INT64, "int64");
-    parser_add_builtin(parser, TYPE_ID_FLOAT64, TYPEDEF_FLOAT64, "float64");
-    parser_add_builtin(parser, TYPE_ID_CSTRING, TYPEDEF_CSTRING, "<String Type>");
-    parser_add_builtin(parser, TYPE_ID_NONE, TYPEDEF_NONE, "<None Type>");
-    parser_add_builtin(parser, TYPE_ID_BOOL, TYPEDEF_BOOL, "bool");
+    parser_add_builtin(parser, TYPE_ID_UINT64, 8, 8, "uint64");
+    parser_add_builtin(parser, TYPE_ID_UINT32, 4, 4, "uint32");
+    parser_add_builtin(parser, TYPE_ID_UINT16, 2, 2, "uint16");
+    parser_add_builtin(parser, TYPE_ID_UINT8, 1, 1, "uint8");
+    parser_add_builtin(parser, TYPE_ID_INT64, 8, 8, "int64");
+    parser_add_builtin(parser, TYPE_ID_INT32, 4, 4, "int32");
+    parser_add_builtin(parser, TYPE_ID_INT16, 2, 2, "int16");
+    parser_add_builtin(parser, TYPE_ID_INT8, 1, 1, "int8");
+    parser_add_builtin(parser, TYPE_ID_FLOAT64, 8, 8, "float64");
+    parser_add_builtin(parser, TYPE_ID_FLOAT32, 4, 4, "float32");
+    parser_add_builtin(parser, TYPE_ID_CSTRING, PTR_SIZE, PTR_SIZE, "<String Type>");
+    parser_add_builtin(parser, TYPE_ID_NONE, 0, 1, "<None Type>");
+    parser_add_builtin(parser, TYPE_ID_BOOL, 1, 1, "bool");
 
     parser->name_table.scope_stack[0] = parser->name_table.size - 1;
 
@@ -301,7 +310,6 @@ Statement* declare_variable(Parser* p, uint64_t start, uint64_t end,
     return s;
 }
 
-
 Arg* OnArg(void* ctx, uint64_t start, uint64_t end, type_id type, StrWithLength s) {
     Parser* p = PARSER(ctx);
     LineInfo pos = {start, end};
@@ -320,6 +328,15 @@ Arg* OnArg(void* ctx, uint64_t start, uint64_t end, type_id type, StrWithLength 
     arg->name = name;
     arg->line = pos;
     return arg;
+}
+
+Arg* OnPtrArg(void* ctx, uint64_t start, uint64_t end, type_id type, uint64_t ptr,
+              StrWithLength s) {
+    Parser* p = PARSER(ctx);
+    for (uint64_t i = 0; i < ptr; ++i) {
+        type = type_ptr_of(&p->type_table, type); 
+    }
+    return OnArg(ctx, start, end, type, s);
 }
 
 

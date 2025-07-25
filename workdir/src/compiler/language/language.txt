@@ -72,7 +72,8 @@ FUNCTION = FN_HEAD +
 
 ARG_LIST = ARG : OnArgList |
            ARG_LIST + ',' + ARG : OnAddArgList;
-ARG = typeid + identifier : OnArg;
+ARG = typeid + identifier : OnArg |
+      typeid + PTRDECL + identifier : OnPtrArg;
 
 STATEMENTS = '{' + STATEMENT_LIST + '}' : OnStatements;
 

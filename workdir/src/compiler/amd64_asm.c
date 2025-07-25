@@ -488,8 +488,30 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
         // For now extra move is probably cheaper than a likely spill
         //requre_gen_reg_var(graph, RAX, &quad->op1.var, live_set, quad, 
         //                   node, vars, arena);
-    } else if (q == QUAD_CAST_TO_INT64 || q == QUAD_CAST_TO_UINT64 ||
-               q == QUAD_CAST_TO_BOOL || q == QUAD_MOVE) {
+    } else if (q == QUAD_CAST_TO_UINT64 || q == QUAD_CAST_TO_INT64) {
+        uint64_t datasize = quad->type & QUAD_DATASIZE_MASK;
+        if (!(datasize & QUAD_64_BIT)) {
+            if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
+                postinsert_move(graph, &quad->dest, live_set, quad, node, vars, arena);
+            }
+        }
+    } else if (q == QUAD_CAST_TO_UINT32 || q == QUAD_CAST_TO_INT32) {
+        uint64_t datasize = quad->type & QUAD_DATASIZE_MASK;
+        if (!(datasize & (QUAD_64_BIT | QUAD_32_BIT))) {
+            if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
+                postinsert_move(graph, &quad->dest, live_set, quad, node, vars, arena);
+            }
+        }
+    } else if (q == QUAD_CAST_TO_UINT16 || q == QUAD_CAST_TO_INT16) {
+        uint64_t datasize = quad->type & QUAD_DATASIZE_MASK;
+        if (datasize & QUAD_8_BIT) {
+            if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
+                postinsert_move(graph, &quad->dest, live_set, quad, node, vars, arena);
+            }
+        }
+    } else if (q == QUAD_CAST_TO_UINT8 || q == QUAD_CAST_TO_INT8) {
+        // Pass
+    } else if (q == QUAD_CAST_TO_BOOL || q == QUAD_MOVE) {
         // Pass?
     } else if (q == QUAD_LABEL || q == QUAD_JMP || q == QUAD_JMP_FALSE ||
                q == QUAD_JMP_TRUE) {
@@ -967,28 +989,105 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena,
         case QUAD_LABEL:
             emit_label(q->op1.label);
             break;
+        case QUAD_CAST_TO_UINT64:
         case QUAD_CAST_TO_INT64:
-            if (datatype == QUAD_SINT) {
-                if (datasize == QUAD_64_BIT) {
-                    if (!is_same(vars, q->op1.var, q->dest)) {
-                        emit_op1_dest_move(q, vars);
-                    }
+            if (datasize == QUAD_64_BIT && (datatype & (QUAD_SINT | QUAD_UINT))) {
+                if (!is_same(vars, q->op1.var, q->dest)) {
+                    emit_op1_dest_move(q, vars);
+                }
+                break;
+            }
+            assert(vars[q->dest].alloc_type == ALLOC_REG);
+            if (datasize & QUAD_32_BIT) {
+                if (datatype & QUAD_UINT) {
+                    emit_instr_name("mov");
+                    emit_var(&vars[q->dest], QUAD_UINT, QUAD_32_BIT, 0);
+                    emit_var(&vars[q->op1.var], QUAD_UINT, QUAD_32_BIT, 1);
+                    emit_instr_end();
+                    break;
+                } else if (datatype & QUAD_SINT) {
+                    emit_instr_name("movsxd");
+                    emit_var(&vars[q->dest], QUAD_SINT, QUAD_64_BIT, 0);
+                    emit_var(&vars[q->op1.var], QUAD_SINT, QUAD_32_BIT, 1);
+                    emit_instr_end();
                     break;
                 }
-                assert(false);
-            } else if (datatype == QUAD_UINT) {
-                if (datasize == QUAD_64_BIT) {
-                    if (!is_same(vars, q->op1.var, q->dest)) {
-                        emit_op1_dest_move(q, vars);
-                    }
-                    break;
+            } else if (datasize & (QUAD_16_BIT | QUAD_8_BIT)) {
+                if (datatype & (QUAD_UINT | QUAD_BOOL)) {
+                    emit_instr_name("movzx");
+                } else if (datatype & QUAD_SINT) {
+                    emit_instr_name("movsx");
+                } else {
+                    assert(false);
                 }
-                assert(false);
-            } else if (datatype == QUAD_BOOL) {
-                assert(false);
+                emit_var(&vars[q->dest], datatype, QUAD_64_BIT, 0);
+                emit_var(&vars[q->op1.var], datatype, datasize, 1);
+                emit_instr_end();
+                break;
+            }
+            assert(false);
+            break;
+        case QUAD_CAST_TO_UINT32:
+        case QUAD_CAST_TO_INT32:
+            if ((datasize & (QUAD_64_BIT | QUAD_32_BIT)) && (datatype & (QUAD_SINT | QUAD_UINT))) {
+                if (!is_same(vars, q->op1.var, q->dest)) {
+                    emit_instr_name("mov");
+                    emit_var(&vars[q->dest], datatype, QUAD_32_BIT, 0);
+                    emit_var(&vars[q->op1.var], datatype, QUAD_32_BIT, 1);
+                    emit_instr_end();
+                }
+                break;
+            }
+            assert(vars[q->dest].alloc_type == ALLOC_REG);
+            if (datasize & (QUAD_16_BIT | QUAD_8_BIT)) {
+                if (datatype & (QUAD_UINT | QUAD_BOOL)) {
+                    emit_instr_name("movzx");
+                } else if (datatype & QUAD_SINT) {
+                    emit_instr_name("movsx");
+                } else {
+                    assert(false);
+                }
+                emit_var(&vars[q->dest], datatype, QUAD_32_BIT, 0);
+                emit_var(&vars[q->op1.var], datatype, datasize, 1);
+                emit_instr_end();
+                break;
+            }
+            assert(false);
+            break;
+        case QUAD_CAST_TO_INT16:
+        case QUAD_CAST_TO_UINT16:
+            if ((datasize & (QUAD_64_BIT | QUAD_32_BIT | QUAD_16_BIT)) && 
+                (datatype & (QUAD_SINT | QUAD_UINT))) {
+                if (!is_same(vars, q->op1.var, q->dest)) {
+                    emit_instr_name("mov");
+                    emit_var(&vars[q->dest], datatype, QUAD_16_BIT, 0);
+                    emit_var(&vars[q->op1.var], datatype, QUAD_16_BIT, 1);
+                    emit_instr_end();
+                }
+                break;
+            }
+            assert(vars[q->dest].alloc_type == ALLOC_REG);
+            if (datatype & (QUAD_UINT | QUAD_BOOL)) {
+                emit_instr_name("movzx");
+            } else if (datatype & QUAD_SINT) {
+                emit_instr_name("movsx");
             } else {
                 assert(false);
             }
+            emit_var(&vars[q->dest], datatype, QUAD_16_BIT, 0);
+            emit_var(&vars[q->op1.var], datatype, datasize, 1);
+            emit_instr_end();
+            break;
+        case QUAD_CAST_TO_INT8:
+        case QUAD_CAST_TO_UINT8:
+            assert(datatype & (QUAD_SINT | QUAD_UINT | QUAD_BOOL));
+            if (!is_same(vars, q->op1.var, q->dest)) {
+                emit_instr_name("mov");
+                emit_var(&vars[q->dest], datatype, QUAD_8_BIT, 0);
+                emit_var(&vars[q->op1.var], datatype, QUAD_8_BIT, 1);
+                emit_instr_end();
+            }
+            break;
         case QUAD_JMP:
             emit_instr_name("jmp");
             emit_var_label(q->op1.label, 0);

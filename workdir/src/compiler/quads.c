@@ -102,10 +102,24 @@ uint64_t quad_datatype(Parser* parser, type_id type) {
     switch (type) {
     case TYPE_ID_UINT64:
         return QUAD_64_BIT | QUAD_UINT;
+    case TYPE_ID_UINT32:
+        return QUAD_32_BIT | QUAD_UINT;
+    case TYPE_ID_UINT16:
+        return QUAD_16_BIT | QUAD_UINT;
+    case TYPE_ID_UINT8:
+        return QUAD_8_BIT | QUAD_UINT;
     case TYPE_ID_INT64:
         return QUAD_64_BIT | QUAD_SINT;
+    case TYPE_ID_INT32:
+        return QUAD_32_BIT | QUAD_SINT;
+    case TYPE_ID_INT16:
+        return QUAD_16_BIT | QUAD_SINT;
+    case TYPE_ID_INT8:
+        return QUAD_8_BIT | QUAD_SINT;
     case TYPE_ID_FLOAT64:
         return QUAD_64_BIT | QUAD_FLOAT;
+    case TYPE_ID_FLOAT32:
+        return QUAD_32_BIT | QUAD_FLOAT;
     case TYPE_ID_BOOL:
         return QUAD_8_BIT | QUAD_BOOL;
     case TYPE_ID_CSTRING:
@@ -299,12 +313,15 @@ var_id quads_cast(Parser* parser, Expression* expr, QuadList* quads,
         q = QuadList_addquad(quads, QUAD_MOVE | datatype, dest);
     } else if (expr->type == TYPE_ID_BOOL) {
         q = QuadList_addquad(quads, QUAD_CAST_TO_BOOL | datatype, dest);
-    } else if (expr->type == TYPE_ID_FLOAT64) {
-        q = QuadList_addquad(quads, QUAD_CAST_TO_FLOAT64 | datatype, dest);
-    } else if (expr->type == TYPE_ID_UINT64) {
-        q = QuadList_addquad(quads, QUAD_CAST_TO_UINT64 | datatype, dest);
-    } else if (expr->type == TYPE_ID_INT64) {
-        q = QuadList_addquad(quads, QUAD_CAST_TO_INT64 | datatype, dest);
+    } else if (expr->type < TYPE_ID_NUMBER_COUNT) {
+        static const enum QuadType map[TYPE_ID_NUMBER_COUNT] = {
+            QUAD_CAST_TO_UINT64, QUAD_CAST_TO_UINT32,
+            QUAD_CAST_TO_UINT16, QUAD_CAST_TO_UINT8,
+            QUAD_CAST_TO_INT64, QUAD_CAST_TO_INT32,
+            QUAD_CAST_TO_INT16, QUAD_CAST_TO_INT8,
+            QUAD_CAST_TO_FLOAT64, QUAD_CAST_TO_FLOAT32
+        };
+        q = QuadList_addquad(quads, map[expr->type] | datatype, dest);
     } else {
         fatal_error(parser, PARSE_ERROR_INTERNAL, expr->line);
         return dest;
@@ -785,8 +802,15 @@ void Quad_update_live(const Quad* q, VarSet* live) {
     case QUAD_BOOL_NOT:
     case QUAD_BIT_NOT:
     case QUAD_CAST_TO_FLOAT64:
+    case QUAD_CAST_TO_FLOAT32:
     case QUAD_CAST_TO_INT64:
+    case QUAD_CAST_TO_INT32:
+    case QUAD_CAST_TO_INT16:
+    case QUAD_CAST_TO_INT8:
     case QUAD_CAST_TO_UINT64:
+    case QUAD_CAST_TO_UINT32:
+    case QUAD_CAST_TO_UINT16:
+    case QUAD_CAST_TO_UINT8:
     case QUAD_CAST_TO_BOOL:
     case QUAD_MOVE:
     case QUAD_DEREF:
@@ -873,8 +897,15 @@ void Quad_add_usages(const Quad* q, VarSet* use, VarSet* define, VarList* vars) 
     case QUAD_BOOL_NOT:
     case QUAD_BIT_NOT:
     case QUAD_CAST_TO_FLOAT64:
+    case QUAD_CAST_TO_FLOAT32:
     case QUAD_CAST_TO_INT64:
+    case QUAD_CAST_TO_INT32:
+    case QUAD_CAST_TO_INT16:
+    case QUAD_CAST_TO_INT8:
     case QUAD_CAST_TO_UINT64:
+    case QUAD_CAST_TO_UINT32:
+    case QUAD_CAST_TO_UINT16:
+    case QUAD_CAST_TO_UINT8:
     case QUAD_CAST_TO_BOOL:
     case QUAD_MOVE:
     case QUAD_ADDROF:
