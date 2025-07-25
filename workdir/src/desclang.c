@@ -1123,7 +1123,7 @@ void output_syntax_error(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE 
     _printf_h(h, "static SyntaxError get_syntax_error(int32_t state, Token t"
                  ", uint64_t start, uint64_t end) {\n");
     _printf_h(h, "    SyntaxError e = {t, start, end, NULL, 0};\n");
-    _printf_h(h, "    if (state < 0 || state > %u) {\n", graph->count);
+    _printf_h(h, "    if (state < 0 || state >= %u) {\n", graph->count);
     _printf_h(h, "        return e;\n");
     _printf_h(h, "    }\n");
     _printf_h(h, "    e.expected = expected[state];\n");

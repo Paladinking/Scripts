@@ -1,6 +1,6 @@
 #ifndef VARSET_H
 #define VARSET_H
-#include "parser.h"
+#include "tables.h"
 
 typedef struct VarSet {
     var_id max;

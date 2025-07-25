@@ -1,5 +1,5 @@
-#include "parser.h"
 #include "scan.h"
+#include "tokenizer.h"
 
 struct Tokenizer {
     Parser* parser;
@@ -7,8 +7,6 @@ struct Tokenizer {
     uint64_t start;
     uint64_t end;
 };
-
-void skip_statement(Parser* parser);
 
 Token scanner_peek_token(void* ctx, uint64_t* start, uint64_t* end) {
     struct Tokenizer* t = ctx;
@@ -20,9 +18,7 @@ Token scanner_peek_token(void* ctx, uint64_t* start, uint64_t* end) {
 void scanner_error(void *ctx, SyntaxError e) {
     struct Tokenizer *t = ctx;
     Parser* parser = t->parser;
-    LineInfo l;
-    l.start = e.start;
-    l.end = e.end;
+    LineInfo l = {e.start, e.end};
     add_error(parser, PARSE_ERROR_INVALID_CHAR, l);
 }
 
@@ -31,7 +27,7 @@ void scanner_consume_token(void* ctx, uint64_t* start, uint64_t* end) {
     *start = t->start;
     *end = t->end;
     Parser* p = t->parser;
-    skip_spaces(p);
+    parser_skip_spaces(p);
     if (p->pos >= p->input_size) {
         t->last_token.id = TOKEN_END;
         t->start = p->pos;
@@ -40,7 +36,7 @@ void scanner_consume_token(void* ctx, uint64_t* start, uint64_t* end) {
     }
     t->start = p->pos;
     if (p->indata[p->pos] == '{') {
-        skip_statement(p);
+        parser_skip_statement(p);
         if (p->pos >= p->input_size) {
             t->last_token.id = TOKEN_END;
             t->start = p->pos;
@@ -53,10 +49,11 @@ void scanner_consume_token(void* ctx, uint64_t* start, uint64_t* end) {
     }
     if (is_identifier_start(p->indata[p->pos])) {
         uint32_t len;
-        const uint8_t* ident = parse_name(p, &len);
+        const uint8_t* ident = parser_read_name(p, &len);
 
         t->end = p->pos;
-        name_id name = find_name(p, ident, len);
+        StrWithLength s = {ident, len};
+        name_id name = name_find(&p->name_table, s);
         // The scanner considers builtin names as literals
         if (name != NAME_ID_INVALID && name < NAME_ID_BUILTIN_COUNT) {
             t->last_token.literal = (const char*) ident;
@@ -93,9 +90,10 @@ FunctionDef* OnScanFunction(void* ctx, uint64_t start, uint64_t end, StrWithLeng
     func->line.start = start;
     func->line.end = end;
 
-    name_id id = insert_function_name(parser, name.str, name.len, func);
+    name_id id = name_function_insert(&parser->name_table, name, &parser->type_table,
+                                      func, &parser->arena);
     if (id == NAME_ID_INVALID) {
-        LineInfo l = {true, start, end};
+        LineInfo l = {start, end};
         add_error(parser, PARSE_ERROR_BAD_NAME, l);
         return false;
     }
@@ -109,9 +107,7 @@ int64_t OnScanProgram(void* ctx, uint64_t start, uint64_t end, int64_t i, Functi
 }
 
 void scan_program(Parser* parser, String* indata) {
-    parser->indata = (const uint8_t*)indata->buffer;
-    parser->pos = 0;
-    parser->input_size = indata->length;
+    parser_set_input(parser, indata);
 
     struct Tokenizer t;
     t.parser = parser;

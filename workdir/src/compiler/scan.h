@@ -1,6 +1,6 @@
 #include <stdint.h>
 #include <stdbool.h>
-#include "parser.h"
+#include "ast.h"
 
 enum TokenType {
     TOKEN_LITERAL, TOKEN_END, TOKEN_ERROR, TOKEN_IDENTIFIER, TOKEN_STATEMENTS

@@ -1,7 +1,7 @@
 #ifndef PARSER_FMT_H
 #define PARSER_FMT_H
 
-#include "parser.h"
+#include "ast.h"
 #include "quads.h"
 #include "dynamic_string.h"
 

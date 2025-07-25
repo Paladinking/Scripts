@@ -1,4 +1,5 @@
 #include "format.h"
+#include "tokenizer.h"
 
 const static char* quadnames[] = {
     "QDIV", "QMUL", "QMOD", "QSUB", "QADD",
@@ -177,7 +178,7 @@ void fmt_type(type_id type, const Parser* parser, String* dest) {
 }
 
 void fmt_errors(const Parser* parser, String* dest) {
-    ParseError* err = parser->first_error;
+    Error* err = parser->first_error;
     while (err != NULL) {
         if (err->kind == PARSE_ERROR_NONE) {
             continue;
@@ -228,7 +229,7 @@ void fmt_errors(const Parser* parser, String* dest) {
             String_extend(dest, "Type Error: Wrong number of arguments");
         }
         uint64_t row, col;
-        find_row_col(parser, err->pos.start, &row, &col);
+        parser_row_col(parser, err->pos.start, &row, &col);
         ++row;
         ++col;
         String_format_append(dest, " at row %llu collum %llu [%s:%llu]\n",

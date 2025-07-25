@@ -1,4 +1,4 @@
-include: "parser.h";
+include: "ast.h";
 
 atoms: kFn, kStruct, kIf, kWhile, kElse, kReturn, kTrue, kFalse,
        typeid, identifier, integer, real, string;
@@ -46,6 +46,7 @@ type: ?RET_TYPE = type_id;
 type: PARAM_LIST = ExpressionList*;
 type: ?PARAM_LIST = ExpressionList*;
 
+type: ARG = Arg*;
 type: ?ARG_LIST = ArgList*;
 type: ARG_LIST = ArgList*;
 
@@ -67,8 +68,9 @@ FUNCTION = FN_HEAD +
 ?ARG_LIST = '' :$ NULL |
             ARG_LIST :$ $0;
 
-ARG_LIST = typeid + identifier : OnArgList |
-           ARG_LIST + ',' + typeid + identifier : OnAddArgList;
+ARG_LIST = ARG : OnArgList |
+           ARG_LIST + ',' + ARG : OnAddArgList;
+ARG = typeid + identifier : OnArg;
 
 STATEMENTS = '{' + STATEMENT_LIST + '}' : OnStatements;
 

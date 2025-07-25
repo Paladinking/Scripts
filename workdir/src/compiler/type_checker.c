@@ -1,4 +1,5 @@
 #include "type_checker.h"
+#include "ast.h"
 #include <mem.h>
 
 static inline type_id require_number(Parser* parser, Expression* e) {
@@ -220,7 +221,7 @@ loop:
             fatal_error(parser, PARSE_ERROR_INTERNAL, e->line);
             break;
         case EXPRESSION_VARIABLE:
-            type = type_of(parser, e->variable.ix);
+            type = type_of(&parser->name_table, e->variable.ix);
             break;
         case EXPRESSION_LITERAL_INT:
             type = TYPE_ID_INT64;
