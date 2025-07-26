@@ -44,6 +44,12 @@ type_id typecheck_cast(Parser* parser, Expression* op) {
             return type;
         }
     }
+    if (parser->type_table.data[type].kind == TYPE_PTR &&
+        parser->type_table.data[t].kind == TYPE_ARRAY) {
+        if (parser->type_table.data[type].parent == parser->type_table.data[t].parent) {
+            return type;
+        }
+    }
     add_error(parser, TYPE_ERROR_ILLEGAL_CAST, op->line);
     return type;
 }

@@ -13,14 +13,15 @@ const static char* quadnames[] = {
     "QCAST_TO_INT16", "QCAST_TO_INT8",
     "QCAST_TO_UINT64", "QCAST_TO_UINT32",
     "QCAST_TO_UINT16", "QCAST_TO_UINT8",
-    "QCAST_TO_BOOL", "QPUT_ARG",  "QCALL", "QRETURN",
-    "QGET_RET", "QGET_ARG", "QMOVE", "QGET_ADDR", "QCALC_ADDR",
+    "QCAST_TO_BOOL", "QARRAY_TO_PTR", "QPUT_ARG",
+    "QCALL", "QRETURN", "QGET_RET", "QGET_ARG",
+    "QMOVE", "QGET_ARRAY_ADDR", "QCALC_ARRAY_ADDR",
     "QSET_ADDR", "QCREATE", "QADDROF", "QDEREF"
 };
 
 void fmt_quad(const Quad* quad, String* dest) {
     enum QuadType type = quad->type & QUAD_TYPE_MASK;
-    if (type >= 0 && type < 48) {
+    if (type >= 0 && type < 49) {
         String_extend(dest, quadnames[type]);
     } else {
         String_extend(dest, "QUNKOWN");
@@ -46,8 +47,8 @@ void fmt_quad(const Quad* quad, String* dest) {
     case QUAD_BIT_AND:
     case QUAD_BIT_OR:
     case QUAD_BIT_XOR:
-    case QUAD_GET_ADDR:
-    case QUAD_CALC_ADDR:
+    case QUAD_GET_ARRAY_ADDR:
+    case QUAD_CALC_ARRAY_ADDR:
         String_format_append(dest, "<%llu> <%llu> -> <%llu>", quad->op1.var, quad->op2,
                              quad->dest);
         break;
@@ -92,6 +93,7 @@ void fmt_quad(const Quad* quad, String* dest) {
     case QUAD_CAST_TO_UINT16:
     case QUAD_CAST_TO_UINT8:
     case QUAD_CAST_TO_BOOL:
+    case QUAD_ARRAY_TO_PTR:
     case QUAD_MOVE:
     case QUAD_ADDROF:
     case QUAD_DEREF:

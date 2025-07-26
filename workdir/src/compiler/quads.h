@@ -79,6 +79,8 @@ enum QuadType {
     QUAD_CAST_TO_UINT16, // <val>, x -> <dest>
     QUAD_CAST_TO_UINT8, // <val>, x -> <dest>
     QUAD_CAST_TO_BOOL, // <val>, x -> <dest>
+
+    QUAD_ARRAY_TO_PTR, // <array>, x -> <dest>
     
     QUAD_PUT_ARG, // [argNr], <var> -> x
     QUAD_CALL, // $func, x -> x
@@ -87,8 +89,8 @@ enum QuadType {
     QUAD_GET_ARG, // [argNr], x -> <dest>
 
     QUAD_MOVE, // <val>, x -> <dest>
-    QUAD_GET_ADDR, // <ptr>, <offset> -> <dest>
-    QUAD_CALC_ADDR, // <ptr>, <offset> -> <dest>
+    QUAD_GET_ARRAY_ADDR, // <array>, <offset> -> <val>
+    QUAD_CALC_ARRAY_ADDR, // <array>, <offset> -> <ptr>
     QUAD_SET_ADDR, // <ptr>, <data> -> x
 
     QUAD_CREATE, // [val], x -> <dest>
