@@ -129,10 +129,48 @@ type_id typecheck_unop(Parser* parser, Expression* op) {
 }
 
 type_id typecheck_binop(Parser* parser, Expression* op) {
-    type_id a, b;
+    type_id a = op->binop.lhs->type; 
+    type_id b = op->binop.rhs->type;
     switch(op->binop.op) {
-    case BINOP_SUB:
     case BINOP_ADD:
+        if (parser->type_table.data[a].kind == TYPE_PTR) {
+            b = require_interger(parser, op->binop.rhs, true, true);
+            if (b != TYPE_ID_INT64 && b != TYPE_ID_UINT64) {
+                cast_to(parser, op->binop.rhs, TYPE_ID_INT64);
+            }
+            return a;
+        } else if (parser->type_table.data[b].kind == TYPE_PTR) {
+            a = require_interger(parser, op->binop.lhs, true, true);
+            if (a != TYPE_ID_INT64 && a != TYPE_ID_UINT64) {
+                cast_to(parser, op->binop.lhs, TYPE_ID_INT64);
+            }
+            Expression* tmp = op->binop.lhs;
+            op->binop.lhs = op->binop.rhs;
+            op->binop.rhs = tmp;
+            return b;
+        } else {
+            a = require_number(parser, op->binop.lhs);
+            b = require_number(parser, op->binop.rhs);
+            return merge_numbers(parser, a, b, op->binop.lhs, op->binop.rhs);
+        }
+    case BINOP_SUB:
+        if (parser->type_table.data[a].kind == TYPE_PTR) {
+            if (parser->type_table.data[b].kind == TYPE_PTR) {
+                if (parser->type_table.data[a].parent != parser->type_table.data[b].parent) {
+                    add_error(parser, TYPE_ERROR_ILLEGAL_TYPE, op->binop.rhs->line);
+                }
+                return TYPE_ID_UINT64;
+            }
+            b = require_interger(parser, op->binop.rhs, true, true);
+            if (b != TYPE_ID_INT64 && b != TYPE_ID_UINT64) {
+                cast_to(parser, op->binop.rhs, TYPE_ID_INT64);
+            }
+            return a;
+        } else {
+            a = require_number(parser, op->binop.lhs);
+            b = require_number(parser, op->binop.rhs);
+            return merge_numbers(parser, a, b, op->binop.lhs, op->binop.rhs);
+        }
     case BINOP_MUL:
     case BINOP_DIV:
         a = require_number(parser, op->binop.lhs);
@@ -258,8 +296,8 @@ loop:
         case EXPRESSION_LITERAL_FLOAT:
             type = TYPE_ID_FLOAT64;
             break;
-        case EXPRESSION_LITERAL_STRING:
-            type = TYPE_ID_CSTRING;
+        case EXPRESSION_STRING:
+            type = type_ptr_of(&parser->type_table, TYPE_ID_UINT8);;
             break;
         case EXPRESSION_CAST:
             stack[stack_size++] = (struct Node){e, 0};

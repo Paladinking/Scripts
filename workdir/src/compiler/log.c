@@ -126,12 +126,14 @@ void Log_LogAtLevel(enum LogLevel level, const char* file, int32_t line, const c
     if (fm_size < 0) {
         fm_size = 2047 - size - 2;
         if (level >= LOG_LEVEL_WARNING) {
-            outputUtf8_e(args_buf + size + 4, fm_size);
+            args_buf[size + 4 + fm_size] = '\n';
+            outputUtf8_e(args_buf + size + 4, fm_size + 1);
         }
         size = 2047;
     } else {
         if (level >= LOG_LEVEL_WARNING) {
-            outputUtf8_e(args_buf + size + 4, fm_size);
+            args_buf[size + 4 + fm_size] = '\n';
+            outputUtf8_e(args_buf + size + 4, fm_size + 1);
         }
         size = size + fm_size + 2;
     }
@@ -142,9 +144,9 @@ void Log_LogAtLevel(enum LogLevel level, const char* file, int32_t line, const c
     args_buf[1] = 0;
     args_buf[2] = (s >> 8) & 0xff;
     args_buf[3] = s & 0xff;
-    args_buf[4 + s - 2] = '"';
-    args_buf[4 + s - 1] = '}';
-    args_buf[4 + s] = '\0';
+    args_buf[4 + size - 2] = '"';
+    args_buf[4 + size - 1] = '}';
+    args_buf[4 + size] = '\0';
 
     AcquireSRWLockExclusive(&log_lock);
 

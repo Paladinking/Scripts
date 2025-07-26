@@ -213,6 +213,7 @@ bool is_standard_binop(uint64_t type) {
         return (type & QUAD_DATATYPE_MASK) == QUAD_SINT;
     case QUAD_SUB:
     case QUAD_ADD:
+        return !(type & QUAD_SCALE_MASK);
     case QUAD_BIT_AND:
     case QUAD_BIT_OR:
     case QUAD_BIT_XOR:
@@ -291,6 +292,7 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
     assert(datatype != QUAD_FLOAT);
 
     if (is_standard_binop(quad->type)) {
+        assert(!(quad->type & QUAD_SCALE_MASK));
         if (vars->data[quad->dest].alloc_type == ALLOC_MEM &&
             vars->data[quad->op2].alloc_type == ALLOC_MEM) {
             // Two memory ops not allowed, insert move
@@ -301,8 +303,25 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
             ConflictGraph_add_edge(graph, quad->dest + graph->reg_count,
                     quad->op2 + graph->reg_count);
         }
+    } else if (q == QUAD_ADD) {
+        assert(quad->type & QUAD_SCALE_MASK);
+        if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
+            // Two memory ops not allowed, insert move
+            postinsert_move(graph, &quad->dest, live_set, quad, node, vars, arena);
+        }
+        if (vars->data[quad->op2].alloc_type == ALLOC_MEM) {
+            // Two memory ops not allowed, insert move
+            preinsert_move(graph, &quad->op2, live_set, quad, node, vars, arena);
+        }
+
+        if (quad->dest != quad->op2 && quad->dest != quad->op1.var) {
+            ConflictGraph_add_edge(graph, quad->dest + graph->reg_count,
+                    quad->op2 + graph->reg_count);
+        }
     } else if (q == QUAD_BOOL_NOT) {
         // cmp + setz
+    } else if (q == QUAD_NEGATE) {
+        // neg
     } else if (q == QUAD_SET_ADDR) {
         if (vars->data[quad->op1.var].alloc_type == ALLOC_MEM) {
             preinsert_move(graph, &quad->op1.var, live_set, quad, node, vars, arena);
@@ -364,15 +383,16 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
              allow_op1_imm(next) && quad->next_quad->op1.var == quad->dest) {
             if (vars->data[quad->dest].alloc_type == ALLOC_NONE) {
                 vars->data[quad->dest].alloc_type = ALLOC_IMM;
-                assert((next & QUAD_DATATYPE_MASK) == datatype);
-                if (datatype == QUAD_SINT) {
+                uint64_t dt = (next & QUAD_DATATYPE_MASK);
+                if (dt == QUAD_SINT) {
                     LOG_DEBUG("Created imm singed %lld", quad->op1.sint64);
                     vars->data[quad->dest].imm.int64 = quad->op1.sint64;
-                } else if (datatype == QUAD_UINT) {
+                } else if (dt == QUAD_UINT) {
                     LOG_DEBUG("Created imm unsinged %llu, %llu", quad->op1.uint64,
                                quad->dest);
                     vars->data[quad->dest].imm.uint64 = quad->op1.uint64;
                 } else {
+                    assert(dt == QUAD_BOOL);
                     LOG_DEBUG("Created imm boolean %u", quad->op1.uint64);
                     vars->data[quad->dest].imm.boolean = quad->op1.uint64 != 0;
                 }
@@ -635,7 +655,19 @@ void emit_var_deref(uint32_t base_reg, uint64_t datasize, uint32_t ix) {
 void emit_var(VarData* var, uint64_t datatype, uint64_t datasize, uint32_t ix) {
     outputsep(ix);
     if (var->alloc_type == ALLOC_MEM) {
-        _printf("%s [rsp + %lu]", sizestr(datasize), var->memory.offset);
+        if (var->kind == VAR_LOCAL || var->kind == VAR_TEMP || var->kind == VAR_ARRAY ||
+            var->kind == VAR_CALLARG) {
+            _printf("%s [rsp + %lu]", sizestr(datasize), var->memory.offset);
+        } else if (var->kind == VAR_ARRAY_GLOBAL || var->kind == VAR_GLOBAL) {
+            if (var->name == NAME_ID_INVALID) {
+                _printf("%s [__literal_string_%u]", sizestr(datasize), 
+                        var->memory.offset);
+            } else {
+                assert(false); // TODO
+            }
+        } else {
+            assert(false);
+        }
     } else if (var->alloc_type == ALLOC_REG) {
         _printf("%s", regname(var->reg, datasize));
     } else if (var->alloc_type == ALLOC_IMM) {
@@ -1101,8 +1133,8 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena,
                    vars[q->op1.var].kind == VAR_ARRAY_GLOBAL);
             assert(vars[q->dest].alloc_type == ALLOC_REG);
             emit_instr_name("lea");
-            emit_var(&vars[q->dest], QUAD_PTR, QUAD_PTR_SIZE, 0);
-            emit_var(&vars[q->op1.var], QUAD_PTR, QUAD_PTR_SIZE, 1);
+            emit_var(&vars[q->dest], QUAD_UINT, QUAD_PTR_SIZE, 0);
+            emit_var(&vars[q->op1.var], datatype, datasize, 1);
             emit_instr_end();
             break;
         case QUAD_JMP:
@@ -1114,7 +1146,25 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena,
             emit_binop("sub", q, vars);
             break;
         case QUAD_ADD:
-            emit_binop("add", q, vars);
+            if (q->type & QUAD_SCALE_MASK) {
+                assert(vars[q->dest].alloc_type == ALLOC_REG);
+                assert(vars[q->op2].alloc_type == ALLOC_REG);
+                if (vars[q->op1.var].alloc_type != ALLOC_REG) {
+                    emit_op1_dest_move(q, vars);
+                    emit_instr_name("lea");
+                    emit_var(&vars[q->dest], datatype, datasize, 0);
+                    emit_var_scaled_ix(q->type & QUAD_SCALE_MASK, vars[q->dest].reg, 
+                                       vars[q->op2].reg, datasize, datasize, 1);
+                } else {
+                    emit_instr_name("lea");
+                    emit_var(&vars[q->dest], datatype, datasize, 0);
+                    emit_var_scaled_ix(q->type & QUAD_SCALE_MASK, vars[q->op1.var].reg, 
+                                       vars[q->op2].reg, datasize, datasize, 1);
+                }
+                emit_instr_end();
+            } else {
+                emit_binop("add", q, vars);
+            }
             break;
         case QUAD_BIT_AND:
             emit_binop("and", q, vars);
@@ -1166,8 +1216,8 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena,
             assert(vars[q->op1.var].kind == VAR_ARRAY ||
                    vars[q->op1.var].kind == VAR_ARRAY_GLOBAL);
             emit_instr_name("lea");
-            emit_var(&vars[q->dest], QUAD_PTR, QUAD_PTR_SIZE, 0);
-            emit_var(&vars[q->op1.var], QUAD_PTR, QUAD_PTR_SIZE, 1);
+            emit_var(&vars[q->dest], QUAD_UINT, QUAD_PTR_SIZE, 0);
+            emit_var(&vars[q->op1.var], QUAD_UINT, QUAD_PTR_SIZE, 1);
             emit_instr_end();
             if (type == QUAD_GET_ARRAY_ADDR) {
                 emit_instr_name("mov");
@@ -1204,6 +1254,14 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena,
             emit_var_deref(vars[q->op1.var].reg, datasize, 1);
             emit_instr_end();
             break;
+        case QUAD_NEGATE:
+            if (!is_same(vars, q->op1.var, q->dest)) {
+                emit_op1_dest_move(q, vars);
+            }
+            emit_instr_name("neg");
+            emit_var(&vars[q->dest], datatype, datasize, 0);
+            emit_instr_end();
+            break;
         default:
             String_create(&out);
             fmt_quad(q, &out);
@@ -1229,9 +1287,29 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena,
     emit_instr_end();
 }
 
-void Backend_generate_asm(NameTable *name_table, FunctionTable *func_table, Arena* arena) {
+void Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
+                          StringLiteral* literals, Arena* arena) {
     _printf("format PE64 console\n");
     _printf("entry main\n\n");
+
+    _printf("section '.rdata' data readable\n");
+
+    StringLiteral* s = literals;
+    uint64_t i = 0;
+    while (s != NULL) {
+        var_id v = s->var;
+        _printf("__literal_string_%llu: db ", i);
+        for (uint64_t ix = 0; ix < s->len; ++ix) {
+            _printf("%u, ", s->bytes[ix]);
+        }
+        _printf("0\n");
+        for (uint64_t ix = 0; ix < func_table->size; ++ix) {
+            func_table->data[ix]->vars.data[v].memory.offset = i;
+        }
+        ++i;
+        s = s->next;
+    }
+    _printf("\nsection '.text' code readable executable\n");
 
     for (uint64_t ix = 0; ix < func_table->size; ++ix) {
         Backend_generate_fn(func_table->data[ix], arena, 

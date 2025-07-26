@@ -457,7 +457,8 @@ void Generate_function(Quads* quads, Quad* start, Quad* end,
     for (var_id id = 0; id < vars->size; ++id) {
         if (vars->data[id].kind == VAR_FUNCTION ||
             vars->data[id].kind == VAR_ARRAY ||
-            vars->data[id].kind == VAR_GLOBAL) {
+            vars->data[id].kind == VAR_GLOBAL ||
+            vars->data[id].kind == VAR_ARRAY_GLOBAL) {
             vars->data[id].alloc_type = ALLOC_MEM;
         }
     }
@@ -621,7 +622,7 @@ void Generate_function(Quads* quads, Quad* start, Quad* end,
 }
 
 void Generate_code(Quads* quads, FunctionTable* functions, NameTable* name_table,
-                   Arena* arena) {
+                   StringLiteral* literals, Arena* arena) {
     uint64_t* label_map = Mem_alloc(quads->label_count * sizeof(uint64_t));
     if (label_map == NULL) {
         out_of_memory(NULL);
@@ -639,6 +640,6 @@ void Generate_code(Quads* quads, FunctionTable* functions, NameTable* name_table
         Generate_function(quads, start, end, label_map,
                           &functions->data[ix]->vars, arena);
     }
-    Backend_generate_asm(name_table, functions, arena);
+    Backend_generate_asm(name_table, functions, literals, arena);
     Mem_free(label_map);
 }

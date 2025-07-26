@@ -33,10 +33,9 @@ typedef uint64_t type_id;
 
 #define TYPE_ID_NUMBER_COUNT 10
 
-#define TYPE_ID_CSTRING 10
-#define TYPE_ID_NONE 11
-#define TYPE_ID_BOOL 12
-#define TYPE_ID_BUILTIN_COUNT 13
+#define TYPE_ID_NONE 10
+#define TYPE_ID_BOOL 11
+#define TYPE_ID_BUILTIN_COUNT 12
 
 // Index into var_table (part of quads)
 typedef uint64_t var_id;
@@ -222,6 +221,13 @@ typedef struct AllocationInfo {
     uint64_t allignment;
 } AllocInfo;
 
+typedef struct StringLiteral {
+    const uint8_t* bytes;
+    uint32_t len;
+    var_id var;
+    struct StringLiteral* next;
+} StringLiteral;
+
 typedef struct Parser {
     FunctionTable function_table;
     TypeTable type_table;
@@ -233,6 +239,9 @@ typedef struct Parser {
     uint64_t pos;
 
     Arena arena;
+
+    StringLiteral* first_str;
+    StringLiteral* last_str;
 
     Error* first_error;
     Error* last_error;

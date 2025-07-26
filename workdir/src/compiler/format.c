@@ -13,7 +13,7 @@ const static char* quadnames[] = {
     "QCAST_TO_INT16", "QCAST_TO_INT8",
     "QCAST_TO_UINT64", "QCAST_TO_UINT32",
     "QCAST_TO_UINT16", "QCAST_TO_UINT8",
-    "QCAST_TO_BOOL", "QARRAY_TO_PTR", "QPUT_ARG",
+    "QCAST_TO_BOOL", "QARRAY_TO_PTR", "QPUT_ARG", 
     "QCALL", "QRETURN", "QGET_RET", "QGET_ARG",
     "QMOVE", "QGET_ARRAY_ADDR", "QCALC_ARRAY_ADDR",
     "QSET_ADDR", "QCREATE", "QADDROF", "QDEREF"
@@ -21,7 +21,7 @@ const static char* quadnames[] = {
 
 void fmt_quad(const Quad* quad, String* dest) {
     enum QuadType type = quad->type & QUAD_TYPE_MASK;
-    if (type >= 0 && type < 49) {
+    if (type >= 0 && type < QUAD_COUNT) {
         String_extend(dest, quadnames[type]);
     } else {
         String_extend(dest, "QUNKOWN");
@@ -108,8 +108,6 @@ void fmt_quad(const Quad* quad, String* dest) {
         String_extend(dest, " FLOAT");
     } else if (quad->type & QUAD_BOOL) {
         String_extend(dest, " BOOL");
-    } else if (quad->type & QUAD_PTR) {
-        String_extend(dest, " PTR");
     }
     if (quad->type & QUAD_64_BIT) {
         String_extend(dest, " 64");
@@ -444,11 +442,11 @@ void fmt_expression(const Expression* expr, const Parser* parser, String* dest) 
             fmt_double(expr->literal.float64, dest);
             String_append(dest, '}');
             return;
-        case EXPRESSION_LITERAL_STRING:
+        case EXPRESSION_STRING:
             WString s;
             String_append(dest, '"');
-            String_append_count(dest, (const char*)expr->literal.string.bytes,
-                                      expr->literal.string.len);
+            String_append_count(dest, (const char*)expr->string.str.bytes,
+                                      expr->string.str.len);
             String_append(dest, '"');
             return;
         case EXPRESSION_VARIABLE:
