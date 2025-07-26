@@ -113,6 +113,8 @@ uint64_t move_type(var_id var, VarList* vars) {
     // TODO: this is not good, should read type_table instead
     if (vars->data[var].type == TYPE_ID_FLOAT64) {
         return QUAD_64_BIT | QUAD_FLOAT;
+    } else if (vars->data[var].type == TYPE_ID_FLOAT32) {
+        return QUAD_32_BIT | QUAD_FLOAT;
     }
     if (vars->data[var].byte_size == 1) {
         return QUAD_8_BIT | QUAD_UINT;
@@ -308,7 +310,7 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
         if (vars->data[quad->op2].alloc_type == ALLOC_MEM) {
             preinsert_move(graph, &quad->op2, live_set, quad, node, vars, arena);
         }
-    } else if (q == QUAD_CALC_ADDR || q == QUAD_GET_ADDR) {
+    } else if (q == QUAD_CALC_ARRAY_ADDR || q == QUAD_GET_ARRAY_ADDR) {
         if (vars->data[quad->op2].alloc_type == ALLOC_MEM) {
             preinsert_move(graph, &quad->op2, live_set, quad, node, vars, arena);
         }
@@ -508,6 +510,12 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
             if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
                 postinsert_move(graph, &quad->dest, live_set, quad, node, vars, arena);
             }
+        }
+    } else if (q == QUAD_ARRAY_TO_PTR) {
+        assert(vars->data[quad->op1.var].kind == VAR_ARRAY ||
+               vars->data[quad->op1.var].kind == VAR_ARRAY_GLOBAL);
+        if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
+            postinsert_move(graph, &quad->dest, live_set, quad, node, vars, arena);
         }
     } else if (q == QUAD_CAST_TO_UINT8 || q == QUAD_CAST_TO_INT8) {
         // Pass
@@ -1088,6 +1096,15 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena,
                 emit_instr_end();
             }
             break;
+        case QUAD_ARRAY_TO_PTR:
+            assert(vars[q->op1.var].kind == VAR_ARRAY ||
+                   vars[q->op1.var].kind == VAR_ARRAY_GLOBAL);
+            assert(vars[q->dest].alloc_type == ALLOC_REG);
+            emit_instr_name("lea");
+            emit_var(&vars[q->dest], QUAD_PTR, QUAD_PTR_SIZE, 0);
+            emit_var(&vars[q->op1.var], QUAD_PTR, QUAD_PTR_SIZE, 1);
+            emit_instr_end();
+            break;
         case QUAD_JMP:
             emit_instr_name("jmp");
             emit_var_label(q->op1.label, 0);
@@ -1142,22 +1159,17 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena,
             emit_var_endlabel(name, name_len, 0);
             emit_instr_end();
             break;
-        case QUAD_GET_ADDR:
-        case QUAD_CALC_ADDR: {
+        case QUAD_GET_ARRAY_ADDR:
+        case QUAD_CALC_ARRAY_ADDR: {
             assert(vars[q->op2].alloc_type == ALLOC_REG);
             assert(vars[q->dest].alloc_type == ALLOC_REG);
-            if (vars[q->op1.var].kind == VAR_ARRAY ||
-                vars[q->op1.var].kind == VAR_ARRAY_GLOBAL) {
-                emit_instr_name("lea");
-                emit_var(&vars[q->dest], QUAD_PTR, QUAD_PTR_SIZE, 0);
-                emit_var(&vars[q->op1.var], QUAD_PTR, QUAD_PTR_SIZE, 1);
-                emit_instr_end();
-            } else {
-                if (!is_same(vars, q->op1.var, q->dest)) {
-                    emit_op1_dest_move(q, vars);
-                }
-            }
-            if (type == QUAD_GET_ADDR) {
+            assert(vars[q->op1.var].kind == VAR_ARRAY ||
+                   vars[q->op1.var].kind == VAR_ARRAY_GLOBAL);
+            emit_instr_name("lea");
+            emit_var(&vars[q->dest], QUAD_PTR, QUAD_PTR_SIZE, 0);
+            emit_var(&vars[q->op1.var], QUAD_PTR, QUAD_PTR_SIZE, 1);
+            emit_instr_end();
+            if (type == QUAD_GET_ARRAY_ADDR) {
                 emit_instr_name("mov");
             } else {
                 emit_instr_name("lea");

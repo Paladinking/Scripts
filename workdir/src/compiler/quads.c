@@ -322,6 +322,8 @@ var_id quads_cast(Parser* parser, Expression* expr, QuadList* quads,
             QUAD_CAST_TO_FLOAT64, QUAD_CAST_TO_FLOAT32
         };
         q = QuadList_addquad(quads, map[expr->type] | datatype, dest);
+    } else if (parser->type_table.data[expr->type].kind == TYPE_PTR) {
+        q = QuadList_addquad(quads, QUAD_ARRAY_TO_PTR | datatype, dest);
     } else {
         fatal_error(parser, PARSE_ERROR_INTERNAL, expr->line);
         return dest;
@@ -342,9 +344,9 @@ var_id quads_arrayindex(Parser* parser, Expression* expr, QuadList* quads,
     uint64_t datatype = quad_datatype(parser, expr->type);
     if (expr->array_index.get_addr) {
         datatype |= quad_scale(parser, parser->type_table.data[expr->type].parent) |
-                    QUAD_CALC_ADDR;
+                    QUAD_CALC_ARRAY_ADDR;
     } else {
-        datatype |= quad_scale(parser, expr->type) | QUAD_GET_ADDR;
+        datatype |= quad_scale(parser, expr->type) | QUAD_GET_ARRAY_ADDR;
     }
 
     Quad* q = QuadList_addquad(quads, datatype, dest);
@@ -706,7 +708,7 @@ void quads_statements(Parser* parser, QuadList* quads, Statement** statements,
                 rhs->var = a; // Shoud be lhs ??? Probably does not matter
                 uint64_t datatype = QUAD_PTR | QUAD_PTR_SIZE; 
                 datatype |= quad_scale(parser, rhs_type);
-                Quad* q = QuadList_addquad(quads, QUAD_CALC_ADDR | datatype, a);
+                Quad* q = QuadList_addquad(quads, QUAD_CALC_ARRAY_ADDR | datatype, a);
                 q->op1.var = arr;
                 q->op2 = i;
                 datatype = quad_datatype(parser, rhs_type);
@@ -768,8 +770,8 @@ void Quad_update_live(const Quad* q, VarSet* live) {
     case QUAD_BIT_AND:
     case QUAD_BIT_OR:
     case QUAD_BIT_XOR:
-    case QUAD_GET_ADDR:
-    case QUAD_CALC_ADDR:
+    case QUAD_GET_ARRAY_ADDR:
+    case QUAD_CALC_ARRAY_ADDR:
         VarSet_clear(live, q->dest);
         VarSet_set(live, q->op1.var);
         VarSet_set(live, q->op2);
@@ -812,6 +814,7 @@ void Quad_update_live(const Quad* q, VarSet* live) {
     case QUAD_CAST_TO_UINT16:
     case QUAD_CAST_TO_UINT8:
     case QUAD_CAST_TO_BOOL:
+    case QUAD_ARRAY_TO_PTR:
     case QUAD_MOVE:
     case QUAD_DEREF:
     case QUAD_ADDROF:
@@ -842,8 +845,8 @@ void Quad_add_usages(const Quad* q, VarSet* use, VarSet* define, VarList* vars) 
     case QUAD_BIT_AND:
     case QUAD_BIT_OR:
     case QUAD_BIT_XOR:
-    case QUAD_GET_ADDR:
-    case QUAD_CALC_ADDR:
+    case QUAD_GET_ARRAY_ADDR:
+    case QUAD_CALC_ARRAY_ADDR:
         ++vars->data[q->op1.var].reads;
         ++vars->data[q->op2].reads;
         ++vars->data[q->dest].writes;
@@ -907,6 +910,7 @@ void Quad_add_usages(const Quad* q, VarSet* use, VarSet* define, VarList* vars) 
     case QUAD_CAST_TO_UINT16:
     case QUAD_CAST_TO_UINT8:
     case QUAD_CAST_TO_BOOL:
+    case QUAD_ARRAY_TO_PTR:
     case QUAD_MOVE:
     case QUAD_ADDROF:
     case QUAD_DEREF:

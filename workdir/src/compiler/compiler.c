@@ -20,7 +20,10 @@ void dump_errors(Parser* parser) {
 }
 
 int compiler(char** argv, int argc) {
-    Log_Init();
+    if (argc < 2) {
+        oprintf_e("Missing argument\n");
+        return 1;
+    }
 
     Parser parser;
     if (!Parser_create(&parser)) {
@@ -29,8 +32,8 @@ int compiler(char** argv, int argc) {
     }
 
     String s;
-    if (!read_text_file(&s, oL("src\\compiler\\program.txt"))) {
-        _printf_e("Failed to read program.txt\n");
+    if (!read_text_file(&s, argv[1])) {
+        _printf_e("Failed to read '%s'\n", argv[1]);
         return 1;
     }
 
@@ -41,7 +44,6 @@ int compiler(char** argv, int argc) {
 
     if (parser.first_error != NULL) {
         dump_errors(&parser);
-        Log_Shutdown();
         return 1;
     }
 
@@ -58,7 +60,6 @@ int compiler(char** argv, int argc) {
     TypeChecker_run(&parser);
     if (parser.first_error != NULL) {
         dump_errors(&parser);
-        Log_Shutdown();
         return 1;
     }
 
@@ -66,7 +67,7 @@ int compiler(char** argv, int argc) {
         String s;
         if (String_create(&s)) {
             fmt_functiondef(parser.function_table.data[i], &parser, &s);
-            outputUtf8(s.buffer, s.length);
+            //outputUtf8(s.buffer, s.length);
             String_free(&s);
         }
     }
@@ -87,8 +88,6 @@ int compiler(char** argv, int argc) {
 
     Generate_code(&q, &parser.function_table, &parser.name_table, &parser.arena);
 
-    Log_Shutdown();
-
     return 0;
 }
 
@@ -104,7 +103,9 @@ int main() {
     int argc;
     char** argv = parse_command_line(argbuf.buffer, &argc);
     String_free(&argbuf);
+    Log_Init();
     int status = compiler(argv, argc);
+    Log_Shutdown();
     Mem_free(argv);
 
     ExitProcess(status);
@@ -112,6 +113,9 @@ int main() {
 
 #else
 int main(char** argv, int argc) {
-    return compiler(argv, argc);
+    Log_Init();
+    int status = compiler(argv, argc);
+    Log_Shutdown();
+    return status;
 }
 #endif
