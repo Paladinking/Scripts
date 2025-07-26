@@ -83,6 +83,13 @@ var_id QuadList_addvar(QuadList* quads, name_id name, type_id type, Parser* pars
     return id;
 }
 
+void QuadList_add_string(QuadList* quads, Parser* parser, StringLiteral* literal) {
+    type_id type = type_array_of(&parser->type_table, TYPE_ID_UINT8, literal->len + 1);
+    var_id var = QuadList_addvar(quads, NAME_ID_INVALID, type, parser);
+    quads->vars.data[var].kind = VAR_ARRAY_GLOBAL;
+    literal->var = var;
+}
+
 label_id QuadList_addlabel(QuadList* quads) {
     quads->label_count += 1;
     return quads->label_count - 1;
@@ -96,7 +103,7 @@ VarData* QuadList_getvar(QuadList* quads, var_id id) {
 uint64_t quad_datatype(Parser* parser, type_id type) {
     if (parser->type_table.data[type].kind == TYPE_ARRAY ||
         parser->type_table.data[type].kind == TYPE_PTR) {
-        return QUAD_PTR | QUAD_PTR_SIZE;
+        return QUAD_UINT | QUAD_PTR_SIZE;
     }
     uint64_t mask;
     switch (type) {
@@ -122,8 +129,6 @@ uint64_t quad_datatype(Parser* parser, type_id type) {
         return QUAD_32_BIT | QUAD_FLOAT;
     case TYPE_ID_BOOL:
         return QUAD_8_BIT | QUAD_BOOL;
-    case TYPE_ID_CSTRING:
-        return QUAD_PTR_SIZE | QUAD_PTR;
     case TYPE_ID_NONE:
         return QUAD_0_BIT | QUAD_UINT;
     }
@@ -219,6 +224,17 @@ var_id quads_unop(Parser* parser, Expression* expr, QuadList* quads,
     return dest;
 }
 
+bool get_power_of_two(uint64_t size, uint64_t* power) {
+    if (size == 0 || size >= 0x7fffffffffffffff) {
+        return false;
+    }
+    *power = 1;
+    while (size < *power) {
+        *power = (*power) * 2;
+    }
+    return *power == size;
+}
+
 var_id quads_binop(Parser* parser, Expression* expr, QuadList* quads,
                    var_id dest, label_id label) {
     if (dest == VAR_ID_INVALID) {
@@ -235,8 +251,12 @@ var_id quads_binop(Parser* parser, Expression* expr, QuadList* quads,
     assert(label == LABEL_ID_INVALID);
     var_id lhs = expr->binop.lhs->var;
     var_id rhs = expr->binop.rhs->var;
-    assert(QuadList_getvar(quads, lhs)->type == QuadList_getvar(quads, rhs)->type);
-    uint64_t quad = quad_datatype(parser, QuadList_getvar(quads, lhs)->type);
+    type_id ltype = QuadList_getvar(quads, lhs)->type;
+    type_id rtype = QuadList_getvar(quads, rhs)->type;
+
+    assert(parser->type_table.data[rtype].kind != TYPE_PTR);
+
+    uint64_t quad = quad_datatype(parser, ltype);
 
     switch (expr->binop.op) {
     case BINOP_DIV:
@@ -249,9 +269,93 @@ var_id quads_binop(Parser* parser, Expression* expr, QuadList* quads,
         quad |= QUAD_MOD;
         break;
     case BINOP_SUB:
-        quad |= QUAD_SUB;
+        if (parser->type_table.data[ltype].kind == TYPE_PTR) {
+            // TODO: UINT or SINT ????
+            type_id parent = parser->type_table.data[ltype].parent;
+            uint64_t size = type_allocation(&parser->type_table, parent).size;
+            if (parser->type_table.data[rtype].kind == TYPE_PTR && size != 1) {
+                var_id tmp = QuadList_addvar(quads, NAME_ID_INVALID,
+                                             expr->type, parser);
+                Quad* q = QuadList_addquad(quads, quad | QUAD_SUB, tmp);
+                q->op1.var = lhs;
+                q->op2 = rhs;
+                var_id constant = QuadList_addvar(quads, NAME_ID_INVALID, expr->type, parser);
+                uint64_t datatype = QUAD_PTR_SIZE | QUAD_UINT;
+                q = QuadList_addquad(quads, QUAD_CREATE | datatype, constant);
+                uint64_t pow;
+                if (get_power_of_two(size, &pow)) {
+                    q->op1.uint64 = pow;
+                    q = QuadList_addquad(quads, QUAD_RSHIFT | datatype, dest);
+                    q->op1.var = tmp;
+                    q->op2 = constant;
+                } else {
+                    q->op1.uint64 = size;
+                    q = QuadList_addquad(quads, QUAD_DIV | datatype, dest);
+                    q->op1.var = tmp;
+                    q->op2 = constant;
+                }
+                return dest;
+            } else if (size == 2 || size == 4 || size == 8) {
+                uint64_t datatype = QUAD_PTR_SIZE | QUAD_SINT;
+                var_id tmp = QuadList_addvar(quads, NAME_ID_INVALID, rtype, parser);
+                Quad* q = QuadList_addquad(quads, QUAD_NEGATE | datatype, tmp);
+                q->op1.var = rhs;
+                rhs = tmp;
+                quad |= (QUAD_SCALE_1 * size) | QUAD_ADD;
+            } else if (size != 1) {
+                uint64_t datatype = QUAD_PTR_SIZE | QUAD_UINT;
+                var_id tmp = QuadList_addvar(quads, NAME_ID_INVALID,
+                                             rtype, parser);
+                var_id constant = QuadList_addvar(quads, NAME_ID_INVALID, rtype, parser);
+                Quad* q = QuadList_addquad(quads, QUAD_CREATE | datatype, constant);
+                uint64_t pow;
+                if (get_power_of_two(size, &pow)) {
+                    q->op1.uint64 = pow;
+                    q = QuadList_addquad(quads, QUAD_LSHIFT | datatype, tmp);
+                    q->op1.var = rhs;
+                    q->op2 = constant;
+                } else {
+                    q->op1.uint64 = size;
+                    q = QuadList_addquad(quads, QUAD_MUL | datatype, tmp);
+                    q->op1.var = rhs;
+                    q->op2 = constant;
+                }
+                rhs = tmp;
+                quad |= QUAD_SUB;
+            } else {
+                quad |= QUAD_SUB;
+            }
+        } else {
+            quad |= QUAD_SUB;
+        }
         break;
     case BINOP_ADD:
+        if (parser->type_table.data[ltype].kind == TYPE_PTR) {
+            type_id parent = parser->type_table.data[ltype].parent;
+            uint64_t size = type_allocation(&parser->type_table, parent).size;
+            if (size == 2 || size == 4 || size == 8) {
+                quad |= (QUAD_SCALE_1 * size);
+            } else if (size != 1) {
+                uint64_t datatype = QUAD_PTR_SIZE | QUAD_UINT;
+                var_id tmp = QuadList_addvar(quads, NAME_ID_INVALID,
+                                             rtype, parser);
+                var_id constant = QuadList_addvar(quads, NAME_ID_INVALID, rtype, parser);
+                Quad* q = QuadList_addquad(quads, QUAD_CREATE | datatype, constant);
+                uint64_t pow;
+                if (get_power_of_two(size, &pow)) {
+                    q->op1.uint64 = pow;
+                    q = QuadList_addquad(quads, QUAD_LSHIFT | datatype, tmp);
+                    q->op1.var = rhs;
+                    q->op2 = constant;
+                } else {
+                    q->op1.uint64 = size;
+                    q = QuadList_addquad(quads, QUAD_MUL | datatype, tmp);
+                    q->op1.var = rhs;
+                    q->op2 = constant;
+                }
+                rhs = tmp;
+            }
+        }
         quad |= QUAD_ADD;
         break;
     case BINOP_BIT_LSHIFT:
@@ -322,7 +426,7 @@ var_id quads_cast(Parser* parser, Expression* expr, QuadList* quads,
             QUAD_CAST_TO_FLOAT64, QUAD_CAST_TO_FLOAT32
         };
         q = QuadList_addquad(quads, map[expr->type] | datatype, dest);
-    } else if (parser->type_table.data[expr->type].kind == TYPE_PTR) {
+    } else if (parser->type_table.data[expr->type].kind == TYPE_PTR) { 
         q = QuadList_addquad(quads, QUAD_ARRAY_TO_PTR | datatype, dest);
     } else {
         fatal_error(parser, PARSE_ERROR_INTERNAL, expr->line);
@@ -477,7 +581,11 @@ loop:
                 q = QuadList_addquad(quads, QUAD_CREATE | datatype, dest);
                 q->op1.float64 = e->literal.float64;
                 break;
-            case EXPRESSION_LITERAL_STRING:
+            case EXPRESSION_STRING:
+                datatype = QUAD_UINT | QUAD_8_BIT;
+                q = QuadList_addquad(quads, QUAD_ARRAY_TO_PTR | datatype, dest);
+                q->op1.var = e->string.str.var;
+                break;
             default:
                 fatal_error(parser, PARSE_ERROR_INTERNAL, e->line);
                 break;
@@ -706,7 +814,7 @@ void quads_statements(Parser* parser, QuadList* quads, Statement** statements,
                 var_id a = QuadList_addvar(quads, NAME_ID_INVALID, 
                                            arr_type, parser);
                 rhs->var = a; // Shoud be lhs ??? Probably does not matter
-                uint64_t datatype = QUAD_PTR | QUAD_PTR_SIZE; 
+                uint64_t datatype = QUAD_UINT | QUAD_PTR_SIZE; 
                 datatype |= quad_scale(parser, rhs_type);
                 Quad* q = QuadList_addquad(quads, QUAD_CALC_ARRAY_ADDR | datatype, a);
                 q->op1.var = arr;
@@ -938,6 +1046,11 @@ void Quad_GenerateQuads(Parser* parser, Quads* quads, Arena* arena) {
         FunctionDef* def = parser->function_table.data[ix];
         type_id t = parser->name_table.data[def->name].type;
         QuadList_addvar(&list, def->name, t, parser);
+    }
+    StringLiteral* literal = parser->first_str;
+    while (literal != NULL) {
+        QuadList_add_string(&list, parser, literal);
+        literal = literal->next;
     }
     // TODO: add other global variables
 

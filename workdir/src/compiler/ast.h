@@ -11,7 +11,7 @@ enum ExpressionKind {
     EXPRESSION_LITERAL_INT,
     EXPRESSION_LITERAL_UINT,
     EXPRESSION_LITERAL_FLOAT,
-    EXPRESSION_LITERAL_STRING,
+    EXPRESSION_STRING,
     EXPRESSION_LITERAL_BOOL,
     EXPRESSION_CALL,
     EXPRESSION_ARRAY_INDEX,
@@ -94,12 +94,12 @@ typedef struct LiteralExpr {
         uint64_t uint; // Also used by bool
         int64_t iint;
         double float64;
-        struct {
-            uint8_t* bytes;
-            uint64_t len;
-        } string;
     };
 } LiteralExpr;
+
+typedef struct StringExpr {
+    StringLiteral str;
+} StringExpr;
 
 typedef struct CastExpr {
     type_id type;
@@ -118,6 +118,7 @@ struct Expression {
         BinaryOperation binop;
         UnaryOperation unop;
         LiteralExpr literal;
+        StringExpr string;
         CallExpr call;
         ArrayIndexExpr array_index;
         CastExpr cast;

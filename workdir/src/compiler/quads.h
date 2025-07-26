@@ -19,7 +19,6 @@
 #define QUAD_UINT 0x02000000
 #define QUAD_FLOAT 0x04000000
 #define QUAD_BOOL 0x08000000
-#define QUAD_PTR 0x10000000
 
 #define QUAD_SCALE_1 0x0100000000
 #define QUAD_SCALE_2 0x0200000000
@@ -98,6 +97,8 @@ enum QuadType {
     QUAD_ADDROF, // <val>, x -> <dest>
     QUAD_DEREF // <ptr>, x -> <dest>
 };
+
+#define QUAD_COUNT 49
 
 typedef struct Quad {
     uint64_t type; // Bitwise or of QuadType, Data size and Data type

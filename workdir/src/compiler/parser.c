@@ -89,6 +89,9 @@ bool Parser_create(Parser* parser) {
     parser->first_error = NULL;
     parser->last_error = NULL;
 
+    parser->first_str = NULL;
+    parser->last_str = NULL;
+
     parser_add_keyword(parser, "fn", NAME_ID_FN);
     parser_add_keyword(parser, "struct", NAME_ID_STRUCT);
     parser_add_keyword(parser, "if", NAME_ID_IF);
@@ -108,7 +111,6 @@ bool Parser_create(Parser* parser) {
     parser_add_builtin(parser, TYPE_ID_INT8, 1, 1, "int8");
     parser_add_builtin(parser, TYPE_ID_FLOAT64, 8, 8, "float64");
     parser_add_builtin(parser, TYPE_ID_FLOAT32, 4, 4, "float32");
-    parser_add_builtin(parser, TYPE_ID_CSTRING, PTR_SIZE, PTR_SIZE, "<String Type>");
     parser_add_builtin(parser, TYPE_ID_NONE, 0, 1, "<None Type>");
     parser_add_builtin(parser, TYPE_ID_BOOL, 1, 1, "bool");
 
@@ -313,7 +315,8 @@ Statement* declare_variable(Parser* p, uint64_t start, uint64_t end,
 Arg* OnArg(void* ctx, uint64_t start, uint64_t end, type_id type, StrWithLength s) {
     Parser* p = PARSER(ctx);
     LineInfo pos = {start, end};
-    name_id name = name_variable_insert(&p->name_table, s, type, FUNC_ID_GLOBAL, &p->arena);
+    name_id name = name_variable_insert(&p->name_table, s, type, p->function_table.size,
+                                        &p->arena);
     if (name == NAME_ID_INVALID) {
         name_id prev = name_find(&p->name_table, s);
         assert(prev != NAME_ID_INVALID);
@@ -470,10 +473,22 @@ Expression* OnReal(void* ctx, uint64_t start, uint64_t end, double r) {
 }
 
 Expression* OnString(void* ctx, uint64_t start, uint64_t end, StrWithLength s) {
-    Expression* e = create_expr(PARSER(ctx), EXPRESSION_LITERAL_STRING, start, end);
-    uint8_t* bytes = Arena_alloc_count(&PARSER(ctx)->arena, uint8_t, s.len);
-    e->literal.string.len = s.len;
-    e->literal.string.bytes = bytes;
+    Parser* parser = PARSER(ctx);
+    Expression* e = create_expr(parser, EXPRESSION_STRING, start, end);
+    uint8_t* bytes = Arena_alloc_count(&parser->arena, uint8_t, s.len);
+    memcpy(bytes, s.str, s.len);
+    e->string.str.bytes = bytes;
+    e->string.str.len = s.len;
+    e->string.str.next = NULL;
+    e->string.str.var = VAR_ID_INVALID;
+
+    if (parser->first_str == NULL) {
+        parser->first_str = &e->string.str;
+        parser->last_str = &e->string.str;
+    } else {
+        parser->last_str->next = &e->string.str;
+    }
+
     return e;
 }
 
