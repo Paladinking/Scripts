@@ -93,13 +93,22 @@ type_id typecheck_unop(Parser* parser, Expression* op) {
     switch(op->unop.op) {
     case UNOP_ADDROF:
         if (op->unop.expr->kind != EXPRESSION_VARIABLE &&
-            op->unop.expr->kind != EXPRESSION_ARRAY_INDEX) {
+            op->unop.expr->kind != EXPRESSION_ARRAY_INDEX &&
+            (op->unop.expr->kind != EXPRESSION_UNOP ||
+             op->unop.expr->unop.op != UNOP_DEREF)) {
             add_error(parser, TYPE_ERROR_ILLEGAL_TYPE, op->unop.expr->line);
         }
         if (op->unop.expr->kind == EXPRESSION_ARRAY_INDEX) {
             *op = *op->unop.expr;
             op->array_index.get_addr = true;
             return type_ptr_of(&parser->type_table, op->type);
+        } else if (op->unop.expr->kind == EXPRESSION_UNOP) {
+            Expression* child = op->unop.expr;
+            LineInfo l = op->line;
+            *op = *child->unop.expr;
+            op->line = l;
+            assert(parser->type_table.data[op->type].kind == TYPE_PTR);
+            return op->type;
         }
         return type_ptr_of(&parser->type_table, op->unop.expr->type);
     case UNOP_DEREF:
@@ -133,7 +142,18 @@ type_id typecheck_binop(Parser* parser, Expression* op) {
     type_id b = op->binop.rhs->type;
     switch(op->binop.op) {
     case BINOP_ADD:
+        if (parser->type_table.data[a].kind == TYPE_ARRAY) {
+            a = type_ptr_of(&parser->type_table, 
+                            parser->type_table.data[a].parent);
+            cast_to(parser, op->binop.lhs, a);
+        }
+        if (parser->type_table.data[b].kind == TYPE_ARRAY) {
+            b = type_ptr_of(&parser->type_table, 
+                            parser->type_table.data[b].parent);
+            cast_to(parser, op->binop.rhs, b);
+        }
         if (parser->type_table.data[a].kind == TYPE_PTR) {
+
             b = require_interger(parser, op->binop.rhs, true, true);
             if (b != TYPE_ID_INT64 && b != TYPE_ID_UINT64) {
                 cast_to(parser, op->binop.rhs, TYPE_ID_INT64);
@@ -144,9 +164,6 @@ type_id typecheck_binop(Parser* parser, Expression* op) {
             if (a != TYPE_ID_INT64 && a != TYPE_ID_UINT64) {
                 cast_to(parser, op->binop.lhs, TYPE_ID_INT64);
             }
-            Expression* tmp = op->binop.lhs;
-            op->binop.lhs = op->binop.rhs;
-            op->binop.rhs = tmp;
             return b;
         } else {
             a = require_number(parser, op->binop.lhs);
@@ -154,6 +171,14 @@ type_id typecheck_binop(Parser* parser, Expression* op) {
             return merge_numbers(parser, a, b, op->binop.lhs, op->binop.rhs);
         }
     case BINOP_SUB:
+        if (parser->type_table.data[a].kind == TYPE_ARRAY) {
+            if (parser->type_table.data[b].kind == TYPE_ARRAY) {
+                add_error(parser, TYPE_ERROR_ILLEGAL_TYPE, op->line);
+            }
+            a = type_ptr_of(&parser->type_table, 
+                            parser->type_table.data[a].parent);
+            cast_to(parser, op->binop.lhs, a);
+        }
         if (parser->type_table.data[a].kind == TYPE_PTR) {
             if (parser->type_table.data[b].kind == TYPE_PTR) {
                 if (parser->type_table.data[a].parent != parser->type_table.data[b].parent) {
@@ -212,12 +237,31 @@ type_id typecheck_binop(Parser* parser, Expression* op) {
 }
 
 type_id typecheck_array_index(Parser* parser, Expression* e) {
+    type_id a = e->array_index.array->type;
+    if (parser->type_table.data[a].kind == TYPE_PTR) {
+        // Convert a[10] => *(a + 10)
+        Expression* add = Arena_alloc_type(&parser->arena, Expression);
+        add->type = TYPE_ID_INVALID;
+        add->kind = EXPRESSION_BINOP;
+        add->line = e->line;
+        add->binop.op = BINOP_ADD;
+        add->binop.lhs = e->array_index.array;
+        add->binop.rhs = e->array_index.index;
+
+        add->type = typecheck_binop(parser, add);
+        e->kind = EXPRESSION_UNOP;
+        e->unop.op = UNOP_DEREF;
+        e->unop.expr = add;
+
+        return typecheck_unop(parser, e);
+    }
+
     type_id ix = require_interger(parser, e->array_index.index, true, true);
     if (ix > TYPE_ID_UNSIGNED_COUNT) {
         cast_to(parser, e->array_index.index, ix - TYPE_ID_UNSIGNED_COUNT);
     }
-    type_id a = e->array_index.array->type;
-    if (parser->type_table.data[a].kind != TYPE_ARRAY) {
+    if (parser->type_table.data[a].kind != TYPE_ARRAY &&
+        parser->type_table.data[a].kind != TYPE_PTR) {
         add_error(parser, TYPE_ERROR_ILLEGAL_TYPE, e->line);
         return a;
     }

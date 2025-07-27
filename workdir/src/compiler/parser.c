@@ -475,8 +475,9 @@ Expression* OnReal(void* ctx, uint64_t start, uint64_t end, double r) {
 Expression* OnString(void* ctx, uint64_t start, uint64_t end, StrWithLength s) {
     Parser* parser = PARSER(ctx);
     Expression* e = create_expr(parser, EXPRESSION_STRING, start, end);
-    uint8_t* bytes = Arena_alloc_count(&parser->arena, uint8_t, s.len);
+    uint8_t* bytes = Arena_alloc_count(&parser->arena, uint8_t, s.len + 1);
     memcpy(bytes, s.str, s.len);
+    bytes[s.len] = '\0';
     e->string.str.bytes = bytes;
     e->string.str.len = s.len;
     e->string.str.next = NULL;
