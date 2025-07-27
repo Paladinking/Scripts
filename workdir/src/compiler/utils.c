@@ -33,17 +33,19 @@ void fatal_error_cb(Parser* parser, enum ErrorKind error, LineInfo info,
         parser_row_col(parser, info.start, &row, &col);
     }
     switch (error) {
-        case PARSE_ERROR_NONE:
-            _wprintf_e(L"Fatal error: UNKOWN\n");
-            break;
         case PARSE_ERROR_OUTOFMEMORY:
-            _wprintf_e(L"Fatal error: out of memory\n");
+            LOG_CRITICAL("Fatal error: out of memory");
             break;
         case PARSE_ERROR_EOF:
-            _wprintf_e(L"Fatal error: unexpecetd end of file at row %llu, collum %llu\n", row, col);
+            LOG_CRITICAL("Fatal error: unexpecetd end of file at row %llu, collum %llu", row, col);
             break;
         case PARSE_ERROR_INTERNAL:
-            _wprintf_e(L"Fatal error: internal error at %S line %llu\n", file, line);
+            LOG_CRITICAL("Fatal error: internal error at %S line %llu", file, line);
+            break;
+        case PARSE_ERROR_NONE:
+            break;
+        default:
+            LOG_CRITICAL("Fatal error: UNKOWN");
             break;
     }
     Log_Shutdown();

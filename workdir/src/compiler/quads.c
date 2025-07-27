@@ -443,7 +443,6 @@ var_id quads_arrayindex(Parser* parser, Expression* expr, QuadList* quads,
     }
     var_id ix = expr->array_index.index->var;
     type_id ix_type = QuadList_getvar(quads, ix)->type;
-    assert(ix_type == TYPE_ID_UINT64 || ix_type == TYPE_ID_INT64);
 
     uint64_t datatype = quad_datatype(parser, expr->type);
     if (expr->array_index.get_addr) {
@@ -1062,6 +1061,7 @@ void Quad_GenerateQuads(Parser* parser, Quads* quads, Arena* arena) {
         label_id l = QuadList_addlabel(&list);
         Quad* q = QuadList_addquad(&list, QUAD_LABEL, VAR_ID_INVALID);
         def->quad_start = q;
+        def->start_label = l;
         q->op1.label = l;
 
         for (uint64_t i = 0; i < def->arg_count; ++i) {
@@ -1077,7 +1077,11 @@ void Quad_GenerateQuads(Parser* parser, Quads* quads, Arena* arena) {
         }
         var_id start = list.vars.size;
         quads_statements(parser, &list, def->statements, def->statement_count);
+
+        label_id end_label = QuadList_addlabel(&list);
+
         def->quad_end = list.tail;
+        def->end_label = end_label;
 
         // Mark all created temporary variables as a part of this function
         for (var_id v = start; v < list.vars.size; ++v) {

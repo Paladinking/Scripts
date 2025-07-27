@@ -1,0 +1,23 @@
+
+
+
+
+
+
+fn main() -> uint64 {
+    uint8* str = "Hello world\n";
+
+    uint32 a = str[0];
+    int32 b = str[1];
+    int16 c = str[2];
+
+    return a + b + c;
+}
+
+
+fn fib_rec_u64(uint64 n) -> uint64 {
+    if (n < 2) {
+        return n;
+    }
+    return fib_rec_u64(n - 1) + fib_rec_u64(n - 2);
+}

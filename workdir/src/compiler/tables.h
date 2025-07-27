@@ -147,6 +147,7 @@ typedef struct VarData {
         ALLOC_NONE, ALLOC_REG, ALLOC_MEM, ALLOC_IMM
     } alloc_type;
     union {
+        uint64_t data_ix; // Valid for non-local variables
         struct {
             uint32_t offset;
         } memory;

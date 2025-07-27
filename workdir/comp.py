@@ -189,12 +189,12 @@ def main():
         parse_o = Object("parse.obj", parse_c.product, depends=[parse_h.product],
                          includes=["src/compiler"])
 
-        scanner_o = Object("scanner.obj", "src/compiler/scanner.c",
+        scanner_o = Object("scanner.obj", "src/compiler/scanner.c", includes=["src/compiler"],
                              depends=[scan_h.product], defines=scan_defs)
-        parser_o = Object("parser.obj", "src/compiler/parser.c",
+        parser_o = Object("parser.obj", "src/compiler/parser.c", includes=["src/compiler"],
                               depends=[parse_h.product])
 
-        comp_src = ["src/compiler/format.c",
+        comp_src = ["src/compiler/format.c", "src/compiler/asm/amd64.c",
                     "src/compiler/quads.c", "src/compiler/utils.c",
                     "src/compiler/tokenizer.c",
                     "src/compiler/code_generation.c", "src/compiler/amd64_asm.c",
