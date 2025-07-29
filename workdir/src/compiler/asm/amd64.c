@@ -3,6 +3,476 @@
 #include "../utils.h"
 #include "../log.h"
 #include <printf.h>
+#include <glob.h>
+
+static enum Amd64OperandType simple_operand(enum Amd64OperandType op) {
+    switch (op) {
+    case OPERAND_LABEL:
+        return OPERAND_IMM32;
+    case OPERAND_GLOBAL_MEM8:
+        return OPERAND_MEM8;
+    case OPERAND_GLOBAL_MEM16:
+        return OPERAND_MEM16;
+    case OPERAND_GLOBAL_MEM32:
+        return OPERAND_MEM32;
+    case OPERAND_GLOBAL_MEM64:
+        return OPERAND_MEM64;
+    default:
+        return op;
+    }
+}
+
+// Returns the offset of <op> if allocated as large as possible
+// Increments <offset> by the maximum size needed by <op>.
+// Note: RVA, not file offset
+// Also computes REX prefix
+static uint64_t max_op_offset(AsmCtx* ctx, Amd64Op* op, uint64_t* offset) {
+    if (op->opcode >= RESERVE_MEM) {
+        if (op->opcode == RESERVE_MEM || op->opcode == DECLARE_MEM) {
+            ALIGN_TO(*offset, op->mem.alignment);
+            uint64_t res = *offset;
+            *offset += op->mem.datasize;
+            return res;
+        } else if (op->opcode == OPCODE_TEXT_SECTION || op->opcode == OPCODE_DATA_SECTION ||
+                   op->opcode == OPCODE_RDATA_SECTION) {
+            // Align section boundry to page size
+            ALIGN_TO(*offset, 4096);
+            return *offset;
+        } else {
+            return *offset;
+        }
+    }
+    uint32_t count = ENCODINGS[op->opcode].count;
+    const Encoding* encodings = ENCODINGS[op->opcode].encodings;
+
+    for (uint32_t i = 0; i < count; ++i) {
+        if (encodings[i].operand_count != op->count) {
+            continue;
+        }
+        uint32_t j = 0;
+        for (; j < op->count; ++j) {
+            //if (op->operands[i].type == OPERAND_)
+            if (simple_operand(op->operands[j].type) != encodings[i].operands[j]) {
+                break;
+            }
+        }
+        if (j < op->count) {
+            continue;
+        }
+        const Encoding* e = &encodings[i];
+        uint64_t size = 0;
+        uint64_t oper_ix = 0;
+        uint8_t rex = 0;
+        for (uint32_t j = 0; j < e->mnemonic_count; ++j) {
+            enum MnemonicPart p = e->mnemonic[j].type;
+            switch (p) {
+            case PREFIX:
+                ++size;
+                break;
+            case REX:
+                assert(rex == 0);
+                rex = e->mnemonic[j].byte;
+                ++size;
+                break;
+            case OPCODE:
+                ++size;
+                break;
+            case OPCODE2:
+                size += 2;
+                break;
+            case MOD_RM:
+                ++size;
+                break;
+            case RM_MEM:
+                if (op->operands[oper_ix].type == OPERAND_GLOBAL_MEM8 ||
+                    op->operands[oper_ix].type == OPERAND_GLOBAL_MEM16 ||
+                    op->operands[oper_ix].type == OPERAND_GLOBAL_MEM32 ||
+                    op->operands[oper_ix].type == OPERAND_GLOBAL_MEM64) {
+                    // Need 32-bit offset
+                    size += 4;
+                } else {
+                    if (op->operands[oper_ix].reg >= R8 ||
+                        (op->operands[oper_ix].scale != 0 && 
+                         op->operands[oper_ix].scale_reg >= R8)
+                        ) {
+                        if (!rex) {
+                            ++size;
+                            rex = 0x40;
+                        }
+                        if (op->operands[oper_ix].reg >= R8) {
+                            rex |= 1;
+                        }
+                        if (op->operands[oper_ix].scale != 0 &&
+                            op->operands[oper_ix].scale_reg >= R8) {
+                            rex |= 2;
+                        }
+                    }
+                    if (op->operands[oper_ix].scale != 0 ||
+                         op->operands[oper_ix].reg == RSP ||
+                         op->operands[oper_ix].reg == R12) { // SIB needed
+                        ++size;
+                    }
+
+                    if ((op->operands[oper_ix].reg == RBP ||
+                        op->operands[oper_ix].reg == R13) &&
+                        op->operands[oper_ix].offset == 0) {
+                        // Need to add 0 offset anyways do to adressing mode
+                        ++size;
+                    } else if (op->operands[oper_ix].offset != 0) {
+                        int32_t offset = op->operands[oper_ix].offset;
+                        if (offset >= INT8_MIN && offset <= INT8_MAX) {
+                            ++size; // 8bit offset is enough
+                        } else {
+                            size += 4; //32bit offset needed
+                        }
+                    }
+                }
+                ++oper_ix;
+                break;
+            case IMM:
+            case REL_ADDR:
+                size += e->mnemonic[j].byte;
+                ++oper_ix;
+                break;
+            case REG_REG:
+                if (op->operands[oper_ix].reg >= R8) {
+                    if (!rex) {
+                        rex = 0x40;
+                        ++size;
+                    }
+                    rex |= 4;
+                }
+                ++oper_ix;
+                break;
+            case RM_REG:
+            case PLUS_REG:
+                if (op->operands[oper_ix].reg >= R8) {
+                    if (!rex) {
+                        rex = 0x40;
+                        ++size;
+                    }
+                    rex |= 1;
+                }
+                ++oper_ix;
+                break;
+            case SKIP:
+                ++oper_ix;
+                break;
+            }
+        }
+        op->rex = rex;
+        uint64_t res = *offset;
+        *offset += size;
+        return res;
+    }
+
+    fatal_error(NULL, PARSE_ERROR_INTERNAL, LINE_INFO_NONE);
+    return 0;
+}
+
+typedef struct ByteBuffer {
+    uint8_t* data;
+    uint64_t size;
+    uint64_t capacity;
+} ByteBuffer;
+
+void Buffer_create(ByteBuffer* buf) {
+    buf->data = Mem_alloc(4096);
+    if (buf->data == NULL) {
+        out_of_memory(NULL);
+    }
+    buf->size = 0;
+    buf->capacity = 4096;
+}
+
+void Buffer_append(ByteBuffer* buf, uint8_t b) {
+    RESERVE(buf->data, buf->size + 1, buf->capacity);
+    buf->data[buf->size] = b;
+    ++buf->size;
+}
+
+void Buffer_extend(ByteBuffer* buf, const uint8_t* data, uint32_t len) {
+    RESERVE(buf->data, buf->size + len, buf->capacity);
+    memcpy(buf->data + buf->size, data, len);
+    buf->size += len;
+}
+
+void Buffer_free(ByteBuffer* buf) {
+    Mem_free(buf->data);
+    buf->data = NULL;
+    buf->size = 0;
+    buf->capacity = 0;
+}
+
+typedef struct PendingAddr {
+    Amd64Op* target;
+    Amd64Op* source;
+    uint64_t byte_offset;
+
+    uint8_t size; // 1, 2 or 4
+} PendingAddr;
+
+typedef struct AddrBuf {
+    PendingAddr* data;
+    uint64_t size;
+    uint64_t capacity;
+} AddrBuf;
+
+void AddrBuf_create(AddrBuf* buf) {
+    buf->data = Mem_alloc(16 * sizeof(PendingAddr));
+    if (buf->data == NULL) {
+        out_of_memory(NULL);
+    }
+    buf->size = 0;
+    buf->capacity = 16;
+}
+
+void AddrBuf_append(AddrBuf* buf, Amd64Op* target, Amd64Op* source,
+                    uint64_t byte_offset, uint8_t size) {
+    RESERVE(buf->data, buf->size + 1, buf->capacity);
+    buf->data[buf->size] = (PendingAddr) {target, source, byte_offset, size};
+    buf->size += 1;
+}
+
+void AddrBuf_free(AddrBuf* buf) {
+    Mem_free(buf->data);
+    buf->data = NULL;
+    buf->size = 0;
+    buf->capacity = 0;
+}
+
+
+static uint64_t assemble_op(AsmCtx* ctx, Amd64Op* op, uint64_t* offset, ByteBuffer* dest,
+                            AddrBuf* addrs) {
+    if (op->opcode >= RESERVE_MEM) {
+        if (op->opcode == RESERVE_MEM) {
+            ALIGN_TO(*offset, op->mem.alignment);
+            uint64_t res = *offset;
+            *offset += op->mem.datasize;
+            return res;
+        } else if (op->opcode == DECLARE_MEM) {
+            uint64_t off = *offset;
+            ALIGN_TO(*offset, op->mem.alignment);
+            for (uint64_t i = 0; i < (*offset) - off; ++i) {
+                Buffer_append(dest, 0);
+            }
+            off = *offset;
+            *offset += op->mem.datasize;
+            Buffer_extend(dest, op->mem.data, op->mem.datasize);
+            return off;
+        } else if (op->opcode == OPCODE_TEXT_SECTION || op->opcode == OPCODE_DATA_SECTION ||
+                   op->opcode == OPCODE_RDATA_SECTION) {
+            // Align section boundry to page size
+            ALIGN_TO(*offset, 4096);
+            return *offset;
+        } else {
+            return *offset;
+        }
+    }
+    Amd64Operand operands[OPERAND_MAX];
+    for (uint32_t ix = 0; ix < op->count; ++ix) {
+        switch (op->operands[ix].type) {
+        case OPERAND_LABEL: {
+            uint32_t label = op->operands[ix].label;
+            int64_t cur_offset = op->next->max_offset;
+            Amd64Op* label_op = ctx->labels[label].op;
+            while (label_op->opcode == OPCODE_LABEL) {
+                label_op = label_op->next;
+            }
+            int64_t target_offset = label_op->max_offset;
+            int64_t delta64 = target_offset - cur_offset;
+            assert(delta64 >= INT32_MIN && delta64 <= INT32_MAX);
+            int32_t delta = delta64;
+            if (op->opcode == OP_CALL || delta < INT16_MIN || delta > INT16_MAX) {
+                operands[ix].type = OPERAND_IMM32;
+            } else if (delta < INT8_MIN || delta > INT8_MAX) {
+                operands[ix].type = OPERAND_IMM16;
+            } else {
+                operands[ix].type = OPERAND_IMM8;
+            }
+            memset(operands[ix].imm, 0, sizeof(operands[ix].imm));
+            break;
+        }
+        case OPERAND_GLOBAL_MEM8:
+        case OPERAND_GLOBAL_MEM16:
+        case OPERAND_GLOBAL_MEM32:
+        case OPERAND_GLOBAL_MEM64: {
+            operands[ix].type = simple_operand(op->operands[ix].type);
+            operands[ix].offset = 0;
+            operands[ix].reg = 255;
+            operands[ix].scale = 0;
+            operands[ix].scale_reg = 255;
+            break;
+        }
+        default:
+            operands[ix] = op->operands[ix];
+            break;
+        }
+    }
+
+    uint32_t count = ENCODINGS[op->opcode].count;
+    const Encoding* encodings = ENCODINGS[op->opcode].encodings;
+    uint64_t last_size = dest->size;
+
+    for (uint32_t i = 0; i < count; ++i) {
+        if (encodings[i].operand_count != op->count) {
+            continue;
+        }
+        uint32_t j = 0;
+        for (; j < op->count; ++j) {
+            if (operands[j].type != encodings[i].operands[j]) {
+                break;
+            }
+        }
+        if (j < op->count) {
+            continue;
+        }
+        const Encoding* e = &encodings[i];
+        uint64_t opcode_ix = -1;
+        uint64_t mod_rm_ix = -1;
+        uint32_t oper_ix = 0;
+        for (uint32_t j = 0; j < e->mnemonic_count; ++j) {
+            enum MnemonicPart p = e->mnemonic[j].type;
+            switch (p) {
+            case PREFIX:
+                Buffer_append(dest, e->mnemonic[j].byte);
+                break;
+            case REX:
+                // Rex pre-calculated, added with opcode
+                break;
+            case OPCODE:
+                assert(opcode_ix == ((uint64_t)-1));
+                if (op->rex != 0) {
+                    Buffer_append(dest, op->rex);
+                }
+                opcode_ix = dest->size;
+                Buffer_append(dest, e->mnemonic[j].byte);
+                break;
+            case OPCODE2:
+                assert(opcode_ix == ((uint64_t)-1));
+                if (op->rex != 0) {
+                    Buffer_append(dest, op->rex);
+                }
+                Buffer_append(dest, 0x0f);
+                opcode_ix = dest->size;
+                Buffer_append(dest, e->mnemonic[j].byte);
+                break;
+            case MOD_RM:
+                assert(mod_rm_ix == ((uint64_t)-1));
+                mod_rm_ix = dest->size;
+                Buffer_append(dest, e->mnemonic[j].byte);
+                break;
+            case RM_MEM: {
+                assert(mod_rm_ix != ((uint64_t)-1));
+                if (operands[oper_ix].reg == 255) { // Global memory
+                    // ModRm.mod = 0, ModRm.r/m = 101
+                    dest->data[mod_rm_ix] |= 0x5;
+                    uint32_t label = op->operands[oper_ix].label;
+                    Amd64Op* label_op = ctx->labels[label].op;
+                    while (label_op->opcode == OPCODE_LABEL) {
+                        label_op = label_op->next;
+                    }
+                    AddrBuf_append(addrs, label_op, op, dest->size, 4);
+                    for (int i = 0; i < 4; ++i) {
+                        Buffer_append(dest, 0);
+                    }
+                } else {
+                    if (operands[oper_ix].scale != 0 ||
+                         operands[oper_ix].reg == RSP ||
+                         operands[oper_ix].reg == R12) { // SIB needed
+                        // ModRm.r/m = 100
+                        dest->data[mod_rm_ix] |= 0x4;
+                        assert(operands[oper_ix].scale == 0 || 
+                               operands[oper_ix].scale_reg != RSP);
+
+                        // SIB.index = scale_reg, SIB.base = reg
+                        uint8_t sib = (operands[oper_ix].scale_reg & 0x7) << 3;
+                        sib |= (operands[oper_ix].reg & 0x7);
+                        if (operands[oper_ix].scale == 0) {
+                            // SIB.scale = 00, SIB.index = 100, SIB.base = reg
+                            sib = 0x20 | (operands[oper_ix].reg & 0x7);
+                        } else if (operands[oper_ix].scale == 2) {
+                            // SIB.scale = 01
+                            sib |= 0x40;
+                        } else if (operands[oper_ix].scale == 4) {
+                            // SIB.scale = 10
+                            sib |= 0x80;
+                        } else if (operands[oper_ix].scale == 8) {
+                            // SIB.scale = 11
+                            sib |= 0xc0;
+                        }
+                        Buffer_append(dest, sib);
+                    } else {
+                        // ModRm.r/m = reg
+                        dest->data[mod_rm_ix] |= (operands[oper_ix].reg & 0x7);
+                    }
+
+                    if (operands[oper_ix].offset != 0 ||
+                        operands[oper_ix].reg == RBP || operands[oper_ix].reg == R13) {
+                        uint8_t* b = (uint8_t*)&operands[oper_ix].offset;
+                        if (operands[oper_ix].offset >= INT8_MIN &&
+                            operands[oper_ix].offset <= INT8_MAX) {
+                            // ModRm.mod = 01
+                            dest->data[mod_rm_ix] |= 0x40;
+                            Buffer_extend(dest, b, 1);
+                        } else {
+                            // ModRm.mod = 10
+                            dest->data[mod_rm_ix] |= 0x80;
+                            Buffer_extend(dest, b, 4);
+                        }
+                    }
+                }
+                ++oper_ix;
+                break;
+            }
+            case IMM:
+                Buffer_extend(dest, operands[oper_ix].imm, e->mnemonic[j].byte);
+                ++oper_ix;
+                break;
+            case REL_ADDR: {
+                assert(op->operands[oper_ix].type == OPERAND_LABEL);
+                uint32_t label = op->operands[oper_ix].label;
+                Amd64Op* label_op = ctx->labels[label].op;
+                while (label_op->opcode == OPCODE_LABEL) {
+                    label_op = label_op->next;
+                }
+                AddrBuf_append(addrs, label_op, op->next, dest->size,
+                               e->mnemonic[j].byte);
+                Buffer_extend(dest, operands[oper_ix].imm, e->mnemonic[j].byte);
+                ++oper_ix;
+                break;
+            }
+            case REG_REG:
+                assert(mod_rm_ix != ((uint64_t)-1));
+                dest->data[mod_rm_ix] |= ((op->operands[oper_ix].reg & 0x7) << 3);
+                ++oper_ix;
+                break;
+            case RM_REG:
+                assert(mod_rm_ix != ((uint64_t)-1));
+                dest->data[mod_rm_ix] |= 0xc0 | (op->operands[oper_ix].reg & 0x7);
+                ++oper_ix;
+                break;
+            case PLUS_REG:
+                assert(opcode_ix != ((uint64_t) -1));
+                dest->data[opcode_ix] |= (op->operands[oper_ix].reg & 0x7);
+                ++oper_ix;
+                break;
+            case SKIP:
+                ++oper_ix;
+                break;
+            }
+        }
+        uint64_t new_size = dest->size;
+        assert(new_size > last_size);
+        uint64_t res = *offset;
+        *offset += new_size - last_size;
+
+        return res;
+    }
+
+    assert(false);
+}
+
 
 void asm_ctx_create(AsmCtx* ctx) {
     if (!Arena_create(&ctx->arena, 0xffffffff, out_of_memory, NULL)) {
@@ -17,11 +487,17 @@ void asm_ctx_create(AsmCtx* ctx) {
     ctx->start->prev = NULL;
     ctx->start->opcode = OPCODE_START;
     ctx->start->count = 0;
+    ctx->start->max_offset = 0;
+    ctx->start->rex = 0;
+    ctx->start->offset = 0;
 
     ctx->end->next = NULL;
     ctx->end->prev = ctx->start;
     ctx->end->opcode = OPCODE_START;
     ctx->end->count = 0;
+    ctx->end->max_offset = 0;
+    ctx->end->rex = 0;
+    ctx->end->offset = 0;
 
     ctx->label_count = 0;
     ctx->data_count = 0;
@@ -118,6 +594,9 @@ void asm_instr_end(AsmCtx* ctx) {
     ctx->end->prev = op;
     ctx->end->opcode = OPCODE_END;
     ctx->end->count = 0;
+    ctx->end->max_offset = 0;
+    ctx->end->rex = 0;
+    ctx->end->offset = 0;
 
     op->next = ctx->end;
 }
@@ -147,7 +626,7 @@ static uint64_t add_data_label(AsmCtx* ctx, const uint8_t* sym, uint32_t sym_len
 }
 
 uint64_t asm_declare_mem(AsmCtx* ctx, uint64_t len, const uint8_t* data, uint32_t symbol_len,
-                         const uint8_t* symbol) {
+                         const uint8_t* symbol, uint64_t alignment) {
     assert(ctx->label_count == ctx->data_count);
 
     uint64_t ix = add_data_label(ctx, symbol, symbol_len);
@@ -157,13 +636,14 @@ uint64_t asm_declare_mem(AsmCtx* ctx, uint64_t len, const uint8_t* data, uint32_
     op->count = 255;
     op->mem.datasize = len;
     op->mem.data = data;
+    op->mem.alignment = alignment;
 
     asm_instr_end(ctx);
     return ix;
 }
 
 uint64_t asm_reserve_mem(AsmCtx* ctx, uint64_t len, uint32_t symbol_len,
-                         const uint8_t* symbol) {
+                         const uint8_t* symbol, uint64_t alignment) {
     assert(ctx->label_count == ctx->data_count);
 
     uint64_t ix = add_data_label(ctx, symbol, symbol_len);
@@ -173,6 +653,7 @@ uint64_t asm_reserve_mem(AsmCtx* ctx, uint64_t len, uint32_t symbol_len,
     op->count = 255;
     op->mem.datasize = len;
     op->mem.data = NULL;
+    op->mem.alignment = alignment;
 
     asm_instr_end(ctx);
     return ix;
@@ -415,4 +896,66 @@ void asm_serialize(AsmCtx* ctx, String* dest) {
         }
         op = op->next;
     }
+}
+
+void asm_assemble(AsmCtx* ctx) {
+    uint64_t offset = 0;
+    Amd64Op* op = ctx->start;
+    while (op != ctx->end) {
+        uint64_t off = max_op_offset(ctx, op, &offset);
+        assert(off <= UINT32_MAX);
+        op->max_offset = off;
+
+        op = op->next;
+    }
+    ctx->end->offset = offset;
+
+    LOG_WARNING("Done computing offsets");
+
+    ByteBuffer dest;
+    Buffer_create(&dest);
+
+    AddrBuf addrs;
+    AddrBuf_create(&addrs);
+
+    offset = 0;
+    op = ctx->start;
+    while (op != ctx->end) {
+        if (op->opcode == OPCODE_DATA_SECTION || op->opcode == OPCODE_RDATA_SECTION ||
+            op->opcode == OPCODE_TEXT_SECTION) {
+            while (dest.size % 4096 != 0) {
+                Buffer_append(&dest, 0);
+            }
+        }
+        uint64_t off = assemble_op(ctx, op, &offset, &dest, &addrs);
+        assert(off <= UINT32_MAX);
+        op->offset = off;
+
+        op = op->next;
+    }
+
+    for (uint64_t i = 0; i < addrs.size; ++i) {
+        int64_t source = addrs.data[i].source->offset;
+        int64_t target = addrs.data[i].target->offset;
+
+        int64_t delta = (target - source);
+        if (addrs.data[i].size == 1) {
+            assert(delta >= INT8_MIN && delta <= INT8_MAX);
+            int8_t d = delta;
+            memcpy(dest.data + addrs.data[i].byte_offset, &d, 1);
+        } else if (addrs.data[i].size == 2) {
+            assert(delta >= INT16_MIN && delta <= INT16_MAX);
+            int16_t d = delta;
+            memcpy(dest.data + addrs.data[i].byte_offset, &d, 2);
+        } else {
+            assert(addrs.data[i].size == 4);
+            assert(delta >= INT32_MIN && delta <= INT32_MAX);
+            int32_t d = delta;
+            memcpy(dest.data + addrs.data[i].byte_offset, &d, 4);
+        }
+    }
+
+    LOG_WARNING("Done assembly: %llu bytes", dest.size);
+
+    write_file("out.bin", dest.data, dest.size);
 }

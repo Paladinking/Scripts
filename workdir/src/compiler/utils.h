@@ -64,5 +64,8 @@ void reserve(void** ptr, uint64_t size, size_t elem_size, uint64_t* cap);
 
 #define RESERVE(ptr, size, cap) reserve((void**)(&(ptr)), (size), sizeof(*(ptr)), &(cap))
 
+#define ALIGN_TO(i, size) if (((i) % (size)) != 0) { \
+    (i) = (i) + ((size) - ((i) % (size)));            \
+}
 
 #endif
