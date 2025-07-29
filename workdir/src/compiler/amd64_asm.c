@@ -3,10 +3,6 @@
 #include <printf.h>
 #include "format.h"
 
-#define ALLIGN_TO(i, size) if (((i) % (size)) != 0) { \
-    (i) = (i) + ((size) - ((i) % (size)));            \
-}
-
 const uint8_t GEN_CALL_REGS[4] = {RCX, RDX, R8, R9};
 const bool GEN_VOLATILE_REGS[GEN_REG_COUNT] = {
     true, true, true, false, false, false, false, false,
@@ -151,8 +147,6 @@ bool is_standard_binop(uint64_t type) {
     }
     enum QuadType t = type & QUAD_TYPE_MASK;
     switch (t) {
-    case QUAD_MUL:
-        return (type & QUAD_DATATYPE_MASK) == QUAD_SINT;
     case QUAD_SUB:
     case QUAD_ADD:
         return !(type & QUAD_SCALE_MASK);
@@ -248,11 +242,9 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
     } else if (q == QUAD_ADD) {
         assert(quad->type & QUAD_SCALE_MASK);
         if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
-            // Two memory ops not allowed, insert move
             postinsert_move(graph, &quad->dest, live_set, quad, node, vars, arena);
         }
         if (vars->data[quad->op2].alloc_type == ALLOC_MEM) {
-            // Two memory ops not allowed, insert move
             preinsert_move(graph, &quad->op2, live_set, quad, node, vars, arena);
         }
 
@@ -388,7 +380,8 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
             ConflictGraph_add_edge(graph, quad->dest + graph->reg_count,
                                    quad->op1.var + graph->reg_count);
         }
-    } else if ((q == QUAD_MUL && datatype == QUAD_UINT) ||
+    } else if ((q == QUAD_MUL && (datatype == QUAD_UINT ||
+                 (quad->type & QUAD_DATASIZE_MASK) == QUAD_8_BIT)) ||
         q == QUAD_DIV || q == QUAD_MOD) {
         // Make sure RAX and RDX are free for MUL / DIV / IDIV
         var_id v = VarSet_get(live_set);
@@ -418,6 +411,14 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
             // MUL / DIV / IDIV result is in RAX
             requre_gen_reg_dest(graph, RAX, &quad->dest, live_set, quad, 
                                node, vars, arena);
+        }
+    } else if (q == QUAD_MUL) {
+        if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
+            postinsert_move(graph, &quad->dest, live_set, quad, node, vars, arena);
+        }
+        if (quad->dest != quad->op2 && quad->dest != quad->op1.var) {
+            ConflictGraph_add_edge(graph, quad->dest + graph->reg_count,
+                    quad->op2 + graph->reg_count);
         }
     } else if (q == QUAD_CALL) {
         var_id v = VarSet_get(live_set);
@@ -670,7 +671,7 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
             continue;
         }
         if (vars[ix].alloc_type == ALLOC_MEM) {
-            ALLIGN_TO(stack_size, vars[ix].alignment);
+            ALIGN_TO(stack_size, vars[ix].alignment);
             vars[ix].memory.offset = stack_size;
             stack_size += vars[ix].byte_size;
         } else if (vars[ix].alloc_type == ALLOC_REG &&
@@ -809,7 +810,7 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
             asm_instr_end(ctx);
             break;
         case QUAD_MUL:
-            if (datatype == QUAD_UINT) {
+            if (datatype == QUAD_UINT || datasize == QUAD_8_BIT) {
                 assert_in_reg(q->dest, vars, RAX);
                 if (!is_same(vars, q->op1.var, q->dest)) {
                     if (is_same(vars, q->op2, q->dest)) {
@@ -818,7 +819,11 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
                         emit_op1_dest_move(q, vars, ctx);
                     }
                 }
-                asm_instr(ctx, OP_MUL);
+                if (datatype == QUAD_UINT) {
+                    asm_instr(ctx, OP_MUL);
+                } else {
+                    asm_instr(ctx, OP_IMUL);
+                }
                 emit_var(&vars[q->op2], datatype, datasize, ctx);
                 asm_instr_end(ctx);
             } else if (datatype == QUAD_SINT) {
@@ -1320,7 +1325,7 @@ void Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
         var_id v = s->var;
         uint32_t len;
         const uint8_t* sym = str_literalname(i, &len, &ctx.arena);
-        uint64_t data_ix = asm_declare_mem(&ctx, s->len + 1, s->bytes, len, sym);
+        uint64_t data_ix = asm_declare_mem(&ctx, s->len + 1, s->bytes, len, sym, 1);
 
         for (uint64_t ix = 0; ix < func_table->size; ++ix) {
             func_table->data[ix]->vars.data[v].data_ix = data_ix;
@@ -1342,4 +1347,5 @@ void Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
         asm_serialize(&ctx, &out);
         outputUtf8(out.buffer, out.length);
     }
+    asm_assemble(&ctx);
 }

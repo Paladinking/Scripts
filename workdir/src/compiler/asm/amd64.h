@@ -5,6 +5,64 @@
 #include <arena.h>
 #include <dynamic_string.h>
 
+enum MnemonicPart {
+    PREFIX, // e.g 0x66 (operand size overide prefix)
+    REX, // Rex Prefix 
+    OPCODE, // Standard opcode
+    OPCODE2, // Opcode from secondary opcode map
+    MOD_RM, // ModRM byte, should always preceed REG_REG, RM_REG or MEM
+    REG_REG, // Register in ModRm.reg
+    PLUS_REG, // Register in second opcode nibble, should come directly after OPCODE, OPCODE2
+    RM_MEM, // Memory in ModRm.r/m (+ potentially SIB)
+    RM_REG, // Register in ModRm.r/m
+    IMM, // imm
+    REL_ADDR, // Relative jump address
+    SKIP
+};
+
+typedef struct Mnemonic {
+    uint8_t type;
+    uint8_t byte;
+} Mnemonic;
+
+#define MNEMOIC_MAX 8
+#define OPERAND_MAX 3
+
+enum Amd64OperandType {
+    OPERAND_MEM8 = 1,  // e.g BYTE [rcx + 8 * rdx - 32]
+    OPERAND_MEM16, // e.g WORD [rcx + 8 * rdx - 32]
+    OPERAND_MEM32, // e.g DWORD [rcx + 8 * rdx - 32]
+    OPERAND_MEM64, // e.g QWORD [rcx + 8 * rdx - 32]
+    OPERAND_REG8,  // e.g al
+    OPERAND_REG16, // e.g cx
+    OPERAND_REG32, // e.g r10d
+    OPERAND_REG64, // e.g r12
+    OPERAND_LABEL, // e.g L12
+    OPERAND_GLOBAL_MEM8,  // e.g BYTE [__literal_string0]
+    OPERAND_GLOBAL_MEM16, // e.g WORD [__literal_string0]
+    OPERAND_GLOBAL_MEM32, // e.g DWORD [__literal_string0]
+    OPERAND_GLOBAL_MEM64, // e.g QWORD [__literal_string0]
+    OPERAND_IMM8,
+    OPERAND_IMM16,
+    OPERAND_IMM32,
+    OPERAND_IMM64
+};
+
+typedef struct Encoding {
+    uint8_t operand_count;
+    uint8_t mnemonic_count;
+    Mnemonic mnemonic[MNEMOIC_MAX];
+    enum Amd64OperandType operands[OPERAND_MAX];
+} Encoding;
+
+// Opcode is extended by number in ModRm.reg
+#define MOD_RM_OPCODE(n) {MOD_RM, (n) << 3}
+
+typedef struct Encodings {
+    uint32_t count;
+    const Encoding* encodings;
+} Encodings;
+
 #define RAX 0
 #define RCX 1
 #define RDX 2
@@ -35,10 +93,11 @@ enum Amd64Opcode {
     OP_JG, OP_JA, OP_JLE, OP_JBE,
     OP_JGE, OP_JAE, OP_JL, OP_JB,
     OP_JNE, OP_JNZ, OP_JE, OP_JZ,
-    OP_JMP, OP_CMP, OP_TEST,
-    OP_CMOVLE, OP_CMOVBE, OP_CMOVL, OP_CMOVB,
-    OP_CMOVG, OP_CMOVA, OP_CMOVGE, OP_CMOVAE,
-    OP_CMOVE, OP_CMOVZ, OP_CMOVNE, OP_CMOVNZ,
+    OP_JMP, 
+    OP_CMP, OP_TEST,
+    OP_CMOVG, OP_CMOVA, OP_CMOVLE, OP_CMOVBE,
+    OP_CMOVGE, OP_CMOVAE, OP_CMOVL, OP_CMOVB,
+    OP_CMOVNE, OP_CMOVNZ, OP_CMOVE, OP_CMOVZ,
     OP_MOVSXD, OP_MOVSX, OP_MOVZX,
     OP_SETZ,
     
@@ -52,25 +111,7 @@ enum Amd64Opcode {
     OPCODE_RDATA_SECTION
 };
 
-enum Amd64OperandType {
-    OPERAND_MEM8,  // e.g BYTE [rcx + 8 * rdx - 32]
-    OPERAND_MEM16, // e.g WORD [rcx + 8 * rdx - 32]
-    OPERAND_MEM32, // e.g DWORD [rcx + 8 * rdx - 32]
-    OPERAND_MEM64, // e.g QWORD [rcx + 8 * rdx - 32]
-    OPERAND_REG8,  // e.g al
-    OPERAND_REG16, // e.g cx
-    OPERAND_REG32, // e.g r10d
-    OPERAND_REG64, // e.g r12
-    OPERAND_LABEL, // e.g L12
-    OPERAND_GLOBAL_MEM8,  // e.g BYTE [__literal_string0]
-    OPERAND_GLOBAL_MEM16, // e.g WORD [__literal_string0]
-    OPERAND_GLOBAL_MEM32, // e.g DWORD [__literal_string0]
-    OPERAND_GLOBAL_MEM64, // e.g QWORD [__literal_string0]
-    OPERAND_IMM8,
-    OPERAND_IMM16,
-    OPERAND_IMM32,
-    OPERAND_IMM64
-};
+extern const Encodings ENCODINGS[RESERVE_MEM];
 
 typedef struct Adm64Operand {
     uint8_t type;
@@ -84,17 +125,19 @@ typedef struct Adm64Operand {
     };
 } Amd64Operand;
 
-#define OPERNAD_MAX 3
-
 typedef struct Amd64Op {
     uint16_t opcode;
     uint8_t count;
+    uint8_t rex;
+    uint32_t max_offset;
+    uint32_t offset;
     union {
         // Valid when opcode != DECLARE_MEM && opcode != RESERVE_MEM
-        Amd64Operand operands[OPERNAD_MAX];
+        Amd64Operand operands[OPERAND_MAX];
         // Valid when opcode == DECLARE_MEM || opcode == RESERVE_MEM
         struct {
             uint64_t datasize;
+            uint64_t alignment;
             const uint8_t* data;
         } mem;
         // Valid when opcode == OPCODE_LABEL
@@ -140,12 +183,16 @@ void asm_imm_var(AsmCtx* ctx, uint8_t size, const uint8_t* data);
 void asm_instr_end(AsmCtx* ctx);
 
 uint64_t asm_declare_mem(AsmCtx* ctx, uint64_t len, const uint8_t* data, uint32_t symbol_len,
-                         const uint8_t* symbol);
+                         const uint8_t* symbol, uint64_t alignment);
 
-uint64_t asm_reserve_mem(AsmCtx* ctx, uint64_t len, uint32_t symbol_len, const uint8_t* symbol);
+uint64_t asm_reserve_mem(AsmCtx* ctx, uint64_t len, uint32_t symbol_len, const uint8_t* symbol,
+                         uint64_t alignment);
 
 void asm_put_label(AsmCtx* ctx, uint64_t label, const uint8_t* sym, uint32_t sym_len);
 
 void asm_serialize(AsmCtx* ctx, String* dest);
+
+void asm_assemble(AsmCtx* ctx);
+
 
 #endif

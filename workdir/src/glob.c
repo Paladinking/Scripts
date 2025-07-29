@@ -77,6 +77,29 @@ HANDLE open_file_write(const ochar_t* filename) {
     return file;
 }
 
+bool write_file(const ochar_t* filename, const uint8_t* buf, uint64_t len) {
+    HANDLE file = open_file_write(filename);
+    if (file == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    uint64_t written = 0;
+    DWORD w = 0;
+    while (written < len) {
+        DWORD to_write = 65535;
+        if (len - written < 65535) {
+            to_write = len - written;
+        }
+        if (!WriteFile(file, buf + written, to_write, &w, NULL)) {
+            CloseHandle(file);
+            return false;
+        }
+        written += w;
+    }
+    CloseHandle(file);
+    return true;
+}
+
+
 bool read_text_file(String_noinit* str, const ochar_t* filename) {
 #ifdef NARROW_OCHAR
     WString name;

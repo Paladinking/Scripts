@@ -194,9 +194,13 @@ def main():
         parser_o = Object("parser.obj", "src/compiler/parser.c", includes=["src/compiler"],
                               depends=[parse_h.product])
 
+        encodings_c = Command("encodings.c", 
+                              f"python helpers/encodings.py src/compiler/asm/encodings.c",
+                              "helpers/encodings.py", directory="src/compiler/asm")
+
         comp_src = ["src/compiler/format.c", "src/compiler/asm/amd64.c",
                     "src/compiler/quads.c", "src/compiler/utils.c",
-                    "src/compiler/tokenizer.c",
+                    "src/compiler/tokenizer.c", encodings_c.product,
                     "src/compiler/code_generation.c", "src/compiler/amd64_asm.c",
                     "src/compiler/log.c", "src/compiler/type_checker.c",
                     "src/compiler/tables.c", "src/printf.c",
