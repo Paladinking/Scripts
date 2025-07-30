@@ -378,6 +378,36 @@ void create_conflict_graph(ConflictGraph* graph, FlowNode* nodes, uint64_t node_
     }
 }
 
+bool can_allocate(ConflictGraph* graph, uint64_t to_alloc, var_id* stack) {
+    VarSet old_members = VarSet_create(graph->members.max);
+    VarSet old_edges = VarSet_create(graph->edges.max);
+    VarSet_copy(&old_edges, &graph->edges);
+    VarSet_copy(&old_members, &graph->members);
+
+    var_id v = graph->reg_count - 1;
+    while (1) {
+        v = VarSet_getnext(&graph->members, v);
+        if (v == VAR_ID_INVALID) {
+            break;
+        }
+        uint64_t reg = ConflictGraph_pick_register(graph, v - graph->reg_count);
+        if (reg == VAR_ID_INVALID) {
+            break;
+        }
+        LOG_DEBUG("Tried picking register %llu for var %llu", reg, v - graph->reg_count);
+        stack[to_alloc - 1] = v - graph->reg_count;
+        --to_alloc;
+        VarSet_clear(&graph->members, v);
+        v = graph->reg_count - 1;
+    }
+    VarSet_copy(&graph->edges, &old_edges);
+    VarSet_copy(&graph->members, &old_members);
+    VarSet_free(&old_edges);
+    VarSet_free(&old_members);
+
+    return to_alloc == 0;
+}
+
 
 void Generate_function(Quads* quads, Quad* start, Quad* end,
                        uint64_t* label_map, VarList* vars, Arena* arena) {
@@ -505,6 +535,13 @@ void Generate_function(Quads* quads, Quad* start, Quad* end,
         }
         if (stack_size < to_alloc) {
             VarSet_copy(&graph.members, &work);
+
+            if (can_allocate(&graph, to_alloc, stack)) {
+                stack_size = to_alloc;
+                LOG_DEBUG("Successfull paint");
+                break;
+            }
+
             v = graph.reg_count - 1;
             v = VarSet_getnext(&graph.members, v);
             assert(v != VAR_ID_INVALID);
@@ -538,87 +575,13 @@ void Generate_function(Quads* quads, Quad* start, Quad* end,
         var_id v = stack[stack_size - 1];
         --stack_size;
         uint64_t reg = ConflictGraph_pick_register(&graph, v);
-        assert(v != VAR_ID_INVALID);
+        assert(reg != VAR_ID_INVALID);
+        LOG_DEBUG("Picked reg %llu for var %llu", reg, v);
         vars->data[v].alloc_type = ALLOC_REG;
         vars->data[v].reg = reg;
     }
 
     Mem_free(stack);
-
-    return;
-
-    for (uint64_t ix = 0; ix < vars->size; ++ix) {
-        switch(vars->data[ix].alloc_type) {
-            case ALLOC_NONE:
-                _wprintf(L"v%llu not allocated\n", ix);
-                break;
-            case ALLOC_MEM:
-                _wprintf(L"v%llu in memory\n", ix);
-                break;
-            case ALLOC_IMM:
-                _wprintf(L"v%llu in imm\n", ix);
-                break;
-            case ALLOC_REG:
-                _wprintf(L"v%llu in r%u\n", ix, vars->data[ix].reg);
-                break;
-        }
-    }
-    String out;
-    if (String_create(&out)) {
-        for (uint64_t i = 0; i < node_count; ++i) {
-            String_clear(&out);
-            String_append(&out, '\n');
-            for (Quad* q = nodes[i].start; q != nodes[i].end->next_quad; q = q->next_quad) {
-                fmt_quad(q, &out);
-                String_append(&out, '\n');
-            }
-            String_extend(&out, "Use:");
-            for (var_id s = 0; s < vars->size; ++s) {
-                if (VarSet_contains(&nodes[i].use, s)) {
-                    String_format_append(&out, " %llu,", s);
-                }
-            }
-            if (out.buffer[out.length - 1] == L',') {
-                String_pop(&out, 1);
-            }
-            String_append(&out, '\n');
-            String_extend(&out, "Def:");
-            for (var_id s = 0; s < vars->size; ++s) {
-                if (VarSet_contains(&nodes[i].def, s)) {
-                    String_format_append(&out, " %llu,", s);
-                }
-            }
-            if (out.buffer[out.length - 1] == L',') {
-                String_pop(&out, 1);
-            }
-            String_append(&out, L'\n');
-            String_extend(&out, "Live-in:");
-            for (var_id s = 0; s < vars->size; ++s) {
-                if (VarSet_contains(&nodes[i].live_in, s)) {
-                    String_format_append(&out, " %llu,", s);
-                }
-            }
-            if (out.buffer[out.length - 1] == L',') {
-                String_pop(&out, 1);
-            }
-            String_append(&out, '\n');
-            String_extend(&out, "Live-out:");
-            for (var_id s = 0; s < vars->size; ++s) {
-                if (VarSet_contains(&nodes[i].live_out, s)) {
-                    String_format_append(&out, " %llu,", s);
-                }
-            }
-            if (out.buffer[out.length - 1] == L',') {
-                String_pop(&out, 1);
-            }
-            String_append(&out, '\n');
-
-            String_append(&out, '\n');
-            outputUtf8(out.buffer, out.length);
-        }
-
-        String_free(&out);
-    }
 }
 
 void Generate_code(Quads* quads, FunctionTable* functions, NameTable* name_table,

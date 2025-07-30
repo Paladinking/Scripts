@@ -18,7 +18,7 @@ typedef struct ParseCtx {
     bool err;
 } ParseCtx;
 
-bool write_file(const wchar_t* filename, String* buf) {
+bool write_to_file(const wchar_t* filename, String* buf) {
     HANDLE file =
         CreateFileW(filename, GENERIC_WRITE | DELETE, 0, NULL,
                     CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -562,7 +562,7 @@ int main() {
                     goto end;
                 }
             }
-            if (!write_file(name_buf.buffer, &data)) {
+            if (!write_to_file(name_buf.buffer, &data)) {
                 _wprintf_e(L"Failed writing '%s'\n", name_buf.buffer);
                 String_free(&data);
                 goto end;

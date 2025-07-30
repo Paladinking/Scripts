@@ -1,14 +1,25 @@
 #include "mem.h"
 #include "coff.h"
 #include "args.h"
+#include "glob.h"
 #include <stdbool.h>
 #include <stdint.h>
+
+#define SECTION_ALIGNMENT 4096
+#define FILE_ALIGNMENT 512
 
 #define READ_U32(ptr)                                                          \
     (((ptr)[0]) | ((ptr)[1] << 8) | ((ptr)[2] << 16) | ((ptr)[3] << 24))
 #define READ_U16(ptr) (((ptr)[0]) | ((ptr)[1] << 8))
 #define READ_U32_BE(ptr)                                                       \
     (((ptr)[3]) | ((ptr)[2] << 8) | ((ptr)[1] << 16) | ((ptr)[0] << 24))
+
+
+#define ALIGNED_TO(i, size) (((i) % (size) == 0) ? (i) : ((i) + ((size) - ((i) % (size)))))
+
+const uint8_t DOS_STUB[] = {77, 90, 128, 0, 1, 0, 0, 0, 4, 0, 16, 0, 255, 255, 0, 0, 64, 1, 0, 0, 0, 0, 0, 0, 64, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 0, 0, 0, 14, 31, 186, 14, 0, 180, 9, 205, 33, 184, 1, 76, 205, 33, 84, 104, 105, 115, 32, 112, 114, 111, 103, 114, 97, 109, 32, 99, 97, 110, 110, 111, 116, 32, 98, 101, 32, 114, 117, 110, 32, 105, 110, 32, 68, 79, 83, 32, 109, 111, 100, 101, 46, 13, 10, 36, 0, 0, 0, 0, 0, 0, 0, 0};
+
+const uint8_t ZEROES[512] = {0};
 
 bool set_file_offset(HANDLE file, uint64_t offset) {
     LARGE_INTEGER l;
@@ -358,8 +369,8 @@ char** read_export_table(HANDLE file, uint64_t file_offset, uint32_t size,
 
 // Note: len <= 32
 uint64_t read_ascii_num(uint8_t *buf, uint32_t len) {
-    wchar_t data[33];
-    memset(data, 0, 33);
+    ochar_t data[33];
+    memset(data, 0, 33 * sizeof(ochar_t));
     uint32_t ix = 0;
     for (; ix < len; ++ix) {
         if (buf[ix] >= '0' && buf[ix] <= '9') {
@@ -372,7 +383,7 @@ uint64_t read_ascii_num(uint8_t *buf, uint32_t len) {
         return 0;
     }
     uint64_t res;
-    parse_uintw(data, &res, 10);
+    parse_uint(data, &res, 10);
     return res;
 }
 
@@ -597,4 +608,284 @@ char** symbol_dump(const wchar_t* filename, uint32_t* count, enum SymbolFileType
     *count = 0;
     CloseHandle(file);
     return Mem_alloc(1);
+}
+
+bool Coff64Image_create(Coff64Image* img) {
+    OptionalHeader64* header = Mem_alloc(sizeof(OptionalHeader64) + 
+                                         16 * sizeof(struct DataDirectory));
+
+    if (header == NULL) {
+        return false;
+    }
+    img->header.machine = 0x8664;
+    img->header.number_of_sections = 0;
+    // TODO: Set this before writing file
+    img->header.timedate_stamp = 0;
+    img->header.pointer_to_symbol_table = 0;
+    img->header.number_of_symbols = 0;
+    img->header.size_of_optional_header = sizeof(OptionalHeader64) +
+                                          16 * sizeof(struct DataDirectory);
+    // Executable, Large adress aware
+    img->header.characteristics = 0x0002 | 0x0020;
+
+    img->optional_header = header;
+    img->section_table = NULL;
+
+    header->magic = 0x20b;
+    header->major_linker_ver = 0;
+    header->minor_linker_ver = 0;
+    header->size_of_code = 0;
+    header->size_of_initialized_data = 0;
+    header->size_of_uninitialized_data = 0;
+    header->address_of_entry_point = 0;
+    header->base_of_code = 0;
+
+    header->image_base = 0x140000000;
+    header->section_alignment = SECTION_ALIGNMENT;
+    header->file_alignment = FILE_ALIGNMENT;
+    header->major_os_version = 6;
+    header->minor_os_version = 0;
+    header->major_image_version = 0;
+    header->minor_image_version = 0;
+    header->major_subsystem_version = 6;
+    header->minor_subsystem_version = 0;
+    header->win32_version = 0;
+    header->win32_version = 0;
+    header->size_of_image = SECTION_ALIGNMENT;
+    header->size_of_headers = FILE_ALIGNMENT;
+    header->checksum = 0;
+    header->subsystem = 3; // Console
+    header->dll_characteristics = 0;
+    header->size_of_stack_reserve = 4096 * 128;
+    header->size_of_stack_commit = 4096;
+    header->size_of_heap_reserve = 4096 * 256;
+    header->size_of_heap_commit = 4096;
+    header->loader_flags = 0;
+    header->number_of_rvas_and_sizes = 16;
+
+    for (int i = 0; i < 16; ++i) {
+        header->data_directories[i].size = 0;
+        header->data_directories[i].virtual_address_rva = 0;
+    }
+
+    return true;
+}
+
+SectionTableEntry* add_section(Coff64Image* img, const char* name, uint32_t file_size,
+                               uint32_t virtual_size, const uint8_t* data, uint32_t size) {
+    uint64_t name_len = strlen(name);
+    if (name_len > 8) {
+        return false;
+    }
+
+    uint32_t virtual_offset;
+    if (img->header.number_of_sections > 0) {
+        SectionTableEntry* new_st = Mem_realloc(img->section_table,
+                (img->header.number_of_sections + 1) * sizeof(SectionTableEntry));
+        if (new_st == NULL) {
+            return false;
+        }
+        img->section_table = new_st;
+        SectionData* new_sd = Mem_realloc(img->section_data,
+                (img->header.number_of_sections + 1) * sizeof(SectionData));
+        if (new_sd == NULL) {
+            return false;
+        }
+        img->section_data = new_sd;
+        SectionTableEntry* last_section = &img->section_table[img->header.number_of_sections - 1];
+        uint64_t last_end = last_section->virtual_address + 
+            ALIGNED_TO(last_section->virtual_size, SECTION_ALIGNMENT);
+        virtual_offset = last_end;
+    } else {
+        img->section_table = Mem_alloc(sizeof(SectionTableEntry));
+        if (img->section_table == NULL) {
+            return false;
+        }
+        img->section_data = Mem_alloc(sizeof(SectionData));
+        if (img->section_data == NULL) {
+            Mem_free(img->section_table);
+            return false;
+        }
+        virtual_offset = SECTION_ALIGNMENT;
+    }
+    SectionTableEntry* e = img->section_table + img->header.number_of_sections;
+    memset(e->name, 0, 8);
+    memcpy(e->name, name, name_len);
+    e->virtual_address = virtual_offset;
+    e->virtual_size = virtual_size;
+    e->size_of_raw_data = file_size;
+    e->pointer_to_relocations = 0;
+    e->pointer_to_line_numbers = 0;
+    e->number_of_relocations = 0;
+    e->number_of_line_numbers = 0;
+    e->characteristics = 0;
+
+    img->header.number_of_sections += 1;
+    img->optional_header->size_of_image += ALIGNED_TO(virtual_size, SECTION_ALIGNMENT);
+
+    uint64_t h = sizeof(DOS_STUB) + 4 + sizeof(OptionalHeader64) + 
+        img->optional_header->number_of_rvas_and_sizes * sizeof(struct DataDirectory) + 
+        img->header.number_of_sections * sizeof(SectionTableEntry);
+    img->optional_header->size_of_headers = ALIGNED_TO(h, FILE_ALIGNMENT);
+
+    img->section_table[0].pointer_to_raw_data = img->optional_header->size_of_headers;
+    for (uint32_t i = 1; i < img->header.number_of_sections; ++i) {
+        img->section_table[i].pointer_to_raw_data = 
+            img->section_table[i - 1].pointer_to_raw_data + 
+            img->section_table[i - 1].size_of_raw_data;
+    }
+
+    img->section_data[img->header.number_of_sections - 1].size = size;
+    img->section_data[img->header.number_of_sections - 1].data = data;
+
+    return e;
+}
+
+bool Coff64Image_add_code_section(Coff64Image* img, const uint8_t* data,
+                                  uint32_t size, const char* name) {
+
+    uint32_t aligned_size = ALIGNED_TO(size, FILE_ALIGNMENT);
+    if (!add_section(img, name, aligned_size, size, data, size)) {
+        return false;
+    }
+
+    SectionTableEntry* e = img->section_table + img->header.number_of_sections - 1;
+
+    if (img->optional_header->base_of_code == 0) {
+        img->optional_header->base_of_code = e->virtual_address;
+    }
+    // Code, Read, Execute
+    e->characteristics = 0x00000020 | 0x40000000 | 0x20000000;
+    img->optional_header->size_of_code += aligned_size;
+
+    return true;
+}
+
+bool Coff64Image_add_data_section(Coff64Image* img, const uint8_t* data,
+                                  uint32_t size, uint32_t virtual_size, 
+                                  const char* name) {
+    if (virtual_size < size) {
+        return false;
+    }
+    uint32_t aligned_size = ALIGNED_TO(size, FILE_ALIGNMENT);
+    if (!add_section(img, name, aligned_size, virtual_size, data, size)) {
+        return false;
+    }
+
+    SectionTableEntry* e = img->section_table + img->header.number_of_sections - 1;
+
+    // Initialized data, Read, Write
+    e->characteristics = 0x00000040 | 0x40000000 | 0x80000000;
+    img->optional_header->size_of_initialized_data += aligned_size;
+
+    return true;
+}
+
+bool Coff64Image_add_rdata_section(Coff64Image* img, const uint8_t* data,
+                                   uint32_t size, const char* name) {
+    uint32_t aligned_size = ALIGNED_TO(size, FILE_ALIGNMENT);
+    if (!add_section(img, name, aligned_size, size, data, size)) {
+        return false;
+    }
+
+    SectionTableEntry* e = img->section_table + img->header.number_of_sections - 1;
+
+    // Initialized data, Read 
+    e->characteristics = 0x00000040 | 0x40000000;
+    img->optional_header->size_of_initialized_data += aligned_size;
+
+    return true;
+}
+
+void Coff64Image_set_entrypoint(Coff64Image* img, uint32_t entry_offset) {
+    if (img->header.number_of_sections > 0) {
+        entry_offset += img->section_table[0].virtual_address;
+    }
+    img->optional_header->address_of_entry_point = entry_offset;
+}
+
+bool Coff64Image_write(Coff64Image* img, const ochar_t* name) {
+    HANDLE file = open_file_write(name);
+    if (file == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+
+    DWORD w;
+    if (!WriteFile(file, DOS_STUB, sizeof(DOS_STUB), &w, NULL) || w != sizeof(DOS_STUB)) {
+        CloseHandle(file);
+        return false;
+    }
+    uint8_t signature[4] = {'P', 'E', 0, 0};
+    if (!WriteFile(file, signature, 4, &w, NULL) || w != 4) {
+        CloseHandle(file);
+        return false;
+    }
+    if (!WriteFile(file, &img->header, sizeof(CoffHeader), &w, NULL) || w != sizeof(CoffHeader)) {
+        CloseHandle(file);
+        return false;
+    }
+    uint32_t opt_size = sizeof(OptionalHeader64) + 
+        img->optional_header->number_of_rvas_and_sizes * sizeof(struct DataDirectory);
+    if (!WriteFile(file, img->optional_header, opt_size, &w, NULL) || w != opt_size) {
+        CloseHandle(file);
+        return false;
+    }
+
+    for (uint32_t i = 0; i < img->header.number_of_sections; ++i) {
+        if (!WriteFile(file, &img->section_table[i], sizeof(SectionTableEntry), &w, NULL) || 
+             w != sizeof(SectionTableEntry)) {
+            CloseHandle(file);
+            return false;
+        }
+    }
+
+    uint64_t file_offset = sizeof(DOS_STUB) + 4 + sizeof(CoffHeader) + opt_size + 
+        img->header.number_of_sections * sizeof(SectionTableEntry);
+
+    for (uint32_t i = 0; i < img->header.number_of_sections; ++i) {
+        while (file_offset < img->section_table[i].pointer_to_raw_data) {
+            uint32_t to_write = 512;
+            if (img->section_table[i].pointer_to_raw_data - file_offset < 512) {
+                to_write = img->section_table[i].pointer_to_raw_data - file_offset;
+            }
+            if (!WriteFile(file, ZEROES, to_write, &w, NULL)) {
+                CloseHandle(file);
+                return false;
+            }
+            file_offset += w;
+        }
+        uint32_t written = 0;
+        while (written < img->section_data[i].size) {
+            if (!WriteFile(file, img->section_data[i].data + written,
+                  img->section_data[i].size - written, &w, NULL)) {
+                CloseHandle(file);
+                return false;
+            }
+            written += w;
+        }
+        file_offset += written;
+    }
+
+    uint64_t remaining = ALIGNED_TO(file_offset, FILE_ALIGNMENT) - file_offset;
+    while (remaining > 0) {
+        uint32_t to_write = 512;
+        if (remaining < to_write) {
+            to_write = remaining;
+        }
+        if (!WriteFile(file, ZEROES, to_write, &w, NULL)) {
+            CloseHandle(file);
+            return false;
+        }
+        remaining -= w;
+    }
+
+    return true;
+}
+
+void Coff64Image_free(Coff64Image* img) {
+    if (img->header.number_of_sections > 0) {
+        Mem_free(img->section_data);
+        Mem_free(img->section_table);
+    }
+    Mem_free(img->optional_header);
 }

@@ -82,7 +82,7 @@ int compiler(char** argv, int argc) {
     String out;
     if (String_create(&out)) {
         fmt_quads(&q, &out);
-        //outputUtf8(out.buffer, out.length);
+        outputUtf8(out.buffer, out.length);
         String_free(&out);
     }
 

@@ -246,6 +246,9 @@ void fmt_errors(const Parser* parser, String* dest) {
             break;
         case TYPE_ERROR_WRONG_ARG_COUNT:
             String_extend(dest, "Type Error: Wrong number of arguments");
+            break;
+        case ASM_ERROR_MISSING_ENCODING:
+            String_extend(dest, "Assembly Error: Missing encoding");
         }
         uint64_t row, col;
         parser_row_col(parser, err->pos.start, &row, &col);

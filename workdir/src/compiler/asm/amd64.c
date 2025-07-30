@@ -4,6 +4,7 @@
 #include "../log.h"
 #include <printf.h>
 #include <glob.h>
+#include <coff.h>
 
 static enum Amd64OperandType simple_operand(enum Amd64OperandType op) {
     switch (op) {
@@ -166,7 +167,8 @@ static uint64_t max_op_offset(AsmCtx* ctx, Amd64Op* op, uint64_t* offset) {
         return res;
     }
 
-    fatal_error(NULL, PARSE_ERROR_INTERNAL, LINE_INFO_NONE);
+    __debugbreak();
+    fatal_error(NULL, ASM_ERROR_MISSING_ENCODING, LINE_INFO_NONE);
     return 0;
 }
 
@@ -372,7 +374,7 @@ static uint64_t assemble_op(AsmCtx* ctx, Amd64Op* op, uint64_t* offset, ByteBuff
                     while (label_op->opcode == OPCODE_LABEL) {
                         label_op = label_op->next;
                     }
-                    AddrBuf_append(addrs, label_op, op, dest->size, 4);
+                    AddrBuf_append(addrs, label_op, op->next, dest->size, 4);
                     for (int i = 0; i < 4; ++i) {
                         Buffer_append(dest, 0);
                     }
@@ -502,10 +504,21 @@ void asm_ctx_create(AsmCtx* ctx) {
     ctx->label_count = 0;
     ctx->data_count = 0;
     ctx->label_cap = 32;
+    ctx->entrypoint = NULL;
     ctx->labels = Mem_alloc(32 * sizeof(LabelData));
     if (ctx->labels == NULL) {
         out_of_memory(NULL);
     }
+}
+
+void asm_set_entrypoint(AsmCtx* ctx, uint64_t ix) {
+    ix += ctx->data_count;
+    assert(ix < ctx->label_count);
+    Amd64Op* op = ctx->labels[ix].op;
+    while (op->opcode == OPCODE_LABEL) {
+        op = op->next;
+    }
+    ctx->entrypoint = op;
 }
 
 void asm_instr(AsmCtx* ctx, enum Amd64Opcode opcode) {
@@ -901,38 +914,66 @@ void asm_serialize(AsmCtx* ctx, String* dest) {
 void asm_assemble(AsmCtx* ctx) {
     uint64_t offset = 0;
     Amd64Op* op = ctx->start;
-    while (op != ctx->end) {
+    while (op != NULL) {
         uint64_t off = max_op_offset(ctx, op, &offset);
         assert(off <= UINT32_MAX);
         op->max_offset = off;
 
         op = op->next;
     }
-    ctx->end->offset = offset;
 
     LOG_WARNING("Done computing offsets");
 
     ByteBuffer dest;
     Buffer_create(&dest);
 
+    uint32_t cur_section = OPCODE_START;
+    uint32_t cur_section_start = 0;
+    bool has_code = false, has_data = false, has_rdata = false;
+    uint32_t code_offset = 0, code_size = 0;
+    uint32_t data_offset = 0, data_size = 0;
+    uint32_t rdata_offset = 0, rdata_size = 0;
+
     AddrBuf addrs;
     AddrBuf_create(&addrs);
 
     offset = 0;
     op = ctx->start;
-    while (op != ctx->end) {
-        if (op->opcode == OPCODE_DATA_SECTION || op->opcode == OPCODE_RDATA_SECTION ||
-            op->opcode == OPCODE_TEXT_SECTION) {
-            while (dest.size % 4096 != 0) {
-                Buffer_append(&dest, 0);
+    while (op != NULL) {
+        if (op->opcode == OPCODE_TEXT_SECTION ||
+            op->opcode == OPCODE_DATA_SECTION ||
+            op->opcode == OPCODE_RDATA_SECTION ||
+            op->opcode == OPCODE_END) {
+            if (cur_section == OPCODE_RDATA_SECTION) {
+                assert(!has_rdata);
+                rdata_offset = cur_section_start;
+                rdata_size = dest.size - rdata_offset;
+                has_rdata = true;
+            } else if (cur_section == OPCODE_DATA_SECTION) {
+                assert(!has_data);
+                data_offset = cur_section_start;
+                data_size = dest.size - data_offset;
+                has_data = true;
+            } else if (cur_section == OPCODE_TEXT_SECTION) {
+                assert(!has_code);
+                code_offset = cur_section_start;
+                code_size = dest.size - code_offset;
+                has_code = true;
             }
+
+            cur_section = op->opcode;
+            cur_section_start = dest.size;
         }
+
         uint64_t off = assemble_op(ctx, op, &offset, &dest, &addrs);
         assert(off <= UINT32_MAX);
         op->offset = off;
 
         op = op->next;
     }
+
+    assert(has_code);
+    oprintf("Size of rdata: %u\n", rdata_size);
 
     for (uint64_t i = 0; i < addrs.size; ++i) {
         int64_t source = addrs.data[i].source->offset;
@@ -955,7 +996,76 @@ void asm_assemble(AsmCtx* ctx) {
         }
     }
 
-    LOG_WARNING("Done assembly: %llu bytes", dest.size);
+    LOG_WARNING("Done assembly: %llu bytes, %u", dest.size, code_offset);
 
     write_file("out.bin", dest.data, dest.size);
+
+    if (ctx->entrypoint == NULL) {
+        LOG_WARNING("Entrypoint missing");
+        return;
+    }
+
+    Coff64Image img;
+    Coff64Image_create(&img);
+    if (has_data && code_offset > data_offset) {
+        if (has_rdata && data_offset > rdata_offset) {
+            Coff64Image_add_rdata_section(&img, dest.data + rdata_offset,
+                                          rdata_size, ".rdata");
+            Coff64Image_add_data_section(&img, dest.data + data_offset,
+                                         data_size, data_size, ".data");
+            Coff64Image_add_code_section(&img, dest.data + code_offset, 
+                                         code_size, ".text");
+        } else if (has_rdata && code_offset > rdata_offset) {
+            Coff64Image_add_data_section(&img, dest.data + data_offset,
+                                         data_size, data_size, ".data");
+            Coff64Image_add_rdata_section(&img, dest.data + rdata_offset,
+                                          rdata_size, ".rdata");
+            Coff64Image_add_code_section(&img, dest.data + code_offset, 
+                                         code_size, ".text");
+        } else {
+            Coff64Image_add_data_section(&img, dest.data + data_offset,
+                                         data_size, data_size, ".data");
+            Coff64Image_add_code_section(&img, dest.data + code_offset, 
+                                         code_size, ".text");
+            if (has_rdata) {
+                Coff64Image_add_rdata_section(&img, dest.data + rdata_offset,
+                                              rdata_size, ".rdata");
+            }
+        }
+    } else {
+        if (has_rdata && code_offset > rdata_offset) {
+            Coff64Image_add_rdata_section(&img, dest.data + rdata_offset,
+                                          rdata_size, ".rdata");
+            Coff64Image_add_code_section(&img, dest.data + code_offset, 
+                                         code_size, ".text");
+            if (has_data) {
+                Coff64Image_add_data_section(&img, dest.data + data_offset,
+                                             data_size, data_size, ".data");
+            }
+        } else {
+            Coff64Image_add_code_section(&img, dest.data + code_offset, 
+                                         code_size, ".text");
+            if (has_data && ((has_rdata && rdata_offset > data_offset) || !has_rdata)) {
+                Coff64Image_add_data_section(&img, dest.data + data_offset,
+                                             data_size, data_size, ".data");
+                if (has_rdata) {
+                    Coff64Image_add_rdata_section(&img, dest.data + rdata_offset,
+                                                  rdata_size, ".rdata");
+                }
+            } else {
+                if (has_rdata) {
+                    Coff64Image_add_rdata_section(&img, dest.data + rdata_offset,
+                                                  rdata_size, ".rdata");
+                }
+                if (has_data) {
+                    Coff64Image_add_data_section(&img, dest.data + data_offset,
+                                                 data_size, data_size, ".data");
+                }
+            }
+
+        }
+    }
+    Coff64Image_set_entrypoint(&img, ctx->entrypoint->offset);
+    Coff64Image_write(&img, oL("out.exe"));
+    Coff64Image_free(&img);
 }
