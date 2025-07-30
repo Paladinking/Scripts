@@ -332,6 +332,8 @@ def main() -> None:
                           include_byte=False)
     mov += split_encoding((OperandMem, OperandImm32),
                           (SizesPrefix(), Opcode(0xC7), ModRmOpcode(0), RmMem(), VarImm32()))
+    mov += [((OPERAND_REG64, OPERAND_IMM32), 
+             (Rex(0x48), Opcode(0xC7), ModRmOpcode(0), RmReg(), Imm(4)))]
     output('MOV', mov)
 
     push = split_encoding((OPERAND_REG64,), (Opcode(0x50), PlusReg()))

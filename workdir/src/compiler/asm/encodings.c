@@ -108,6 +108,11 @@ const Encoding MOV_ENCODING[] = {
         2, 5,
         {{REX, 0x48}, {OPCODE, 0xc7}, {MOD_RM, 0x0}, {RM_MEM}, {IMM, 4}},
         {OPERAND_MEM64, OPERAND_IMM32},
+    },
+    {
+        2, 5,
+        {{REX, 0x48}, {OPCODE, 0xc7}, {MOD_RM, 0x0}, {RM_REG}, {IMM, 4}},
+        {OPERAND_REG64, OPERAND_IMM32},
     }
 };
 
@@ -2358,7 +2363,7 @@ const Encoding SETZ_ENCODING[] = {
 
 const Encodings ENCODINGS[] = {
     {1, NOP_ENCODING}, //0
-    {20, MOV_ENCODING}, //1
+    {21, MOV_ENCODING}, //1
     {1, PUSH_ENCODING}, //2
     {1, POP_ENCODING}, //3
     {1, RET_ENCODING}, //4

@@ -102,7 +102,8 @@ def main():
     Executable("test2.exe", *arg_src, "src/test2.c", "src/glob.c", "src/dynamic_string.c", u64hashmap,  ntdll,
                defines=["NEXTLINE_FAST"], namespace="test2")
 
-    Executable("symbol-dump.exe", "src/symbol-dump.c", "src/coff.c", *arg_src, ntdll)
+    Executable("symbol-dump.exe", "src/symbol-dump.c", "src/coff.c", "src/glob.c",
+               *arg_src, ntdll)
 
     Executable("casefold.exe", "src/casefold.c", *unicode, *arg_src, ntdll)
 
@@ -204,7 +205,7 @@ def main():
                     "src/compiler/code_generation.c", "src/compiler/amd64_asm.c",
                     "src/compiler/log.c", "src/compiler/type_checker.c",
                     "src/compiler/tables.c", "src/printf.c",
-                    "src/dynamic_string.c", "src/args.c",
+                    "src/dynamic_string.c", "src/args.c", "src/coff.c",
                     "src/glob.c", "src/arena.c", ntdll]
 
         Executable("compiler.exe", "src/compiler/compiler.c", *comp_src,

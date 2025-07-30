@@ -40,9 +40,12 @@ void fatal_error_cb(Parser* parser, enum ErrorKind error, LineInfo info,
             LOG_CRITICAL("Fatal error: unexpecetd end of file at row %llu, collum %llu", row, col);
             break;
         case PARSE_ERROR_INTERNAL:
-            LOG_CRITICAL("Fatal error: internal error at %S line %llu", file, line);
+            LOG_CRITICAL("Fatal error: internal error at %s line %llu", file, line);
             break;
         case PARSE_ERROR_NONE:
+            break;
+        case ASM_ERROR_MISSING_ENCODING:
+            LOG_CRITICAL("Fatal error: Missing asm encoding at %s line %llu", file, line);
             break;
         default:
             LOG_CRITICAL("Fatal error: UNKOWN");

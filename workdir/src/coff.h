@@ -1,6 +1,8 @@
 #ifndef COFF_STRUCT_H
 #define COFF_STRUCT_H
 #include <stdint.h>
+#include <stdbool.h>
+#include "ochar.h"
 
 struct DataDirectory {
     uint32_t virtual_address_rva;
@@ -202,6 +204,35 @@ typedef struct ArchiveMemberHeader {
     uint8_t end[2];
 } ArchiveMemberHeader;
 
+typedef struct SectionData {
+    const uint8_t* data;
+    uint32_t size;
+} SectionData;
+
+typedef struct Coff64Image {
+    CoffHeader header;
+    OptionalHeader64* optional_header;
+    SectionTableEntry* section_table;
+    SectionData* section_data;
+} Coff64Image;
+
+bool Coff64Image_create(Coff64Image* img);
+
+bool Coff64Image_add_code_section(Coff64Image* img, const uint8_t* data,
+                                  uint32_t size, const char* name);
+
+bool Coff64Image_add_data_section(Coff64Image* img, const uint8_t* data,
+                                  uint32_t size, uint32_t virtual_size,
+                                  const char* name);
+
+bool Coff64Image_add_rdata_section(Coff64Image* img, const uint8_t* data,
+                                   uint32_t size, const char* name);
+
+void Coff64Image_set_entrypoint(Coff64Image* img, uint32_t entry_offset);
+
+bool Coff64Image_write(Coff64Image* img, const ochar_t* name);
+
+void Coff64Image_free(Coff64Image* img);
 
 enum SymbolFileType {
     SYMBOL_DUMP_NOT_FOUND = 0,

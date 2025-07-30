@@ -159,6 +159,7 @@ typedef struct AsmCtx {
     Arena arena;
 
     uint64_t data_count;
+    Amd64Op* entrypoint;
 
     uint64_t label_count;
     uint64_t label_cap;
@@ -166,6 +167,8 @@ typedef struct AsmCtx {
 } AsmCtx;
 
 void asm_ctx_create(AsmCtx* ctx);
+
+void asm_set_entrypoint(AsmCtx* ctx, uint64_t ix);
 
 void asm_instr(AsmCtx* ctx, enum Amd64Opcode op);
 

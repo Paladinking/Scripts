@@ -36,7 +36,8 @@ enum ErrorKind {
     PARSE_ERROR_INTERNAL = 11,
     TYPE_ERROR_ILLEGAL_TYPE = 12,
     TYPE_ERROR_ILLEGAL_CAST = 13,
-    TYPE_ERROR_WRONG_ARG_COUNT = 14
+    TYPE_ERROR_WRONG_ARG_COUNT = 14,
+    ASM_ERROR_MISSING_ENCODING = 15
 };
 
 typedef struct Error {
@@ -63,6 +64,8 @@ void out_of_memory(void* ctx);
 void reserve(void** ptr, uint64_t size, size_t elem_size, uint64_t* cap);
 
 #define RESERVE(ptr, size, cap) reserve((void**)(&(ptr)), (size), sizeof(*(ptr)), &(cap))
+
+#define ALIGNED_TO(i, allignment) (((i) % (size) == 0) ? (i) : ((i) + ((size) - ((i) % (size)))))
 
 #define ALIGN_TO(i, size) if (((i) % (size)) != 0) { \
     (i) = (i) + ((size) - ((i) % (size)));            \

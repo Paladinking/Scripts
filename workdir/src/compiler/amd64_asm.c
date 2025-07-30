@@ -347,6 +347,11 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
         uint64_t reg = GEN_CALL_REGS[quad->op1.uint64];
         requre_gen_reg_dest(graph, reg, &quad->dest, live_set, quad, node, 
                             vars, arena);
+    } else if (q == QUAD_GET_ARG) {
+        if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
+            postinsert_move(graph, &quad->dest, live_set, quad, node,
+                            vars, arena);
+        }
     } else if (q == QUAD_CMP_EQ || q == QUAD_CMP_NEQ || q == QUAD_CMP_G ||
         q == QUAD_CMP_L || q == QUAD_CMP_GE || q == QUAD_CMP_LE) {
 
@@ -444,6 +449,10 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
         }
         requre_gen_reg_var(graph, reg, &quad->op2, live_set, quad, 
                            node, vars, arena);
+    } else if (q == QUAD_PUT_ARG) {
+        if (vars->data[quad->op2].alloc_type == ALLOC_MEM) {
+            preinsert_move(graph, &quad->op2, live_set, quad, node, vars, arena);
+        }
     } else if (q == QUAD_GET_RET) {
         requre_gen_reg_dest(graph, RAX, &quad->dest, live_set, quad, 
                             node, vars, arena);
@@ -612,9 +621,25 @@ void emit_op1_dest_move(Quad* quad, VarData* vars, AsmCtx* ctx) {
     uint64_t datasize = quad->type & QUAD_DATASIZE_MASK;
     VarData* op1 = &vars[quad->op1.var];
     VarData* dest = &vars[quad->dest];
+
     asm_instr(ctx, OP_MOV);
     emit_var(dest, datatype, datasize, ctx);
-    emit_var(op1, datatype, datasize, ctx);
+    if (op1->alloc_type == ALLOC_IMM) {
+        const uint8_t* data;
+        if (datatype == QUAD_SINT) {
+            data = (const uint8_t*)&op1->imm.int64;
+            asm_imm_var(ctx, size_val(datasize), data);
+        } else if (datatype == QUAD_UINT) {
+            data = (const uint8_t*)&op1->imm.uint64;
+            asm_imm_var(ctx, size_val(datasize), data);
+        } else {
+            assert(datatype == QUAD_BOOL);
+            uint8_t d = op1->imm.boolean ? 1 : 0;
+            asm_imm_var(ctx, datasize, &d);
+        }
+    } else {
+        emit_var(op1, datatype, datasize, ctx);
+    }
     asm_instr_end(ctx);
 }
 
@@ -663,6 +688,14 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
     asm_put_label(ctx, def->start_label, name, name_len);
 
     uint64_t stack_size = 32;
+
+    for (Quad* q = def->quad_start; q != def->quad_end->next_quad; q = q->next_quad) {
+        if ((q->type & QUAD_TYPE_MASK) == QUAD_PUT_ARG) {
+            if (q->op1.uint64 >= 4 && q->op1.uint64 * 8 + 8 > stack_size) {
+                stack_size = q->op1.uint64 * 8 + 8;
+            }
+        }
+    }
 
     bool push_reg[GEN_REG_COUNT] = {false};
 
@@ -713,7 +746,12 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
         switch (type) {
         case QUAD_GET_ARG: {
             if (q->op1.uint64 > 3) {
-                assert(false);
+                assert(vars[q->dest].alloc_type == ALLOC_REG);
+                asm_instr(ctx, OP_MOV);
+                emit_var(&vars[q->dest], datatype, datasize, ctx);
+                asm_mem_var(ctx, size_val(datasize), RSP, 0, RAX,
+                            stack_size + q->op1.uint64 * 8 + 8);
+                asm_instr_end(ctx);
                 break;
             }
             uint32_t src_reg = GEN_CALL_REGS[q->op1.uint64];
@@ -729,7 +767,12 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
         }
         case QUAD_PUT_ARG: {
             if (q->op1.uint64 > 3) {
-                assert(false);
+                assert(vars[q->op2].alloc_type == ALLOC_REG);
+                asm_instr(ctx, OP_MOV);
+                asm_mem_var(ctx, size_val(datasize), RSP, 0, RAX,
+                            q->op1.uint64 * 8);
+                emit_var(&vars[q->op2], datatype, datasize, ctx);
+                asm_instr_end(ctx);
                 break;
             }
             uint32_t reg = GEN_CALL_REGS[q->op1.uint64];
@@ -1340,6 +1383,13 @@ void Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
     for (uint64_t ix = 0; ix < func_table->size; ++ix) {
         Backend_generate_fn(func_table->data[ix], arena, &ctx,
                             name_table, func_table);
+
+        const uint8_t* name = name_table->data[func_table->data[ix]->name].name;
+        uint32_t name_len = name_table->data[func_table->data[ix]->name].name_len;
+        if (name_len == 4 && name[0] == 'm' && name[1] == 'a' && 
+            name[2] == 'i' && name[3] == 'n') {
+            asm_set_entrypoint(&ctx, func_table->data[ix]->start_label);
+        }
     }
 
     String out;
