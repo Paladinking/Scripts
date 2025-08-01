@@ -36,6 +36,37 @@ void QuadList_mark_arg(QuadList* quads, var_id id) {
     quads->vars.data[id].kind = VAR_CALLARG;
 }
 
+var_id QuadList_add_extern_func(QuadList* quads, name_id name, type_id type, Parser* parser) {
+    if (quads->vars.size == quads->vars.cap) {
+        uint64_t c = quads->vars.cap * 2;
+        VarData* data = Mem_realloc(quads->vars.data, c * sizeof(VarData));
+        if (data == NULL) {
+            out_of_memory(NULL);
+        }
+        quads->vars.data = data;
+        quads->vars.cap = c;
+    }
+    // Function ptr
+    type = type_ptr_of(&parser->type_table, type);
+
+    var_id id = quads->vars.size;
+    quads->vars.data[id].name = name;
+    quads->vars.data[id].type = type;
+    quads->vars.data[id].alloc_type = ALLOC_NONE;
+    quads->vars.data[id].reads = 0;
+    quads->vars.data[id].writes = 0;
+    quads->vars.data[id].kind = VAR_FUNCTION;
+
+    AllocInfo i = type_allocation(&parser->type_table, type);
+    quads->vars.data[id].byte_size = i.size;
+    quads->vars.data[id].alignment = i.allignment;
+
+    parser->name_table.data[name].has_var = true;
+    parser->name_table.data[name].variable = id;
+
+    return id;
+}
+
 var_id QuadList_addvar(QuadList* quads, name_id name, type_id type, Parser* parser) {
     if (quads->vars.size == quads->vars.cap) {
         uint64_t c = quads->vars.cap * 2;
@@ -476,8 +507,15 @@ var_id quads_call(Parser* parser, Expression* expr, QuadList* quads,
     }
 
     var_id f = expr->call.function->var;
-    Quad* q = QuadList_addquad(quads, QUAD_CALL, VAR_ID_INVALID);
-    q->op1.var = f;
+    if (parser->type_table.data[QuadList_getvar(quads, f)->type].kind == TYPE_PTR) {
+        // Call to function ptr (or extern fn)
+        Quad* q = QuadList_addquad(quads, QUAD_CALL_PTR, VAR_ID_INVALID);
+        q->op1.var = f;
+    } else {
+        Quad* q = QuadList_addquad(quads, QUAD_CALL, VAR_ID_INVALID);
+        q->op1.var = f;
+    }
+
 
     uint64_t quad = quad_datatype(parser, expr->type);
     QuadList_addquad(quads, QUAD_GET_RET | quad, dest);
@@ -892,6 +930,7 @@ void Quad_update_live(const Quad* q, VarSet* live) {
         VarSet_set(live, q->op2);
         break;
     case QUAD_RETURN:
+    case QUAD_CALL_PTR:
         VarSet_set(live, q->op1.var);
         break;
     case QUAD_CALL:
@@ -928,6 +967,8 @@ void Quad_update_live(const Quad* q, VarSet* live) {
         VarSet_clear(live, q->dest);
         VarSet_set(live, q->op1.var);
         break;
+    default:
+        assert(false);
     }
 }
 
@@ -977,6 +1018,7 @@ void Quad_add_usages(const Quad* q, VarSet* use, VarSet* define, VarList* vars) 
         }
         break;
     case QUAD_RETURN:
+    case QUAD_CALL_PTR:
         ++vars->data[q->op1.var].reads;
         if (!VarSet_contains(define, q->op1.var)) {
             VarSet_set(use, q->op1.var);
@@ -1028,6 +1070,8 @@ void Quad_add_usages(const Quad* q, VarSet* use, VarSet* define, VarList* vars) 
         }
         VarSet_set(define, q->dest);
         break;
+    default:
+        assert(false);
     }
 }
 
@@ -1039,6 +1083,12 @@ void Quad_GenerateQuads(Parser* parser, Quads* quads, Arena* arena) {
         out_of_memory(parser);
     }
     assert(parser->name_table.scope_count);
+
+    for (func_id ix = 0; ix < parser->externs.size; ++ix) {
+        FunctionDef* def = parser->externs.data[ix];
+        type_id t = parser->name_table.data[def->name].type;
+        QuadList_add_extern_func(&list, def->name, t, parser);
+    }
 
 
     for (func_id ix = 0; ix < parser->function_table.size; ++ix) {

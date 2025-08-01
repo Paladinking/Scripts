@@ -204,10 +204,67 @@ typedef struct ArchiveMemberHeader {
     uint8_t end[2];
 } ArchiveMemberHeader;
 
+typedef struct ImportHeader {
+    uint16_t sig1;
+    uint16_t sig2;
+    uint16_t version;
+    uint16_t machine;
+    uint32_t timedate_stamp;
+    uint32_t size_of_data;
+    uint16_t ordinal_or_hint;
+    uint16_t type;
+} ImportHeader;
+
+typedef struct ImportDirectoryEntry {
+    uint32_t import_lookup_table_rva;
+    uint32_t timedate_stamp;
+    uint32_t forwarder_chain;
+    uint32_t name_rva;
+    uint32_t import_address_table_rva;
+} ImportDirectoryEntry;
+
 typedef struct SectionData {
     const uint8_t* data;
     uint32_t size;
 } SectionData;
+
+struct ImportNode {
+    uint32_t hash_link; // 0 for no value
+    uint16_t name_len;
+    uint16_t hint;
+    uint32_t name_offset;
+    uint32_t node_link; // 0 for no value
+    bool is_dll;
+    union {
+        struct { // Used for symbols
+            uint32_t module_id;
+            uint32_t offset;
+        };
+        struct { // Used for dlls
+            uint32_t first_sym; // 0 for no value
+            uint32_t last_sym; // 0 for no value
+        };
+    };
+};
+
+typedef struct Import64Structure {
+    uint32_t* hash_table; // 0 for no value
+    struct ImportNode* nodes;
+    uint32_t node_count;
+    uint32_t node_cap;
+
+    uint32_t first_module;
+    uint32_t last_module;
+
+    uint8_t* str_table;
+    uint32_t str_table_count;
+    uint32_t str_table_cap;
+
+    uint32_t module_count;
+    uint32_t entry_count;
+
+    uint32_t str_length;
+} Import64Structure;
 
 typedef struct Coff64Image {
     CoffHeader header;
@@ -215,6 +272,33 @@ typedef struct Coff64Image {
     SectionTableEntry* section_table;
     SectionData* section_data;
 } Coff64Image;
+
+bool Import64Structure_read_lib(Import64Structure* s, const ochar_t* filename);
+
+bool Import64Structure_create(Import64Structure* s);
+
+// Returns module id (1-based index), or 0 on error
+uint32_t Import64Structure_add_module(Import64Structure* s, const uint8_t* name,
+                                      uint32_t name_len);
+
+// Returns symbol id (1-based index), or 0 on error
+// mod_id should contain module id, will receve old module id if symbol existed
+// with a differnt module
+uint32_t Import64Structure_add_symbol(Import64Structure* s, uint32_t* mod_id,
+                                     const uint8_t* sym, uint32_t sym_len, uint16_t hint);
+
+uint32_t Import64Structure_get_size(Import64Structure* s);
+
+void Import64Structure_write(Import64Structure* s, uint8_t* dest, uint32_t base_rva,
+                             Coff64Image* img);
+
+// Only valid after Import64Structure_write
+uint32_t Import64Structure_get_sym_offset(Import64Structure* s, uint32_t sym_id);
+
+uint8_t* Import64Structure_find_module(Import64Structure* s, const uint8_t* sym, uint32_t sym_len,
+                                       uint32_t* mod_len, uint16_t* hint);
+
+void Import64Structure_free(Import64Structure* s);
 
 bool Coff64Image_create(Coff64Image* img);
 
@@ -242,6 +326,6 @@ enum SymbolFileType {
     SYMBOL_DUMP_OBJECT = 4,
 };
 
-char** symbol_dump(const wchar_t* filename, uint32_t* count, enum SymbolFileType* type);
+char** symbol_dump(const ochar_t* filename, uint32_t* count, enum SymbolFileType* type);
 
 #endif

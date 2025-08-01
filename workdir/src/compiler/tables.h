@@ -44,8 +44,11 @@ typedef var_id label_id;
 #define LABEL_ID_INVALID ((label_id) -1)
 typedef uint64_t quad_id;
 #define QUAD_ID_INVALID ((quad_id) -1)
+// TODO: Delete
+// func_id is just used as a boolean to tell if variables are global or not
 typedef uint64_t func_id;
 #define FUNC_ID_GLOBAL ((func_id) - 1)
+#define FUNC_ID_NONE ((func_id) - 2)
 
 // Index into name_table
 typedef uint64_t name_id;
@@ -58,7 +61,8 @@ typedef uint64_t name_id;
 #define NAME_ID_RETURN 5
 #define NAME_ID_TRUE 6
 #define NAME_ID_FALSE 7
-#define NAME_ID_BUILTIN_COUNT 8
+#define NAME_ID_EXTERN 8
+#define NAME_ID_BUILTIN_COUNT 9
 
 // Index into hash table
 typedef uint32_t hash_id;
@@ -233,6 +237,8 @@ typedef struct Parser {
     FunctionTable function_table;
     TypeTable type_table;
     NameTable name_table;
+
+    FunctionTable externs;
     
     const uint8_t* indata;
     uint64_t input_size;

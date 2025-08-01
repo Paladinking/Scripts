@@ -54,15 +54,37 @@ bool read_utf16_file(WString_noinit* str, const wchar_t* filename) {
 
 }
 
+HANDLE open_file_read(const ochar_t* filename) {
+#ifdef NARROW_OCHAR
+    WString name;
+    if (!WString_create_capacity(&name, 512)) {
+        return INVALID_HANDLE_VALUE;
+    }
+    if (!WString_from_utf8_str(&name, filename)) {
+        WString_free(&name);
+        return INVALID_HANDLE_VALUE;
+    }
+    wchar_t* fname = name.buffer;
+#else
+    const wchar_t* fname = filename;
+#endif
+    HANDLE file = CreateFileW(fname, GENERIC_READ, FILE_SHARE_READ, NULL,
+                              OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+#ifdef NARROW_OCHAR
+    WString_free(&name);
+#endif
+    return file;
+}
+
 HANDLE open_file_write(const ochar_t* filename) {
 #ifdef NARROW_OCHAR
     WString name;
     if (!WString_create_capacity(&name, 512)) {
-        return false;
+        return INVALID_HANDLE_VALUE;
     }
     if (!WString_from_utf8_str(&name, filename)) {
         WString_free(&name);
-        return false;
+        return INVALID_HANDLE_VALUE;
     }
     wchar_t* fname = name.buffer;
 #else

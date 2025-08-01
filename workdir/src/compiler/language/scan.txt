@@ -19,6 +19,9 @@ FUNCTION = 'fn' + identifier +
             '(' + ?ARG_LIST + ')' + 
             ?RET_TYPE + statements : OnScanFunction;
 
+FUNCTION = 'extern' + 'fn' + identifier +
+            '(' + ?ARG_LIST + ')' + ?RET_TYPE + ';' : OnScanExtern;
+
 ?RET_TYPE = '' |
             '->' + identifier;
 

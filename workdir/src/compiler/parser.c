@@ -45,11 +45,22 @@ bool Parser_create(Parser* parser) {
     parser->function_table.size = 0;
     parser->function_table.capacity = 16;
 
+    FunctionDef** extern_data = Mem_alloc(16 * sizeof(FunctionDef*));
+    if (extern_data == NULL) {
+        Arena_free(&parser->arena);
+        Mem_free(function_data);
+        return false;
+    }
+    parser->externs.data = extern_data;
+    parser->externs.size = 0;
+    parser->externs.capacity = 16;
+
 
     TypeData* type_data = Mem_alloc((TYPE_ID_BUILTIN_COUNT + 16) * sizeof(TypeData));
     if (type_data == NULL) {
         Arena_free(&parser->arena);
         Mem_free(function_data);
+        Mem_free(extern_data);
         return false;
     }
 
@@ -60,6 +71,7 @@ bool Parser_create(Parser* parser) {
     if (name_data == NULL) {
         Arena_free(&parser->arena);
         Mem_free(function_data);
+        Mem_free(extern_data);
         Mem_free(type_data);
         return false;
     }
@@ -75,6 +87,7 @@ bool Parser_create(Parser* parser) {
     if (parser->name_table.scope_stack == NULL) {
         Arena_free(&parser->arena);
         Mem_free(function_data);
+        Mem_free(extern_data);
         Mem_free(type_data);
         Mem_free(name_data);
         return false;
@@ -100,6 +113,7 @@ bool Parser_create(Parser* parser) {
     parser_add_keyword(parser, "return", NAME_ID_RETURN);
     parser_add_keyword(parser, "true", NAME_ID_TRUE);
     parser_add_keyword(parser, "false", NAME_ID_FALSE);
+    parser_add_keyword(parser, "extern", NAME_ID_EXTERN);
 
     parser_add_builtin(parser, TYPE_ID_UINT64, 8, 8, "uint64");
     parser_add_builtin(parser, TYPE_ID_UINT32, 4, 4, "uint32");
@@ -368,6 +382,67 @@ ArgList* OnAddArgList(void* ctx, uint64_t start, uint64_t end, ArgList* l,
     return l2;
 }
 
+void add_func(Parser* p, ArgList* args, func_id id, FunctionDef* f,
+              FunctionTable* table, Statement** statements, uint64_t statement_count,
+              type_id ret_type) {
+    uint64_t arg_count = 0;
+    ArgList* a = args;
+    while (a != NULL) {
+        ++arg_count;
+        a = a->next;
+    }
+
+    f->arg_count = arg_count;
+    f->statements = statements;
+    f->statement_count = statement_count;
+    f->return_type = ret_type;
+    a = args;
+
+    f->args = Arena_alloc_count(&p->arena, CallArg, f->arg_count);
+    for (uint64_t ix = 0; ix < arg_count; ++ix) {
+        f->args[arg_count - 1 - ix].name = a->arg.name;
+        f->args[arg_count - 1 - ix].type = p->name_table.data[a->arg.name].type;
+        f->args[arg_count - 1 - ix].line = a->arg.line;
+        p->name_table.data[a->arg.name].function = id;
+        a = a->next;
+    }
+
+    if (table->size == table->capacity) {
+        uint64_t c = table->size * 2;
+        FunctionDef** ptr = Mem_realloc(table->data, c * sizeof(FunctionDef*));
+        if (ptr == NULL) {
+            out_of_memory(p);
+            return;
+        }
+        table->data = ptr;
+        table->capacity = c;
+    }
+
+    table->data[table->size++] = f;
+}
+
+
+FunctionDef* OnExternFunction(void* ctx, uint64_t start, uint64_t end, name_id kwExtr,
+                              name_id kwFn, StrWithLength s, ArgList* arglist,
+                              type_id ret_type) {
+    Parser* p = PARSER(ctx);
+    name_id name = name_find(&p->name_table, s);
+    LineInfo l  = {start, end};
+    if (name == NAME_ID_INVALID) {
+        fatal_error(p, PARSE_ERROR_INTERNAL, l);
+        return NULL;
+    }
+
+    if (p->name_table.data[name].kind != NAME_FUNCTION) {
+        add_error(p, PARSE_ERROR_BAD_NAME, l);
+        return NULL;
+    }
+
+    FunctionDef* f = p->name_table.data[name].func_def;
+    add_func(p, arglist, FUNC_ID_NONE, f, &p->externs, NULL, 0, ret_type);
+
+    return f;
+}
 
 FunctionDef* OnFunction(void* ctx, uint64_t start, uint64_t end,
                         name_id fn_name, ArgList* arglist, type_id ret_type, 
@@ -383,41 +458,9 @@ FunctionDef* OnFunction(void* ctx, uint64_t start, uint64_t end,
 
     FunctionDef* f = p->name_table.data[fn_name].func_def;
     func_id id = p->function_table.size;
+    add_func(p, arglist, id, f, &p->function_table, statements.statements, 
+             statements.count, ret_type);
 
-    uint64_t arg_count = 0;
-    ArgList* a = arglist;
-    while (a != NULL) {
-        ++arg_count;
-        a = a->next;
-    }
-
-    f->arg_count = arg_count;
-    a = arglist;
-    f->args = Arena_alloc_count(&p->arena, CallArg, f->arg_count);
-    for (uint64_t ix = 0; ix < arg_count; ++ix) {
-        f->args[arg_count - 1 - ix].name = a->arg.name;
-        f->args[arg_count - 1 - ix].type = p->name_table.data[a->arg.name].type;
-        f->args[arg_count - 1 - ix].line = a->arg.line;
-        p->name_table.data[a->arg.name].function = p->function_table.size;
-        a = a->next;
-    }
-
-    f->statements = statements.statements;
-    f->statement_count = statements.count;
-    f->return_type = ret_type;
-
-    if (p->function_table.size == p->function_table.capacity) {
-        uint64_t c = p->function_table.size * 2;
-        FunctionDef** ptr = Mem_realloc(p->function_table.data, c * sizeof(FunctionDef*));
-        if (ptr == NULL) {
-            out_of_memory(p);
-            return NULL;
-        }
-        p->function_table.data = ptr;
-        p->function_table.capacity = c;
-    }
-
-    p->function_table.data[p->function_table.size++] = f;
     return f;
 }
 
@@ -679,7 +722,7 @@ void consume_token(void* ctx, uint64_t* start, uint64_t* end) {
         } else if (name < NAME_ID_BUILTIN_COUNT) {
             static enum TokenType map[] = {
                 TOKEN_KFN, TOKEN_KSTRUCT, TOKEN_KIF, TOKEN_KWHILE, TOKEN_KELSE, 
-                TOKEN_KRETURN, TOKEN_KTRUE, TOKEN_KFALSE
+                TOKEN_KRETURN, TOKEN_KTRUE, TOKEN_KFALSE, TOKEN_KEXTERN
             };
             t->last_token.id = map[name];
             t->last_token.kFn = name;

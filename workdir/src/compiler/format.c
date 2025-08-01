@@ -14,7 +14,7 @@ const static char* quadnames[] = {
     "QCAST_TO_UINT64", "QCAST_TO_UINT32",
     "QCAST_TO_UINT16", "QCAST_TO_UINT8",
     "QCAST_TO_BOOL", "QARRAY_TO_PTR", "QPUT_ARG", 
-    "QCALL", "QRETURN", "QGET_RET", "QGET_ARG",
+    "QCALL", "QCALL_PTR", "QRETURN", "QGET_RET", "QGET_ARG",
     "QMOVE", "QGET_ARRAY_ADDR", "QCALC_ARRAY_ADDR",
     "QSET_ADDR", "QCREATE", "QADDROF", "QDEREF"
 };
@@ -64,6 +64,7 @@ void fmt_quad(const Quad* quad, String* dest) {
         String_format_append(dest, "<%llu>", quad->op2);
         break;
     case QUAD_RETURN:
+    case QUAD_CALL_PTR:
         String_format_append(dest, "<%llu>", quad->op1.var);
         break;
     case QUAD_CALL:

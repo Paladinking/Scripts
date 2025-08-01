@@ -1,18 +1,6 @@
 
 
-
-
-
-
-fn main() -> uint64 {
-    uint8* str = "Hello world\n";
-
-    uint32 a = str[0];
-    int32 b = str[1];
-    int16 c = str[2];
-
-    return a + b + c;
-}
+extern fn do_something(int64 a, int64 b) -> int64;
 
 
 fn fib_rec_u64(uint64 n) -> uint64 {
@@ -21,3 +9,21 @@ fn fib_rec_u64(uint64 n) -> uint64 {
     }
     return fib_rec_u64(n - 1) + fib_rec_u64(n - 2);
 }
+
+fn main() -> uint64 {
+    uint8* str = "Hello world\n";
+
+    uint64 ix = 0;
+    int32 sum = 0;
+    while (str[ix] != 0) {
+        sum = sum + str[ix];
+
+        ix = ix + 1;
+    }
+
+    return five_sum(sum, 1, 2, 3, 4);
+}
+
+fn five_sum(uint32 a, uint16 b, int32 c, int64 d, uint32 e) -> int64 {
+    return a + b + c + d + e;
+} 

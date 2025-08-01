@@ -425,7 +425,11 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
             ConflictGraph_add_edge(graph, quad->dest + graph->reg_count,
                     quad->op2 + graph->reg_count);
         }
-    } else if (q == QUAD_CALL) {
+    } else if (q == QUAD_CALL || q == QUAD_CALL_PTR) {
+        if (q == QUAD_CALL_PTR) {
+            // Just to make sure everything is fine when adding fn pointers
+            assert(vars->data[quad->op1.var].kind == VAR_FUNCTION);
+        }
         var_id v = VarSet_get(live_set);
         while (v != VAR_ID_INVALID) {
             ConflictGraph_add_edge(graph, v + graph->reg_count, RAX);
@@ -919,6 +923,18 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
             asm_instr_end(ctx);
             break;
         }
+        case QUAD_CALL_PTR: {
+            if (vars[q->op1.var].kind == VAR_FUNCTION) { // Extern function call
+                assert(vars[q->op1.var].name != NAME_ID_INVALID);
+                uint64_t ix = vars[q->op1.var].data_ix;
+                asm_instr(ctx, OP_CALL);
+                asm_global_mem_var(ctx, PTR_SIZE, ix);
+                asm_instr_end(ctx);
+            } else {
+                assert("Fn pointer not supported" && false);
+            }
+            break;
+        }
         case QUAD_CALL: {
             assert(vars[q->op1.var].name != NAME_ID_INVALID);
             label_id label = name_table->data[vars[q->op1.var].name].func_def->start_label;
@@ -1354,7 +1370,8 @@ static const uint8_t* str_literalname(uint64_t num, uint32_t* len, Arena* arena)
 }
 
 void Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
-                          StringLiteral* literals, Arena* arena) {
+                          FunctionTable* externs, StringLiteral* literals,
+                          Arena* arena) {
 
     AsmCtx ctx;
     asm_ctx_create(&ctx);
@@ -1375,6 +1392,11 @@ void Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
         }
         ++i;
         s = s->next;
+    }
+
+    for (uint64_t ix = 0; ix < externs->size; ++ix) {
+        name_id id = externs->data[ix]->name;
+        asm_add_import(&ctx, name_table->data[id].name, name_table->data[id].name_len);
     }
 
     asm_instr(&ctx, OPCODE_TEXT_SECTION);

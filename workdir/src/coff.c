@@ -532,9 +532,8 @@ char** read_library_members(HANDLE file, uint32_t* count) {
     return syms;
 }
 
-char** symbol_dump(const wchar_t* filename, uint32_t* count, enum SymbolFileType* type) {
-    HANDLE file = CreateFileW(filename, GENERIC_READ, FILE_SHARE_READ, NULL,
-                              OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+char** symbol_dump(const ochar_t* filename, uint32_t* count, enum SymbolFileType* type) {
+    HANDLE file = open_file_read(filename);
     if (file == INVALID_HANDLE_VALUE) {
         *type = SYMBOL_DUMP_NOT_FOUND;
         return NULL;
@@ -609,6 +608,300 @@ char** symbol_dump(const wchar_t* filename, uint32_t* count, enum SymbolFileType
     CloseHandle(file);
     return Mem_alloc(1);
 }
+
+#define IMPORT_HASHTABLE_SIZE 1024
+
+static uint32_t hash(const uint8_t* str, uint32_t len) {
+    uint64_t hash = 5381;
+    int c;
+    for (uint32_t ix = 0; ix < len; ++ix) {
+        c = str[ix];
+        hash = ((hash << 5) + hash) + c;
+    }
+    return hash % IMPORT_HASHTABLE_SIZE;
+}
+
+bool Import64Structure_create(Import64Structure* s) {
+    s->hash_table = Mem_alloc(IMPORT_HASHTABLE_SIZE * sizeof(uint32_t));
+    if (s->hash_table == NULL) {
+        return false;
+    }
+    memset(s->hash_table, 0, IMPORT_HASHTABLE_SIZE * sizeof(uint32_t));
+    s->node_count = 0;
+    s->node_cap = 64;
+    s->nodes = Mem_alloc(64 * sizeof(struct ImportNode));
+    if (s->nodes == NULL) {
+        Mem_free(s->hash_table);
+        return false;
+    }
+    s->str_table_count = 0;
+    s->str_table_cap = 64;
+    s->str_table = Mem_alloc(64);
+    if (s->str_table == NULL) {
+        Mem_free(s->hash_table);
+        Mem_free(s->nodes);
+        return false;
+    }
+
+    s->module_count = 0;
+    s->entry_count = 0;
+    s->first_module = 0;
+    s->last_module = 0;
+
+    s->str_length = 0;
+    return true;
+}
+
+struct ImportNode* allocate_node(Import64Structure* s, const uint8_t* name, uint32_t name_len) {
+    if (name_len >= UINT16_MAX) {
+        return false;
+    }
+    if (s->node_count == s->node_cap) {
+        struct ImportNode* ptr = Mem_realloc(s->nodes, s->node_cap * 2 * 
+                sizeof(struct ImportNode));
+        if (ptr == NULL) {
+            return NULL;
+        }
+        s->nodes = ptr;
+        s->node_cap *= 2;
+    }
+    while (s->str_table_count + name_len > s->str_table_cap) {
+        uint8_t* ptr = Mem_realloc(s->str_table, s->str_table_cap * 2);
+        if (ptr == NULL) {
+            return NULL;
+        }
+        s->str_table = ptr;
+        s->str_table_cap *= 2;
+    }
+    uint8_t* str = s->str_table + s->str_table_count;
+    memcpy(str, name, name_len);
+    s->str_table_count += name_len;
+
+    struct ImportNode* node = s->nodes + s->node_count;
+    ++s->node_count;
+    node->name_offset = str - s->str_table;
+    node->name_len = name_len;
+    node->hash_link = 0;
+    node->node_link = 0;
+    node->is_dll = false;
+    node->hint = 0;
+    node->offset = 0;
+    node->module_id = 0;
+
+    return node;
+}
+
+uint32_t Import64Structure_add_module(Import64Structure* s, const uint8_t* name,
+                                      uint32_t name_len) {
+    uint32_t h = hash(name, name_len);
+    uint32_t ix = s->hash_table[h];
+    if (ix != 0) {
+        uint32_t n_ix = ix - 1;
+        while (1) {
+            if (s->nodes[n_ix].is_dll && s->nodes[n_ix].name_len == name_len &&
+                memcmp(s->str_table + s->nodes[n_ix].name_offset, name, name_len) == 0) {
+                // Module already present
+                return n_ix + 1;
+            }
+            if (s->nodes[n_ix].hash_link == 0) {
+                break;
+            }
+            n_ix = s->nodes[n_ix].hash_link - 1;
+        }
+    }
+    struct ImportNode* node = allocate_node(s, name, name_len);
+    if (node == NULL) {
+        return 0;
+    }
+    uint32_t n_ix = node - s->nodes;
+    node->hash_link = ix;
+    s->hash_table[h] = n_ix + 1;
+
+    node->is_dll = true;
+    node->first_sym = 0;
+    node->last_sym = 0;
+    if (s->first_module == 0) {
+        s->first_module = n_ix + 1;
+    } else {
+        s->nodes[s->last_module - 1].node_link = n_ix + 1;
+    }
+    s->last_module = n_ix + 1;
+
+    s->module_count += 1;
+    s->str_length += name_len + 1;
+    if ((name_len + 1) % 2 != 0) {
+        s->str_length += 1;
+    }
+    return n_ix + 1;
+}
+
+uint32_t Import64Structure_add_symbol(Import64Structure* s, uint32_t* mod_id,
+                                      const uint8_t* sym, uint32_t sym_len, uint16_t hint) {
+    if (*mod_id == 0) {
+        return 0;
+    }
+    uint32_t h = hash(sym, sym_len);
+    uint32_t ix = s->hash_table[h];
+    if (ix != 0) {
+        uint32_t n_ix = ix - 1;
+        while (1) {
+            if (!s->nodes[n_ix].is_dll && s->nodes[n_ix].name_len == sym_len &&
+                memcmp(s->str_table + s->nodes[n_ix].name_offset, sym, sym_len) == 0) {
+                // Symbol already present
+                *mod_id = s->nodes[n_ix].module_id;
+                return n_ix + 1;
+            }
+            if (s->nodes[n_ix].hash_link == 0) {
+                break;
+            }
+            n_ix = s->nodes[n_ix].hash_link - 1;
+        }
+    }
+    struct ImportNode* node = allocate_node(s, sym, sym_len);
+    if (node == NULL) {
+        return 0;
+    }
+    uint32_t n_ix = node - s->nodes;
+    node->hash_link = ix;
+    s->hash_table[h] = n_ix + 1;
+
+    node->is_dll = false;
+    node->module_id = *mod_id;
+    node->hint = hint;
+
+    if (s->nodes[node->module_id - 1].first_sym == 0) {
+        s->nodes[node->module_id - 1].first_sym = n_ix + 1;
+    } else {
+        uint32_t last = s->nodes[node->module_id - 1].last_sym;
+        s->nodes[last].node_link = n_ix + 1;
+    }
+    s->nodes[node->module_id - 1].last_sym = n_ix + 1;
+
+    s->str_length += sym_len + 3;
+    if ((sym_len + 3) % 2 != 0) {
+        s->str_length += 1;
+    }
+    s->entry_count += 1;
+    return true;
+}
+
+uint32_t Import64Structure_get_size(Import64Structure* s) {
+    uint32_t ilt_length = (s->entry_count + s->module_count) * sizeof(uint64_t);
+    uint32_t idt_length = (s->module_count + 1) * sizeof(ImportDirectoryEntry);
+    idt_length = ALIGNED_TO(idt_length, 8);
+
+    return 2 * ilt_length + idt_length + s->str_length;
+}
+
+void Import64Structure_write(Import64Structure* s, uint8_t* dest, uint32_t base_rva,
+                             Coff64Image* img) {
+    uint32_t ilt_length = (s->entry_count + s->module_count) * sizeof(uint64_t);
+    img->optional_header->
+        data_directories[DIRECTORY_IMPORT_ADDRESS_TABLE].virtual_address_rva = base_rva;
+    img->optional_header->
+        data_directories[DIRECTORY_IMPORT_ADDRESS_TABLE].size = ilt_length;
+
+    uint32_t idt_length = (s->module_count + 1) * sizeof(ImportDirectoryEntry);
+
+    img->optional_header->data_directories[DIRECTORY_IMPORT_TABLE].virtual_address_rva = 
+        base_rva + ilt_length;
+    img->optional_header->data_directories[DIRECTORY_IMPORT_TABLE].size = idt_length;
+    idt_length = ALIGNED_TO(idt_length, 8);
+
+    uint32_t table_offset = 0;
+    uint32_t str_table = ilt_length * 2 + idt_length;
+
+    uint32_t module_id = s->first_module;
+    uint64_t i = 0;
+    while (module_id != 0) {
+        ImportDirectoryEntry e;
+        e.import_lookup_table_rva = base_rva + idt_length + ilt_length + table_offset;
+        e.import_address_table_rva = base_rva + table_offset;
+        e.timedate_stamp = 0;
+        e.forwarder_chain = 0;
+
+        uint32_t node_id = s->nodes[module_id - 1].first_sym;
+        uint64_t j = 0;
+        while (node_id != 0) {
+            uint8_t* name = s->str_table + s->nodes[node_id - 1].name_offset;
+            uint32_t name_len = s->nodes[node_id - 1].name_len;
+            memcpy(dest + str_table, &s->nodes[node_id - 1].hint, sizeof(uint16_t));
+            memcpy(dest + str_table + 2, name, name_len);
+            dest[str_table + name_len + 2] = '\0';
+            uint64_t lookup_entry = base_rva + str_table;
+            memcpy(dest + table_offset, &lookup_entry, sizeof(uint64_t));
+            memcpy(dest + table_offset + idt_length + ilt_length, &lookup_entry,
+                   sizeof(uint64_t));
+            table_offset += sizeof(uint64_t);
+
+            if ((name_len + 3) % 2 != 0) {
+                dest[str_table + name_len + 3] = '\0';
+                ++str_table;
+            }
+            str_table += name_len + 3;
+            s->nodes[node_id - 1].offset = (i + j) * sizeof(uint64_t);
+            node_id = s->nodes[node_id - 1].node_link;
+            ++j;
+        }
+        e.name_rva = base_rva + str_table;
+        uint8_t* modname = s->str_table + s->nodes[module_id - 1].name_offset;
+        uint32_t modname_len = s->nodes[module_id - 1].name_len;
+
+        memcpy(dest + str_table, modname, modname_len);
+        dest[str_table + modname_len] = '\0';
+
+        if ((modname_len + 1) % 2 != 0) {
+            dest[str_table + modname_len + 1] = '\0';
+            ++str_table;
+        }
+        str_table += modname_len + 1;
+        memset(dest + table_offset, 0, sizeof(uint64_t));
+        memset(dest + table_offset + idt_length + ilt_length, 0, sizeof(uint64_t));
+        table_offset += sizeof(uint64_t);
+        memcpy(dest + ilt_length + i * sizeof(ImportDirectoryEntry), &e,
+               sizeof(ImportDirectoryEntry));
+        ++i;
+        module_id = s->nodes[module_id - 1].node_link;
+    }
+    memset(dest + ilt_length + s->module_count * sizeof(ImportDirectoryEntry), 0,
+            sizeof(ImportDirectoryEntry));
+    dest[ilt_length + idt_length - 1] = 0;
+    dest[ilt_length + idt_length - 2] = 0;
+    dest[ilt_length + idt_length - 3] = 0;
+    dest[ilt_length + idt_length - 4] = 0;
+}
+
+uint32_t Import64Structure_get_sym_offset(Import64Structure* s, uint32_t sym_id) {
+    return s->nodes[sym_id - 1].offset;
+}
+
+uint8_t* Import64Structure_find_module(Import64Structure* s, const uint8_t* sym, 
+                                       uint32_t sym_len, uint32_t* mod_len,
+                                       uint16_t* hint) {
+
+    uint32_t h = hash(sym, sym_len);
+    uint32_t ix = s->hash_table[h];
+    while (ix) {
+        uint32_t n_ix = ix - 1;
+        if (s->nodes[n_ix].is_dll && s->nodes[n_ix].name_len == sym_len &&
+            memcmp(s->str_table + s->nodes[n_ix].name_offset, sym, sym_len) == 0) {
+            uint32_t mod_id = s->nodes[n_ix].module_id;
+            *mod_len = s->nodes[mod_id - 1].name_len;
+            *hint = s->nodes[n_ix].hint;
+            return s->str_table + s->nodes[mod_id - 1].name_offset;
+        }
+        ix = s->nodes[n_ix].hash_link;
+    }
+    return NULL;
+
+}
+
+void Import64Structure_free(Import64Structure* s) {
+    Mem_free(s->nodes);
+    Mem_free(s->hash_table);
+    Mem_free(s->str_table);
+}
+
 
 bool Coff64Image_create(Coff64Image* img) {
     OptionalHeader64* header = Mem_alloc(sizeof(OptionalHeader64) + 
@@ -888,4 +1181,151 @@ void Coff64Image_free(Coff64Image* img) {
         Mem_free(img->section_table);
     }
     Mem_free(img->optional_header);
+}
+
+enum ImportSymbolStatus {
+    IMPORTSYMSTATUS_OK,
+    IMPORTSYMSTATUS_OUTOFMEM,
+    IMPORTSYMSTATUS_INVALID,
+    IMPORTSYMSTATUS_DUPLICATE
+};
+
+// Parse short form import archive member.
+enum ImportSymbolStatus parse_short_import(Import64Structure* s, 
+        ImportHeader* header, uint8_t* buf) {
+    uint8_t* sym = buf;
+    uint32_t sym_len = 0;
+
+    uint16_t hint = 0;
+    uint32_t name_type = ((header->type) >> 2) & 0x7;
+    if (name_type != 0) {
+        hint = header->ordinal_or_hint;
+    }
+
+    while (sym_len < header->size_of_data && sym[sym_len] != '\0') {
+        ++sym_len;
+    }
+    uint8_t* dll = buf + sym_len + 1;
+    uint32_t dll_len = 0;
+    while (dll_len + sym_len + 1 < header->size_of_data && dll[dll_len] != '\0') {
+        ++dll_len;
+    }
+    if (sym_len == 0 || dll_len == 0) {
+        return IMPORTSYMSTATUS_INVALID;
+    }
+
+    uint32_t module = Import64Structure_add_module(s, dll, dll_len);
+    if (!module) {
+        return IMPORTSYMSTATUS_OUTOFMEM;;
+    }
+
+    uint32_t mod_id = module;
+    if (!Import64Structure_add_symbol(s, &mod_id, sym, sym_len, hint)) {
+        return IMPORTSYMSTATUS_OUTOFMEM;;
+    }
+    if (mod_id != module) {
+        return IMPORTSYMSTATUS_DUPLICATE;
+    }
+    return IMPORTSYMSTATUS_OK;
+}
+
+bool Import64Structure_read_lib(Import64Structure* s, const ochar_t* filename) {
+    HANDLE file = open_file_read(filename);
+    if (file == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    if (!is_library(file)) {
+        CloseHandle(file);
+        return false;
+    }
+
+    LARGE_INTEGER filesize;
+    if (!GetFileSizeEx(file, &filesize)) {
+        CloseHandle(file);
+        return false;
+    }
+
+    ArchiveMemberHeader header;
+    DWORD r;
+
+    uint64_t offset = 8;
+    
+    uint64_t cap = 2048;
+    uint8_t* buf = Mem_alloc(cap);
+    if (buf == NULL) {
+        CloseHandle(file);
+        return false;
+    }
+
+    while (1) {
+        if (!ReadFile(file, &header, 60, &r, NULL) || r != 60) {
+            goto fail;
+        }
+        offset += sizeof(ArchiveMemberHeader);
+        uint64_t size = read_ascii_num(header.size, 10);
+
+        if (size > INT32_MAX || offset + size > filesize.QuadPart) {
+            goto fail;
+        }
+        if (header.end[0] != 0x60 || header.end[1] != 0xA) {
+            goto fail;
+        }
+
+        bool special = header.name[0] == '/' &&
+            (header.name[1] == ' ' || header.name[1] == '/');
+
+        if (special || size < sizeof(ImportHeader)) {
+            // Skip
+            if (size % 2 != 0) {
+                ++size;
+            }
+            offset += size;
+            if (!set_file_offset(file, offset)) {
+                goto fail;
+            }
+            continue;
+        }
+
+        if (size > cap) {
+            uint8_t* ptr = Mem_alloc(cap);
+            if (ptr == NULL) {
+                goto fail;
+            }
+            size = cap;
+            buf = ptr;
+        }
+        uint64_t read = 0;
+        while (read < size) {
+            if (!ReadFile(file, buf + read, size - read, &r, NULL)) {
+                goto fail;
+            }
+            read += r;
+        }
+
+        ImportHeader* h = (ImportHeader*)buf;
+        if (h->sig1 == 0x0 && h->sig2 == 0xffff &&
+            h->size_of_data <= size - sizeof(ImportHeader)) {
+            if (parse_short_import(s, h, buf + sizeof(ImportHeader)) < 0) {
+                goto fail;
+            }
+        }
+
+        offset += size;
+        if (offset == filesize.QuadPart || offset + 1 == filesize.QuadPart) {
+            CloseHandle(file);
+            Mem_free(buf);
+
+            return true;
+        }
+        if (size % 2 != 0) {
+            ++offset;
+            if (!ReadFile(file, buf, 1, &r, NULL) || r != 1) {
+                goto fail;
+            }
+        }
+    }
+fail:
+    Mem_free(buf);
+    CloseHandle(file);
+    return false;
 }
