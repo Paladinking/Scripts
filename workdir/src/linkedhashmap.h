@@ -39,4 +39,8 @@
 
 #undef HASHMAP_LINKED
 
+#undef HashMapIterator
+#undef HashMapIter_Begin
+#undef HashMapIter_Next
+
 #endif

@@ -1,6 +1,6 @@
 include: "ast.h";
 
-atoms: kFn, kStruct, kIf, kWhile, kElse, kReturn, kTrue, kFalse,
+atoms: kFn, kStruct, kIf, kWhile, kElse, kReturn, kTrue, kFalse, kExtern,
        typeid, identifier, integer, real, string;
 
 type: kFn = name_id;
@@ -11,6 +11,7 @@ type: kElse = name_id;
 type: kReturn = name_id;
 type: kTrue = name_id;
 type: kFalse = name_id;
+type: kExtern = name_id;
 
 type: typeid = type_id;
 type: identifier = StrWithLength;
@@ -62,6 +63,9 @@ FN_HEAD = kFn + identifier : OnFnHead;
 FUNCTION = FN_HEAD + 
            '(' + ?ARG_LIST + ')' +
            ?RET_TYPE + STATEMENTS : OnFunction;
+
+FUNCTION = kExtern + kFn + identifier + '(' + ?ARG_LIST + ')' +
+           ?RET_TYPE + ';' : OnExternFunction;
 
 ?RET_TYPE = '' :$ TYPE_ID_NONE |
             '->' + typeid :$ $0;

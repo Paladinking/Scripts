@@ -584,8 +584,8 @@ void Generate_function(Quads* quads, Quad* start, Quad* end,
     Mem_free(stack);
 }
 
-void Generate_code(Quads* quads, FunctionTable* functions, NameTable* name_table,
-                   StringLiteral* literals, Arena* arena) {
+void Generate_code(Quads* quads, FunctionTable* functions, FunctionTable* externs,
+                   NameTable* name_table, StringLiteral* literals, Arena* arena) {
     uint64_t* label_map = Mem_alloc(quads->label_count * sizeof(uint64_t));
     if (label_map == NULL) {
         out_of_memory(NULL);
@@ -603,6 +603,6 @@ void Generate_code(Quads* quads, FunctionTable* functions, NameTable* name_table
         Generate_function(quads, start, end, label_map,
                           &functions->data[ix]->vars, arena);
     }
-    Backend_generate_asm(name_table, functions, literals, arena);
+    Backend_generate_asm(name_table, functions, externs, literals, arena);
     Mem_free(label_map);
 }

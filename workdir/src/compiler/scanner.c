@@ -106,6 +106,11 @@ FunctionDef* OnScanFunction(void* ctx, uint64_t start, uint64_t end, StrWithLeng
     return func;
 }
 
+FunctionDef* OnScanExtern(void* ctx, uint64_t start, uint64_t end, StrWithLength name,
+                          uint64_t arg_count, int64_t ret) {
+    return OnScanFunction(ctx, start, end, name, arg_count, ret, 0);
+}
+
 int64_t OnScanProgram(void* ctx, uint64_t start, uint64_t end, int64_t i, FunctionDef* f) {
     return 0;
 }

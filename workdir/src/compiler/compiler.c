@@ -86,7 +86,8 @@ int compiler(char** argv, int argc) {
         String_free(&out);
     }
 
-    Generate_code(&q, &parser.function_table, &parser.name_table,
+    Generate_code(&q, &parser.function_table, &parser.externs,
+                  &parser.name_table,
                   parser.first_str, &parser.arena);
 
     return 0;

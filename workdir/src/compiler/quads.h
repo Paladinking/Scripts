@@ -83,6 +83,7 @@ enum QuadType {
     
     QUAD_PUT_ARG, // [argNr], <var> -> x
     QUAD_CALL, // $func, x -> x
+    QUAD_CALL_PTR, // <ptr>, x -> x
     QUAD_RETURN, // <val>, x -> x
     QUAD_GET_RET, // x, x -> <dest>
     QUAD_GET_ARG, // [argNr], x -> <dest>
@@ -98,7 +99,7 @@ enum QuadType {
     QUAD_DEREF // <ptr>, x -> <dest>
 };
 
-#define QUAD_COUNT 49
+#define QUAD_COUNT 50
 
 typedef struct Quad {
     uint64_t type; // Bitwise or of QuadType, Data size and Data type

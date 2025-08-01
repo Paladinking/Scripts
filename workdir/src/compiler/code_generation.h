@@ -45,7 +45,7 @@ typedef struct FlowNode {
 var_id create_temp_var(ConflictGraph* graph, VarList* vars, FlowNode* node,
                        VarSet* live, var_id base);
 
-void Generate_code(Quads* quads, FunctionTable* functions, NameTable* name_table,
-                   StringLiteral* literals, Arena* arena);
+void Generate_code(Quads* quads, FunctionTable* functions, FunctionTable* externs,
+                   NameTable* name_table, StringLiteral* literals, Arena* arena);
 
 #endif

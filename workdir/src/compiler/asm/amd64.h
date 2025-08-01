@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <arena.h>
 #include <dynamic_string.h>
+#include <ochar.h>
 
 enum MnemonicPart {
     PREFIX, // e.g 0x66 (operand size overide prefix)
@@ -125,6 +126,16 @@ typedef struct Adm64Operand {
     };
 } Amd64Operand;
 
+typedef struct DynamicModule {
+    const uint8_t* name;
+    uint32_t name_len;
+
+    uint32_t label_offset;
+    uint32_t label_count;
+
+    struct DynamicModule* next;
+} DynamicModule;
+
 typedef struct Amd64Op {
     uint16_t opcode;
     uint8_t count;
@@ -158,8 +169,15 @@ typedef struct AsmCtx {
     Amd64Op* end;
     Arena arena;
 
+    Amd64Op* import_start;
+    Amd64Op* import_end;
+
     uint64_t data_count;
+    uint32_t dynamic_label_offset;
+    uint32_t dynamic_label_count; 
     Amd64Op* entrypoint;
+
+    DynamicModule* dyn_module;
 
     uint64_t label_count;
     uint64_t label_cap;
@@ -167,6 +185,10 @@ typedef struct AsmCtx {
 } AsmCtx;
 
 void asm_ctx_create(AsmCtx* ctx);
+
+uint64_t asm_add_import(AsmCtx* ctx, const uint8_t* name, uint32_t name_len);
+
+void asm_add_module(AsmCtx* ctx, const ochar_t* name);
 
 void asm_set_entrypoint(AsmCtx* ctx, uint64_t ix);
 

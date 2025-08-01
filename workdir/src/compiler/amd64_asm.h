@@ -10,6 +10,7 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
                             VarList* vars, FlowNode* node, Arena* arena);
 
 void Backend_generate_asm(NameTable* name_table, FunctionTable* func_table,
-                          StringLiteral* literals, Arena* arena);
+                          FunctionTable* externs, StringLiteral* literals,
+                          Arena* arena);
 
 #endif
