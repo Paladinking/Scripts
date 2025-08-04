@@ -6,6 +6,8 @@
 #include <dynamic_string.h>
 #include <ochar.h>
 
+#include "../linker/linker.h"
+
 enum MnemonicPart {
     PREFIX, // e.g 0x66 (operand size overide prefix)
     REX, // Rex Prefix 
@@ -39,6 +41,7 @@ enum Amd64OperandType {
     OPERAND_REG32, // e.g r10d
     OPERAND_REG64, // e.g r12
     OPERAND_LABEL, // e.g L12
+    OPERAND_SYMBOL_LABEL, // e.g function
     OPERAND_GLOBAL_MEM8,  // e.g BYTE [__literal_string0]
     OPERAND_GLOBAL_MEM16, // e.g WORD [__literal_string0]
     OPERAND_GLOBAL_MEM32, // e.g DWORD [__literal_string0]
@@ -102,17 +105,12 @@ enum Amd64Opcode {
     OP_MOVSXD, OP_MOVSX, OP_MOVZX,
     OP_SETZ,
     
-    RESERVE_MEM,
-    DECLARE_MEM,
     OPCODE_START,
     OPCODE_END,
-    OPCODE_LABEL,
-    OPCODE_TEXT_SECTION,
-    OPCODE_DATA_SECTION,
-    OPCODE_RDATA_SECTION
+    OPCODE_LABEL
 };
 
-extern const Encodings ENCODINGS[RESERVE_MEM];
+extern const Encodings ENCODINGS[OPCODE_START];
 
 typedef struct Adm64Operand {
     uint8_t type;
@@ -122,19 +120,10 @@ typedef struct Adm64Operand {
     union {
         int32_t offset;
         uint32_t label;
+        symbol_ix symbol;
         uint8_t imm[8];
     };
 } Amd64Operand;
-
-typedef struct DynamicModule {
-    const uint8_t* name;
-    uint32_t name_len;
-
-    uint32_t label_offset;
-    uint32_t label_count;
-
-    struct DynamicModule* next;
-} DynamicModule;
 
 typedef struct Amd64Op {
     uint16_t opcode;
@@ -143,24 +132,18 @@ typedef struct Amd64Op {
     uint32_t max_offset;
     uint32_t offset;
     union {
-        // Valid when opcode != DECLARE_MEM && opcode != RESERVE_MEM
+        // Valid when opcode != OPCODE_START && opcode != OPCODE_LABEL
         Amd64Operand operands[OPERAND_MAX];
-        // Valid when opcode == DECLARE_MEM || opcode == RESERVE_MEM
-        struct {
-            uint64_t datasize;
-            uint64_t alignment;
-            const uint8_t* data;
-        } mem;
         // Valid when opcode == OPCODE_LABEL
         uint64_t label;
+        // Valid when opcode == OPCODE_START
+        symbol_ix symbol;
     };
     struct Amd64Op* next;
     struct Amd64Op* prev;
 } Amd64Op;
 
 typedef struct LabelData {
-    const uint8_t* symbol;
-    uint32_t symbol_len;
     Amd64Op* op;
 } LabelData;
 
@@ -169,28 +152,15 @@ typedef struct AsmCtx {
     Amd64Op* end;
     Arena arena;
 
-    Amd64Op* import_start;
-    Amd64Op* import_end;
-
-    uint64_t data_count;
-    uint32_t dynamic_label_offset;
-    uint32_t dynamic_label_count; 
-    Amd64Op* entrypoint;
-
-    DynamicModule* dyn_module;
+    Object* object;
+    section_ix code_section;
 
     uint64_t label_count;
     uint64_t label_cap;
     LabelData* labels;
 } AsmCtx;
 
-void asm_ctx_create(AsmCtx* ctx);
-
-uint64_t asm_add_import(AsmCtx* ctx, const uint8_t* name, uint32_t name_len);
-
-void asm_add_module(AsmCtx* ctx, const ochar_t* name);
-
-void asm_set_entrypoint(AsmCtx* ctx, uint64_t ix);
+void asm_ctx_create(AsmCtx* ctx, Object* object, section_ix code_section);
 
 void asm_instr(AsmCtx* ctx, enum Amd64Opcode op);
 
@@ -198,26 +168,24 @@ void asm_reg_var(AsmCtx* ctx, uint8_t size, uint8_t reg);
 
 void asm_label_var(AsmCtx* ctx, uint64_t ix);
 
+void asm_symbol_label_var(AsmCtx* ctx, symbol_ix symbol);
+
 void asm_mem_var(AsmCtx* ctx, uint8_t size, uint8_t reg, uint8_t scale,
                  uint8_t scale_reg, int32_t offset);
 
-void asm_global_mem_var(AsmCtx* ctx, uint8_t size, uint64_t data);
+void asm_global_mem_var(AsmCtx* ctx, uint8_t size, symbol_ix symbol);
 
 void asm_imm_var(AsmCtx* ctx, uint8_t size, const uint8_t* data);
 
 void asm_instr_end(AsmCtx* ctx);
 
-uint64_t asm_declare_mem(AsmCtx* ctx, uint64_t len, const uint8_t* data, uint32_t symbol_len,
-                         const uint8_t* symbol, uint64_t alignment);
-
-uint64_t asm_reserve_mem(AsmCtx* ctx, uint64_t len, uint32_t symbol_len, const uint8_t* symbol,
-                         uint64_t alignment);
-
-void asm_put_label(AsmCtx* ctx, uint64_t label, const uint8_t* sym, uint32_t sym_len);
+void asm_put_label(AsmCtx* ctx, uint64_t label);
 
 void asm_serialize(AsmCtx* ctx, String* dest);
 
-void asm_assemble(AsmCtx* ctx);
+void asm_assemble(AsmCtx* ctx, symbol_ix symbol);
+
+void asm_reset(AsmCtx* ctx);
 
 
 #endif

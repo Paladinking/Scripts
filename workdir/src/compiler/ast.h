@@ -184,7 +184,7 @@ typedef struct FunctionDef {
     Statement** statements;
     LineInfo line;
 
-    label_id start_label;
+    symbol_ix symbol;
     label_id end_label;
     // First quad of function
     struct Quad* quad_start;

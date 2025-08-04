@@ -1111,7 +1111,6 @@ void Quad_GenerateQuads(Parser* parser, Quads* quads, Arena* arena) {
         label_id l = QuadList_addlabel(&list);
         Quad* q = QuadList_addquad(&list, QUAD_LABEL, VAR_ID_INVALID);
         def->quad_start = q;
-        def->start_label = l;
         q->op1.label = l;
 
         for (uint64_t i = 0; i < def->arg_count; ++i) {

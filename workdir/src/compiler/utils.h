@@ -37,7 +37,8 @@ enum ErrorKind {
     TYPE_ERROR_ILLEGAL_TYPE = 12,
     TYPE_ERROR_ILLEGAL_CAST = 13,
     TYPE_ERROR_WRONG_ARG_COUNT = 14,
-    ASM_ERROR_MISSING_ENCODING = 15
+    ASM_ERROR_MISSING_ENCODING = 15,
+    LINKER_ERROR_DUPLICATE_SYMBOL = 16
 };
 
 typedef struct Error {
@@ -64,11 +65,32 @@ void out_of_memory(void* ctx);
 void reserve(void** ptr, uint64_t size, size_t elem_size, uint64_t* cap);
 
 #define RESERVE(ptr, size, cap) reserve((void**)(&(ptr)), (size), sizeof(*(ptr)), &(cap))
+#define RESERVE32(ptr, size, cap) do {            \
+    uint64_t cap64 = (cap);                       \
+    RESERVE(ptr, size, cap64);                    \
+    cap = cap64;                                  \
+} while (0)
 
-#define ALIGNED_TO(i, allignment) (((i) % (size) == 0) ? (i) : ((i) + ((size) - ((i) % (size)))))
+#define ALIGNED_TO(i, size) (((i) % (size) == 0) ? (i) : ((i) + ((size) - ((i) % (size)))))
 
 #define ALIGN_TO(i, size) if (((i) % (size)) != 0) { \
     (i) = (i) + ((size) - ((i) % (size)));            \
 }
+
+typedef struct ByteBuffer {
+    uint8_t* data;
+    uint64_t size;
+    uint64_t capacity;
+} ByteBuffer;
+
+void Buffer_create(ByteBuffer* buf);
+
+void Buffer_append(ByteBuffer* buf, uint8_t b);
+
+void Buffer_extend(ByteBuffer* buf, const uint8_t* data, uint32_t len);
+
+uint8_t* Buffer_reserve_space(ByteBuffer* buf, uint32_t len);
+
+void Buffer_free(ByteBuffer* buf);
 
 #endif

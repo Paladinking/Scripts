@@ -250,6 +250,9 @@ void fmt_errors(const Parser* parser, String* dest) {
             break;
         case ASM_ERROR_MISSING_ENCODING:
             String_extend(dest, "Assembly Error: Missing encoding");
+            break;
+        case LINKER_ERROR_DUPLICATE_SYMBOL:
+            String_extend(dest, "Linker Error: Duplicate symbol");
         }
         uint64_t row, col;
         parser_row_col(parser, err->pos.start, &row, &col);

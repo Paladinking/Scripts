@@ -580,7 +580,7 @@ void emit_var(VarData* var, uint64_t datatype, uint64_t datasize, AsmCtx* ctx) {
         if (var_local(var->kind)) {
             asm_mem_var(ctx, size_val(datasize), RSP, 0, RAX, var->memory.offset);
         } else if (var->kind == VAR_ARRAY_GLOBAL || var->kind == VAR_GLOBAL) {
-            asm_global_mem_var(ctx, size_val(datasize), var->data_ix);
+            asm_global_mem_var(ctx, size_val(datasize), var->symbol_ix);
         } else {
             assert(false);
         }
@@ -689,8 +689,6 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
     const uint8_t* name = name_table->data[def->name].name;
 
     uint32_t name_len = name_table->data[def->name].name_len;
-    asm_put_label(ctx, def->start_label, name, name_len);
-
     uint64_t stack_size = 32;
 
     for (Quad* q = def->quad_start; q != def->quad_end->next_quad; q = q->next_quad) {
@@ -925,8 +923,9 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
         }
         case QUAD_CALL_PTR: {
             if (vars[q->op1.var].kind == VAR_FUNCTION) { // Extern function call
+                // TODO: get func_def symbol?
                 assert(vars[q->op1.var].name != NAME_ID_INVALID);
-                uint64_t ix = vars[q->op1.var].data_ix;
+                symbol_ix ix = vars[q->op1.var].symbol_ix;
                 asm_instr(ctx, OP_CALL);
                 asm_global_mem_var(ctx, PTR_SIZE, ix);
                 asm_instr_end(ctx);
@@ -937,10 +936,9 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
         }
         case QUAD_CALL: {
             assert(vars[q->op1.var].name != NAME_ID_INVALID);
-            label_id label = name_table->data[vars[q->op1.var].name].func_def->start_label;
-            assert(label != LABEL_ID_INVALID);
+            symbol_ix sym = name_table->data[vars[q->op1.var].name].func_def->symbol;
             asm_instr(ctx, OP_CALL);
-            asm_label_var(ctx, label);
+            asm_symbol_label_var(ctx, sym);
             asm_instr_end(ctx);
             break;
         }
@@ -1066,7 +1064,7 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
             asm_instr_end(ctx);
             break;
         case QUAD_LABEL:
-            asm_put_label(ctx, q->op1.label, NULL, 0);
+            asm_put_label(ctx, q->op1.label);
             break;
         case QUAD_CAST_TO_UINT64:
         case QUAD_CAST_TO_INT64:
@@ -1322,7 +1320,7 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
     end_name[name_len + 3] = 'e';
     end_name[name_len + 4] = 'n';
     end_name[name_len + 5] = 'd';
-    asm_put_label(ctx, def->end_label, end_name, name_len + 6);
+    asm_put_label(ctx, def->end_label);
 
     asm_instr(ctx, OP_ADD);
     asm_reg_var(ctx, 8, RSP);
@@ -1373,51 +1371,73 @@ void Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
                           FunctionTable* externs, StringLiteral* literals,
                           Arena* arena) {
 
+    Object object;
+    Object_create(&object);
+
+    section_ix code_section = Object_create_section(&object, SECTION_CODE);
+    section_ix rdata_section = Object_create_section(&object, SECTION_RDATA);
+
     AsmCtx ctx;
-    asm_ctx_create(&ctx);
+    asm_ctx_create(&ctx, &object, code_section);
 
-    asm_instr(&ctx, OPCODE_RDATA_SECTION);
-    asm_instr_end(&ctx);
-
-    StringLiteral* s = literals;
+    StringLiteral* liter = literals;
     uint64_t i = 0;
-    while (s != NULL) {
-        var_id v = s->var;
+    while (liter != NULL) {
+        var_id v = liter->var;
         uint32_t len;
         const uint8_t* sym = str_literalname(i, &len, &ctx.arena);
-        uint64_t data_ix = asm_declare_mem(&ctx, s->len + 1, s->bytes, len, sym, 1);
+        symbol_ix symbol = Object_declare_var(&object, rdata_section, sym, len, 1, false);
+        Object_append_data(&object, rdata_section, liter->bytes, liter->len + 1);
 
         for (uint64_t ix = 0; ix < func_table->size; ++ix) {
-            func_table->data[ix]->vars.data[v].data_ix = data_ix;
+            func_table->data[ix]->vars.data[v].symbol_ix = symbol;
         }
         ++i;
-        s = s->next;
+        liter = liter->next;
     }
 
-    for (uint64_t ix = 0; ix < externs->size; ++ix) {
-        name_id id = externs->data[ix]->name;
-        asm_add_import(&ctx, name_table->data[id].name, name_table->data[id].name_len);
-    }
+    for (uint64_t i = 0; i < externs->size; ++i) {
+        name_id id = externs->data[i]->name;
+        var_id v = name_table->data[id].variable;
 
-    asm_instr(&ctx, OPCODE_TEXT_SECTION);
-    asm_instr_end(&ctx);
+        symbol_ix sym = Object_declare_fn(&object, name_table->data[id].name,
+                                          name_table->data[id].name_len, SECTION_IX_NONE,
+                                          true);
 
-    for (uint64_t ix = 0; ix < func_table->size; ++ix) {
-        Backend_generate_fn(func_table->data[ix], arena, &ctx,
-                            name_table, func_table);
-
-        const uint8_t* name = name_table->data[func_table->data[ix]->name].name;
-        uint32_t name_len = name_table->data[func_table->data[ix]->name].name_len;
-        if (name_len == 4 && name[0] == 'm' && name[1] == 'a' && 
-            name[2] == 'i' && name[3] == 'n') {
-            asm_set_entrypoint(&ctx, func_table->data[ix]->start_label);
+        for (uint64_t ix = 0; ix < func_table->size; ++ix) {
+            func_table->data[ix]->vars.data[v].symbol_ix = sym;
         }
     }
 
+    for (uint64_t i = 0; i < func_table->size; ++i) {
+        FunctionDef* def = func_table->data[i];
+        const uint8_t* name = name_table->data[def->name].name;
+        uint32_t name_len = name_table->data[def->name].name_len;
+        symbol_ix sym = Object_declare_fn(&object, name, name_len,
+                                          code_section, true);
+        def->symbol = sym;
+    }
+
+    Amd64Op* start = ctx.start;
+    for (uint64_t ix = 0; ix < func_table->size; ++ix) {
+        FunctionDef* def = func_table->data[ix];
+        object.symbols[def->symbol].offset = object.sections[code_section].data.size;
+        Backend_generate_fn(def, arena, &ctx,
+                            name_table, func_table);
+        asm_assemble(&ctx, def->symbol);
+        if (ix + 1 < func_table->size) {
+            asm_reset(&ctx);
+        }
+
+    }
+
+    ctx.start = start;
     String out;
     if (String_create(&out)) {
         asm_serialize(&ctx, &out);
         outputUtf8(out.buffer, out.length);
     }
-    asm_assemble(&ctx);
+
+    Object* obj = &object;
+    Linker_run(&obj, 1, NULL, 0);
 }

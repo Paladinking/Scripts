@@ -47,6 +47,9 @@ void fatal_error_cb(Parser* parser, enum ErrorKind error, LineInfo info,
         case ASM_ERROR_MISSING_ENCODING:
             LOG_CRITICAL("Fatal error: Missing asm encoding at %s line %llu", file, line);
             break;
+        case LINKER_ERROR_DUPLICATE_SYMBOL:
+            LOG_CRITICAL("Fatal error: Duplicate symbol\n");
+            break;
         default:
             LOG_CRITICAL("Fatal error: UNKOWN");
             break;
@@ -70,5 +73,41 @@ void error_cb(Parser* parser, enum ErrorKind error, LineInfo line,
         parser->last_error->next = e;
         parser->last_error = e;
     }
+}
+
+void Buffer_create(ByteBuffer* buf) {
+    buf->data = Mem_alloc(4096);
+    if (buf->data == NULL) {
+        out_of_memory(NULL);
+    }
+    buf->size = 0;
+    buf->capacity = 4096;
+}
+
+void Buffer_append(ByteBuffer* buf, uint8_t b) {
+    RESERVE(buf->data, buf->size + 1, buf->capacity);
+    buf->data[buf->size] = b;
+    ++buf->size;
+}
+
+void Buffer_extend(ByteBuffer* buf, const uint8_t* data, uint32_t len) {
+    RESERVE(buf->data, buf->size + len, buf->capacity);
+    memcpy(buf->data + buf->size, data, len);
+    buf->size += len;
+}
+
+uint8_t* Buffer_reserve_space(ByteBuffer* buf, uint32_t len) {
+    RESERVE(buf->data, buf->size + len, buf->capacity);
+    uint8_t* ptr = buf->data + buf->size;
+    buf->size += len;
+
+    return ptr;
+}
+
+void Buffer_free(ByteBuffer* buf) {
+    Mem_free(buf->data);
+    buf->data = NULL;
+    buf->size = 0;
+    buf->capacity = 0;
 }
 
