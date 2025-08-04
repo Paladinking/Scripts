@@ -91,7 +91,7 @@ FunctionDef* OnScanFunction(void* ctx, uint64_t start, uint64_t end, StrWithLeng
     func->line.end = end;
     func->quad_start = NULL;
     func->quad_end = NULL;
-    func->start_label = LABEL_ID_INVALID;
+    func->symbol = -1;
     func->end_label = LABEL_ID_INVALID;
 
     name_id id = name_function_insert(&parser->name_table, name, &parser->type_table,

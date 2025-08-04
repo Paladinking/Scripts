@@ -135,6 +135,8 @@ static inline bool var_local(enum VarKind kind) {
            kind == VAR_ARRAY;
 }
 
+typedef uint32_t symbol_ix;
+
 typedef struct VarData {
     enum VarKind kind;
     name_id name; // NAME_ID_INVALID for unnamed / temporary variables.
@@ -151,7 +153,7 @@ typedef struct VarData {
         ALLOC_NONE, ALLOC_REG, ALLOC_MEM, ALLOC_IMM
     } alloc_type;
     union {
-        uint64_t data_ix; // Valid for non-local variables
+        symbol_ix symbol_ix; // Valid for non-local variables
         struct {
             uint32_t offset;
         } memory;

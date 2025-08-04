@@ -201,6 +201,7 @@ def main():
 
         comp_src = ["src/compiler/format.c", "src/compiler/asm/amd64.c",
                     "src/compiler/quads.c", "src/compiler/utils.c",
+                    "src/compiler/linker/linker.c",
                     "src/compiler/tokenizer.c", encodings_c.product,
                     "src/compiler/code_generation.c", "src/compiler/amd64_asm.c",
                     "src/compiler/log.c", "src/compiler/type_checker.c",
