@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define SECTION_ALIGNMENT 4096
+#define SECTION_ALIGN 4096
 #define FILE_ALIGNMENT 512
 
 #define READ_U32(ptr)                                                          \
@@ -368,7 +368,7 @@ char** read_export_table(HANDLE file, uint64_t file_offset, uint32_t size,
 }
 
 // Note: len <= 32
-uint64_t read_ascii_num(uint8_t *buf, uint32_t len) {
+static uint64_t read_ascii_num(uint8_t *buf, uint32_t len) {
     ochar_t data[33];
     memset(data, 0, 33 * sizeof(ochar_t));
     uint32_t ix = 0;
@@ -934,7 +934,7 @@ bool Coff64Image_create(Coff64Image* img) {
     header->base_of_code = 0;
 
     header->image_base = 0x140000000;
-    header->section_alignment = SECTION_ALIGNMENT;
+    header->section_alignment = SECTION_ALIGN;
     header->file_alignment = FILE_ALIGNMENT;
     header->major_os_version = 6;
     header->minor_os_version = 0;
@@ -944,7 +944,7 @@ bool Coff64Image_create(Coff64Image* img) {
     header->minor_subsystem_version = 0;
     header->win32_version = 0;
     header->win32_version = 0;
-    header->size_of_image = SECTION_ALIGNMENT;
+    header->size_of_image = SECTION_ALIGN;
     header->size_of_headers = FILE_ALIGNMENT;
     header->checksum = 0;
     header->subsystem = 3; // Console
@@ -987,7 +987,7 @@ SectionTableEntry* add_section(Coff64Image* img, const char* name, uint32_t file
         img->section_data = new_sd;
         SectionTableEntry* last_section = &img->section_table[img->header.number_of_sections - 1];
         uint64_t last_end = last_section->virtual_address + 
-            ALIGNED_TO(last_section->virtual_size, SECTION_ALIGNMENT);
+            ALIGNED_TO(last_section->virtual_size, SECTION_ALIGN);
         virtual_offset = last_end;
     } else {
         img->section_table = Mem_alloc(sizeof(SectionTableEntry));
@@ -999,7 +999,7 @@ SectionTableEntry* add_section(Coff64Image* img, const char* name, uint32_t file
             Mem_free(img->section_table);
             return false;
         }
-        virtual_offset = SECTION_ALIGNMENT;
+        virtual_offset = SECTION_ALIGN;
     }
     SectionTableEntry* e = img->section_table + img->header.number_of_sections;
     memset(e->name, 0, 8);
@@ -1014,7 +1014,7 @@ SectionTableEntry* add_section(Coff64Image* img, const char* name, uint32_t file
     e->characteristics = 0;
 
     img->header.number_of_sections += 1;
-    img->optional_header->size_of_image += ALIGNED_TO(virtual_size, SECTION_ALIGNMENT);
+    img->optional_header->size_of_image += ALIGNED_TO(virtual_size, SECTION_ALIGN);
 
     uint64_t h = sizeof(DOS_STUB) + 4 + sizeof(OptionalHeader64) + 
         img->optional_header->number_of_rvas_and_sizes * sizeof(struct DataDirectory) + 

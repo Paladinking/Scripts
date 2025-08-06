@@ -64,7 +64,7 @@ FUNCTION = FN_HEAD +
            '(' + ?ARG_LIST + ')' +
            ?RET_TYPE + STATEMENTS : OnFunction;
 
-FUNCTION = kExtern + kFn + identifier + '(' + ?ARG_LIST + ')' +
+FUNCTION = kExtern + FN_HEAD + '(' + ?ARG_LIST + ')' +
            ?RET_TYPE + ';' : OnExternFunction;
 
 ?RET_TYPE = '' :$ TYPE_ID_NONE |

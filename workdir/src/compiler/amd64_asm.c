@@ -1371,14 +1371,17 @@ void Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
                           FunctionTable* externs, StringLiteral* literals,
                           Arena* arena) {
 
-    Object object;
-    Object_create(&object);
+    Object* object = Mem_alloc(sizeof(Object));
+    if (object == NULL) {
+        out_of_memory(NULL);
+    }
+    Object_create(object);
 
-    section_ix code_section = Object_create_section(&object, SECTION_CODE);
-    section_ix rdata_section = Object_create_section(&object, SECTION_RDATA);
+    section_ix code_section = Object_create_section(object, SECTION_CODE);
+    section_ix rdata_section = Object_create_section(object, SECTION_RDATA);
 
     AsmCtx ctx;
-    asm_ctx_create(&ctx, &object, code_section);
+    asm_ctx_create(&ctx, object, code_section);
 
     StringLiteral* liter = literals;
     uint64_t i = 0;
@@ -1386,8 +1389,8 @@ void Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
         var_id v = liter->var;
         uint32_t len;
         const uint8_t* sym = str_literalname(i, &len, &ctx.arena);
-        symbol_ix symbol = Object_declare_var(&object, rdata_section, sym, len, 1, false);
-        Object_append_data(&object, rdata_section, liter->bytes, liter->len + 1);
+        symbol_ix symbol = Object_declare_var(object, rdata_section, sym, len, 1, false);
+        Object_append_data(object, rdata_section, liter->bytes, liter->len + 1);
 
         for (uint64_t ix = 0; ix < func_table->size; ++ix) {
             func_table->data[ix]->vars.data[v].symbol_ix = symbol;
@@ -1400,7 +1403,7 @@ void Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
         name_id id = externs->data[i]->name;
         var_id v = name_table->data[id].variable;
 
-        symbol_ix sym = Object_declare_fn(&object, name_table->data[id].name,
+        symbol_ix sym = Object_declare_fn(object, name_table->data[id].name,
                                           name_table->data[id].name_len, SECTION_IX_NONE,
                                           true);
 
@@ -1413,7 +1416,7 @@ void Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
         FunctionDef* def = func_table->data[i];
         const uint8_t* name = name_table->data[def->name].name;
         uint32_t name_len = name_table->data[def->name].name_len;
-        symbol_ix sym = Object_declare_fn(&object, name, name_len,
+        symbol_ix sym = Object_declare_fn(object, name, name_len,
                                           code_section, true);
         def->symbol = sym;
     }
@@ -1421,7 +1424,7 @@ void Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
     Amd64Op* start = ctx.start;
     for (uint64_t ix = 0; ix < func_table->size; ++ix) {
         FunctionDef* def = func_table->data[ix];
-        object.symbols[def->symbol].offset = object.sections[code_section].data.size;
+        object->symbols[def->symbol].offset = object->sections[code_section].data.size;
         Backend_generate_fn(def, arena, &ctx,
                             name_table, func_table);
         asm_assemble(&ctx, def->symbol);
@@ -1438,6 +1441,11 @@ void Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
         outputUtf8(out.buffer, out.length);
     }
 
-    Object* obj = &object;
-    Linker_run(&obj, 1, NULL, 0);
+    ObjectSet set;
+    ObjectSet_create(&set);
+    ObjectSet_add(&set, object);
+    const char** s = Mem_alloc(2 * sizeof(char*));
+    s[0] = "build-gcc\\ntutils.lib";
+    s[1] = "C:\\Program Files (x86)\\Windows Kits\\10\\lib\\10.0.19041.0\\um\\x64\\kernel32.Lib";
+    Linker_run(&set, s, 2);
 }

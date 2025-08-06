@@ -5,6 +5,12 @@
 #include <stdint.h>
 #include "log.h"
 
+typedef struct StrWithLength {
+    const uint8_t* str;
+    uint32_t len;
+} StrWithLength;
+
+
 typedef struct LineInfo {
     uint64_t start;
     uint64_t end;

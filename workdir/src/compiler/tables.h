@@ -4,11 +4,6 @@
 #include "utils.h"
 #include <arena.h>
 
-typedef struct StrWithLength {
-    const uint8_t* str;
-    uint32_t len;
-} StrWithLength;
-
 // Index into type_table
 typedef uint64_t type_id;
 #define TYPE_ID_INVALID ((type_id) -1)
