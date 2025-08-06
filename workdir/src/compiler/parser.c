@@ -423,23 +423,19 @@ void add_func(Parser* p, ArgList* args, func_id id, FunctionDef* f,
 
 
 FunctionDef* OnExternFunction(void* ctx, uint64_t start, uint64_t end, name_id kwExtr,
-                              name_id kwFn, StrWithLength s, ArgList* arglist,
+                              name_id fn_name, ArgList* arglist,
                               type_id ret_type) {
     Parser* p = PARSER(ctx);
-    name_id name = name_find(&p->name_table, s);
     LineInfo l  = {start, end};
-    if (name == NAME_ID_INVALID) {
-        fatal_error(p, PARSE_ERROR_INTERNAL, l);
+
+    if (p->name_table.data[fn_name].kind != NAME_FUNCTION) {
         return NULL;
     }
 
-    if (p->name_table.data[name].kind != NAME_FUNCTION) {
-        add_error(p, PARSE_ERROR_BAD_NAME, l);
-        return NULL;
-    }
-
-    FunctionDef* f = p->name_table.data[name].func_def;
+    FunctionDef* f = p->name_table.data[fn_name].func_def;
     add_func(p, arglist, FUNC_ID_NONE, f, &p->externs, NULL, 0, ret_type);
+
+    name_scope_end(&p->name_table);
 
     return f;
 }

@@ -25,3 +25,7 @@ workdir/compile_commands.json
 workdir/comp_cache.json
 workdir/helpers
 workdir/tools
+workdir/src/compiler/parse.c
+workdir/src/compiler/parse.h
+workdir/src/compiler/scan.c
+workdir/src/compiler/scan.h

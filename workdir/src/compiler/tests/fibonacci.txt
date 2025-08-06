@@ -1,6 +1,7 @@
 
 
-extern fn do_something(int64 a, int64 b) -> int64;
+extern fn memmove(uint8* a, uint8* b, uint64 len);
+extern fn WriteFile(uint64 h, uint8* b, uint32 to_write, uint32* written, uint8* overlapped) -> bool;
 
 
 fn fib_rec_u64(uint64 n) -> uint64 {
@@ -12,6 +13,9 @@ fn fib_rec_u64(uint64 n) -> uint64 {
 
 fn main() -> uint64 {
     uint8* str = "Hello world\n";
+
+    uint32 w;
+    WriteFile(0, str, 12, &w, NULL);
 
     uint64 ix = 0;
     int32 sum = 0;

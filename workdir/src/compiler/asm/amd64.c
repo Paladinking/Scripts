@@ -202,6 +202,10 @@ static uint64_t assemble_op(AsmCtx* ctx, Amd64Op* op, uint64_t* offset, AddrBuf*
     for (uint32_t ix = 0; ix < op->count; ++ix) {
         switch (op->operands[ix].type) {
         case OPERAND_SYMBOL_LABEL:
+            assert(op->opcode == OP_CALL);
+            operands[ix].type = OPERAND_IMM32;
+            memset(operands[ix].imm, 0, sizeof(operands[ix].imm));
+            break;
         case OPERAND_LABEL: {
             uint32_t label = op->operands[ix].label;
             int64_t cur_offset = op->next->max_offset;

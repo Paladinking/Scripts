@@ -201,12 +201,12 @@ def main():
 
         comp_src = ["src/compiler/format.c", "src/compiler/asm/amd64.c",
                     "src/compiler/quads.c", "src/compiler/utils.c",
-                    "src/compiler/linker/linker.c",
+                    "src/compiler/linker/linker.c", "src/compiler/linker/pe_coff.c",
                     "src/compiler/tokenizer.c", encodings_c.product,
                     "src/compiler/code_generation.c", "src/compiler/amd64_asm.c",
                     "src/compiler/log.c", "src/compiler/type_checker.c",
                     "src/compiler/tables.c", "src/printf.c",
-                    "src/dynamic_string.c", "src/args.c", "src/coff.c",
+                    "src/dynamic_string.c", "src/args.c",
                     "src/glob.c", "src/arena.c", ntdll]
 
         Executable("compiler.exe", "src/compiler/compiler.c", *comp_src,
