@@ -20,7 +20,7 @@ enum MnemonicPart {
     RM_REG, // Register in ModRm.r/m
     IMM, // imm
     REL_ADDR, // Relative jump address
-    SKIP
+    SKIP, // Skip one operand
 };
 
 typedef struct Mnemonic {

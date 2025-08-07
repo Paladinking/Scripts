@@ -149,8 +149,12 @@ symbol_ix Object_declare_var(Object* object, section_ix section,
                              const uint8_t* name, uint32_t name_len,
                              uint32_t align, bool external);
 
-symbol_ix Object_declare_fn(Object* object, const uint8_t* name, uint32_t name_len,
-                           section_ix section, bool external);
+symbol_ix Object_declare_import(Object* object, section_ix section,
+                                const uint8_t* name, uint32_t name_len);
+
+symbol_ix Object_declare_fn(Object* object, section_ix section,
+                            const uint8_t* name, uint32_t name_len,
+                            bool external);
 
 void Object_append_byte(Object* object, section_ix section, uint8_t byte);
 

@@ -57,6 +57,8 @@ var_id QuadList_add_extern_func(QuadList* quads, name_id name, type_id type, Par
     quads->vars.data[id].writes = 0;
     quads->vars.data[id].kind = VAR_FUNCTION;
 
+    quads->vars.size += 1;
+
     AllocInfo i = type_allocation(&parser->type_table, type);
     quads->vars.data[id].byte_size = i.size;
     quads->vars.data[id].alignment = i.allignment;
