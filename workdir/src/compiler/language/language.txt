@@ -28,6 +28,7 @@ type: EXPR = Expression*;
 type: BINOP = Expression*;
 type: UNOP = Expression*;
 type: CALL = Expression*;
+type: MEMBERREF = Expression*;
 type: ARRAY_INDEX = Expression*;
 
 type: COND = Expression*;
@@ -120,6 +121,7 @@ EXPR = kwTrue : OnTrue |
        real : OnReal |
        string : OnString | 
        CALL :$ $0 |
+       MEMBERREF :$ $0 |
        ARRAY_INDEX :$ $0 |
        '(' + EXPRESSION + ')' : OnParen;
 
@@ -153,6 +155,8 @@ UNOP = UNARYOPERATOR + EXPR : OnUnop1 |
        UNARYOPERATOR + UNOP : OnUnop2;
 
 CALL = EXPR + '(' + ?PARAM_LIST + ')' : OnCall;
+
+MEMBERREF = EXPR + '.' + identifier : OnMemberRef;
 
 ?PARAM_LIST = '' :$ NULL |
               PARAM_LIST :$ $0;
