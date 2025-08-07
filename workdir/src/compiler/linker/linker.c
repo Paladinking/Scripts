@@ -168,7 +168,6 @@ void Object_create(Object* object) {
 }
 
 void Object_free(Object* object) {
-    Mem_free(object->symbols);
     for (uint32_t i = 0; i < object->section_count; ++i) {
         if (object->sections[i].type != SECTION_BSS) {
             Mem_free(object->sections[i].relocations);
@@ -179,6 +178,11 @@ void Object_free(Object* object) {
     if (object->map != NULL) {
         Mem_free(object->map);
     }
+
+    for (uint32_t i = 0; i < object->symbol_count; ++i) {
+        Mem_free((uint8_t*)object->symbols[i].name);
+    }
+    Mem_free(object->symbols);
 }
 
 static uint32_t hash(const uint8_t* str, uint32_t len, uint32_t size) {
@@ -345,6 +349,12 @@ symbol_ix Object_add_symbol(Object* object, section_ix section, const uint8_t* n
 symbol_ix Object_reserve_var(Object *object, section_ix section, 
                              const uint8_t *name, uint32_t name_len, 
                              uint32_t size, uint32_t align, bool external) {
+    uint8_t* name_ptr = Mem_alloc(name_len);
+    if (name_ptr == NULL) {
+        out_of_memory(NULL);
+    }
+    memcpy(name_ptr, name, name_len);
+
     assert(section != SECTION_IX_NONE);
     Section* s = object->sections + section;
     assert(s->type == SECTION_BSS);
@@ -355,13 +365,19 @@ symbol_ix Object_reserve_var(Object *object, section_ix section,
         s->align = align;
     }
 
-    return Object_add_symbol(object, section, name, name_len, external,
-                        SYMBOL_STANDARD, offset);
+    return Object_add_symbol(object, section, name_ptr, name_len, external,
+                             SYMBOL_STANDARD, offset);
 }
 
 symbol_ix Object_declare_var(Object* object, section_ix section,
                              const uint8_t* name, uint32_t name_len,
                              uint32_t align, bool external) {
+    uint8_t* name_ptr = Mem_alloc(name_len);
+    if (name_ptr == NULL) {
+        out_of_memory(NULL);
+    }
+    memcpy(name_ptr, name, name_len);
+
     uint32_t offset;
     if (section != SECTION_IX_NONE) {
         Section* s = object->sections + section;
@@ -377,12 +393,33 @@ symbol_ix Object_declare_var(Object* object, section_ix section,
         offset = 0;
     }
 
-    return Object_add_symbol(object, section, name, name_len, 
-                        external, SYMBOL_STANDARD, offset);
+    return Object_add_symbol(object, section, name_ptr, name_len,
+                             external, SYMBOL_STANDARD, offset);
 }
 
-symbol_ix Object_declare_fn(Object* object, const uint8_t* name, uint32_t name_len,
-                            section_ix section, bool external) {
+symbol_ix Object_declare_import(Object* object, section_ix section,
+                                const uint8_t* name, uint32_t name_len) {
+    uint32_t offset;
+    if (section != SECTION_IX_NONE) {
+        offset = object->sections[section].data.size;
+    } else {
+        offset = 0;
+    }
+
+    uint8_t* name_ptr = Mem_alloc(name_len + 6);
+    if (name_ptr == NULL) {
+        out_of_memory(NULL);
+    }
+    memcpy(name_ptr, "__imp_", 6);
+    memcpy(name_ptr + 6, name, name_len);
+
+    return Object_add_symbol(object, section, name_ptr, name_len + 6, true,
+                             SYMBOL_STANDARD, offset);
+}
+
+symbol_ix Object_declare_fn(Object* object, section_ix section,
+                            const uint8_t* name, uint32_t name_len,
+                            bool external) {
     uint32_t offset;
     if (section != SECTION_IX_NONE) {
         Section* s = object->sections + section;
@@ -393,8 +430,14 @@ symbol_ix Object_declare_fn(Object* object, const uint8_t* name, uint32_t name_l
         offset = 0;
     }
 
-    return Object_add_symbol(object, section, name, name_len, 
-                        external, SYMBOL_FUNCTION, offset);
+    uint8_t* name_ptr = Mem_alloc(name_len);
+    if (name_ptr == NULL) {
+        out_of_memory(NULL);
+    }
+    memcpy(name_ptr, name, name_len);
+
+    return Object_add_symbol(object, section, name_ptr, name_len,
+                             external, SYMBOL_FUNCTION, offset);
 }
 
 
@@ -417,6 +460,7 @@ void Object_append_data(Object* object, section_ix section,
 
 // Combines two objects into one containing sections and symbols from both
 // Does not yet merge sections into one
+// b is destroyed (do not call Object_free for it)
 void merge_objects(Object* a, Object* b) {
     symbol_ix* map = Object_build_map(a);
     uint32_t map_count = a->map_size;
@@ -432,7 +476,7 @@ void merge_objects(Object* a, Object* b) {
         if (!b->symbols[i].external) {
             //assert(section != SECTION_IX_NONE);
             symbol_ix sym = Object_add_symbol(a, section, name,
-                   name_len, false, b->symbols[i].type, b->symbols[i].offset);
+                name_len, false, b->symbols[i].type, b->symbols[i].offset);
             // Remap section
             a->symbols[sym].section_relative = b->symbols[i].section_relative;
             b->symbols[i].section = sym;
@@ -458,11 +502,10 @@ void merge_objects(Object* a, Object* b) {
                                     LINE_INFO_NONE);
                         break;
                     }
-                    // TODO: free name?
                     a->symbols[sym].section = section;
                     b->symbols[i].section = sym;
-                    
                 }
+                Mem_free((uint8_t*)name);
                 b->symbols[i].section = sym;
                 break;
             }
@@ -506,6 +549,10 @@ void merge_objects(Object* a, Object* b) {
 
     Mem_free(b->sections);
     Mem_free(b->symbols);
+    if (b->map != NULL) {
+        Mem_free(b->map);
+        b->map = NULL;
+    }
     Mem_free(map);
     a->map = NULL;
 }
@@ -614,6 +661,7 @@ void combine_sections(Object* obj) {
                                      obj->symbols[i].offset + offset);
         assert(sym == i);
     }
+    obj->symbol_count = 0;
     Object_free(obj);
     *obj = dest;
 }

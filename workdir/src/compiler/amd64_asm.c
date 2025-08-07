@@ -1412,11 +1412,14 @@ void Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
 
     for (uint64_t i = 0; i < externs->size; ++i) {
         name_id id = externs->data[i]->name;
+        const uint8_t* name = name_table->data[id].name;
+        uint32_t name_len = name_table->data[id].name_len;
         var_id v = name_table->data[id].variable;
 
-        symbol_ix sym = Object_declare_fn(object, name_table->data[id].name,
-                                          name_table->data[id].name_len, SECTION_IX_NONE,
-                                          true);
+        symbol_ix sym = Object_declare_fn(object, SECTION_IX_NONE,
+                                          name, name_len, true);
+        externs->data[i]->symbol = sym;
+        sym = Object_declare_import(object, SECTION_IX_NONE, name, name_len);
 
         for (uint64_t ix = 0; ix < func_table->size; ++ix) {
             func_table->data[ix]->vars.data[v].symbol_ix = sym;
@@ -1427,8 +1430,8 @@ void Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
         FunctionDef* def = func_table->data[i];
         const uint8_t* name = name_table->data[def->name].name;
         uint32_t name_len = name_table->data[def->name].name_len;
-        symbol_ix sym = Object_declare_fn(object, name, name_len,
-                                          code_section, true);
+        symbol_ix sym = Object_declare_fn(object, code_section, name,
+                                          name_len, true);
         def->symbol = sym;
     }
 

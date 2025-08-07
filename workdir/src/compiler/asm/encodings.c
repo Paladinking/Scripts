@@ -1380,6 +1380,16 @@ const Encoding CALL_ENCODING[] = {
         1, 2,
         {{OPCODE, 0xe8}, {REL_ADDR, 4}},
         {OPERAND_IMM32},
+    },
+    {
+        1, 3,
+        {{OPCODE, 0xff}, {MOD_RM, 0x10}, {RM_MEM}},
+        {OPERAND_MEM64},
+    },
+    {
+        1, 3,
+        {{OPCODE, 0xff}, {MOD_RM, 0x10}, {RM_REG}},
+        {OPERAND_REG64},
     }
 };
 
@@ -2382,7 +2392,7 @@ const Encodings ENCODINGS[] = {
     {16, SAR_ENCODING}, //17
     {16, SHL_ENCODING}, //18
     {16, SAL_ENCODING}, //19
-    {1, CALL_ENCODING}, //20
+    {3, CALL_ENCODING}, //20
     {3, JG_ENCODING}, //21
     {3, JA_ENCODING}, //22
     {3, JLE_ENCODING}, //23

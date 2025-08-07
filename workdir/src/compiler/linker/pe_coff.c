@@ -633,16 +633,6 @@ Object* parse_short_import(const ImportHeader* header, const uint8_t* buf,
     if (o == NULL) {
         out_of_memory(NULL);
     }
-    uint8_t* sym_ptr = Mem_alloc(sym_len);
-    uint8_t* imp_sym_ptr = Mem_alloc(sym_len + 6);
-    uint8_t* sym_ext = Mem_alloc(ext_len);
-    if (sym_ptr == NULL || imp_sym_ptr == NULL || sym_ext == NULL) {
-        out_of_memory(NULL);
-    }
-    memcpy(sym_ptr, sym, sym_len);
-    memcpy(imp_sym_ptr, "__imp_", 6);
-    memcpy(imp_sym_ptr + 6, sym, sym_len);
-    memcpy(sym_ext, ext_name, ext_len);
     // For now assumes import libraries only contain one dll,
     // so dll name is ignored
 
@@ -663,12 +653,10 @@ Object* parse_short_import(const ImportHeader* header, const uint8_t* buf,
     symbol_ix sym_idata6 = Object_add_symbol(o, idata6, idata_name('6'), 8,
                                              false, SYMBOL_STANDARD, 0);
 
-    symbol_ix sym_ix = Object_add_symbol(o, text, sym_ptr, sym_len, true,
-                                         SYMBOL_FUNCTION, 0);
-    symbol_ix imp_sym_ix = Object_add_symbol(o, idata5, imp_sym_ptr, 
-            sym_len + 6, true, SYMBOL_STANDARD, 0);
-    Object_add_symbol(o, SECTION_IX_NONE, sym_ext, ext_len, true, 
-                      SYMBOL_STANDARD, 0);
+    symbol_ix sym_ix = Object_declare_fn(o, text, sym, sym_len, true);
+    symbol_ix imp_sym_ix = Object_declare_import(o, idata5, sym, sym_len);
+
+    Object_declare_var(o, SECTION_IX_NONE, ext_name, ext_len, 0, true);
 
     Object_append_byte(o, text, 0xff);
     Object_append_byte(o, text, 0x25);
@@ -687,7 +675,7 @@ Object* parse_short_import(const ImportHeader* header, const uint8_t* buf,
     }
 
     Object_append_data(o, idata6, (const uint8_t*)&hint, sizeof(uint16_t));
-    Object_append_data(o, idata6, sym_ptr, sym_len);
+    Object_append_data(o, idata6, sym, sym_len);
     Object_append_byte(o, idata6, 0x0);
     if (o->sections[idata6].data.size % 2 != 0) {
         Object_append_byte(o, idata6, 0x0);
