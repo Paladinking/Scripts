@@ -6,30 +6,13 @@
 #include "tables.h"
 #include "varset.h"
 
-
-#define QUAD_64_BIT 0x010000
-#define QUAD_32_BIT 0x020000
-#define QUAD_16_BIT 0x040000
-#define QUAD_8_BIT 0x080000
-#define QUAD_0_BIT 0x100000
-
-#define QUAD_PTR_SIZE QUAD_64_BIT
-
-#define QUAD_SINT 0x01000000
-#define QUAD_UINT 0x02000000
-#define QUAD_FLOAT 0x04000000
-#define QUAD_BOOL 0x08000000
-
-#define QUAD_SCALE_1 0x0100000000
-#define QUAD_SCALE_2 0x0200000000
-#define QUAD_SCALE_4 0x0400000000
-#define QUAD_SCALE_8 0x0800000000
-
-#define QUAD_TYPE_MASK 0xffff
-#define QUAD_DATASIZE_MASK 0xff0000
-#define QUAD_DATATYPE_MASK 0xff000000
-#define QUAD_SCALE_MASK 0xff00000000
-
+enum QuadScale {
+    QUADSCALE_NONE = 0,
+    QUADSCALE_1 = 1,
+    QUADSCALE_2 = 2,
+    QUADSCALE_4 = 4,
+    QUADSCALE_8 = 8
+};
 
 // <...> mean allocated variable (memory / register)
 // $... means function
@@ -102,7 +85,8 @@ enum QuadType {
 #define QUAD_COUNT 50
 
 typedef struct Quad {
-    uint64_t type; // Bitwise or of QuadType, Data size and Data type
+    enum QuadType type;
+    enum QuadScale scale;
     union {
         var_id var;
         label_id label;

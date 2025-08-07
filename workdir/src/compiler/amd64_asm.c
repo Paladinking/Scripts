@@ -47,32 +47,13 @@ void require_mem(ConflictGraph* graph, var_id var) {
     }
 }
 
-uint64_t move_type(var_id var, VarList* vars) {
-    // TODO: this is not good, should read type_table instead
-    if (vars->data[var].type == TYPE_ID_FLOAT64) {
-        return QUAD_64_BIT | QUAD_FLOAT;
-    } else if (vars->data[var].type == TYPE_ID_FLOAT32) {
-        return QUAD_32_BIT | QUAD_FLOAT;
-    }
-    if (vars->data[var].byte_size == 1) {
-        return QUAD_8_BIT | QUAD_UINT;
-    } else if (vars->data[var].byte_size == 2) {
-        return QUAD_16_BIT | QUAD_UINT;
-    } else if (vars->data[var].byte_size == 4) {
-        return QUAD_32_BIT | QUAD_UINT;
-    } else if (vars->data[var].byte_size == 8) {
-        return QUAD_64_BIT | QUAD_UINT;
-    }
-    assert(false);
-}
-
 void preinsert_move(ConflictGraph* graph, var_id* var, VarSet* live_set,
                     Quad* quad, FlowNode* node, VarList* vars, Arena* arena) {
 
     var_id tmp = create_temp_var(graph, vars, node, live_set, *var);
     ConflictGraph_add_edge(graph, RSP, tmp + graph->reg_count);
     Quad* nq = Arena_alloc_type(arena, Quad);
-    nq->type = QUAD_MOVE | move_type(*var, vars);
+    nq->type = QUAD_MOVE;
     nq->op1.var = *var;
     nq->dest = tmp;
     nq->last_quad = quad->last_quad;
@@ -94,7 +75,7 @@ void postinsert_move(ConflictGraph* graph, var_id* dest, VarSet* live_set,
     var_id tmp = create_temp_var(graph, vars, node, live_set, *dest);
     ConflictGraph_add_edge(graph, RSP, tmp + graph->reg_count);
     Quad* nq = Arena_alloc_type(arena, Quad);
-    nq->type = QUAD_MOVE | move_type(*dest, vars);
+    nq->type = QUAD_MOVE;
     nq->op1.var = tmp;
     nq->dest = *dest;
     nq->last_quad = quad;
@@ -141,27 +122,30 @@ void requre_gen_reg_dest(ConflictGraph* graph, uint64_t reg, var_id* dest,
 
 
 // All integer binary operations that are simple in amd64 asm
-bool is_standard_binop(uint64_t type) {
-    if (type & QUAD_FLOAT) {
-        return false;
-    }
-    enum QuadType t = type & QUAD_TYPE_MASK;
-    switch (t) {
-    case QUAD_SUB:
+bool is_standard_binop(Quad* q, VarList* vars) {
+    switch (q->type) {
     case QUAD_ADD:
-        return !(type & QUAD_SCALE_MASK);
+        if (q->scale != QUADSCALE_NONE) {
+            return false;
+        }
+        break;
+    case QUAD_SUB:
     case QUAD_BIT_AND:
     case QUAD_BIT_OR:
     case QUAD_BIT_XOR:
-        return true;
+        break;
     default:
         return false;
     }
+
+    if (vars->data[q->dest].datatype == VARTYPE_FLOAT) {
+        return false;
+    }
+    return true;
 }
 
-bool is_symetrical(uint64_t type) {
-    enum QuadType t = type & QUAD_TYPE_MASK;
-    switch (t) {
+bool is_symetrical(Quad* q) {
+    switch (q->type) {
     case QUAD_ADD:
     case QUAD_MUL:
     case QUAD_BIT_AND:
@@ -175,9 +159,8 @@ bool is_symetrical(uint64_t type) {
     }
 }
 
-bool is_cmp(uint64_t type) {
-    enum QuadType t = type & QUAD_TYPE_MASK;
-    switch (t) {
+bool is_cmp(Quad* q) {
+    switch (q->type) {
     case QUAD_CMP_LE:
     case QUAD_CMP_L:
     case QUAD_CMP_GE:
@@ -190,28 +173,22 @@ bool is_cmp(uint64_t type) {
     }
 }
 
-bool allow_op2_imm(uint64_t type) {
-    if (is_standard_binop(type)) {
+bool allow_op2_imm(Quad* q, VarList* vars) {
+    if (is_standard_binop(q, vars)) {
         return true;
     }
-    if (type & QUAD_FLOAT) {
-        return false;
+    if (is_cmp(q)) {
+        return vars->data[q->op1.var].datatype != VARTYPE_FLOAT;
     }
-    if (is_cmp(type)) {
-        return true;
-    }
-    enum QuadType t = type & QUAD_TYPE_MASK;
-    return t == QUAD_RSHIFT || t == QUAD_LSHIFT;
+    return q->type == QUAD_RSHIFT || q->type == QUAD_LSHIFT;
 }
 
-bool allow_op1_imm(uint64_t type) {
-    if (type & QUAD_FLOAT) {
-        return false;
+bool allow_op1_imm(Quad* q, VarList* vars) {
+    if (q->type == QUAD_CAST_TO_INT64 || q->type == QUAD_CAST_TO_UINT64 ||
+        q->type == QUAD_CAST_TO_BOOL) {
+        return vars->data[q->op1.var].datatype != VARTYPE_FLOAT;
     }
-    enum QuadType t = type & QUAD_TYPE_MASK;
-    return t == QUAD_CAST_TO_INT64 ||
-           t == QUAD_CAST_TO_UINT64 ||
-           t == QUAD_CAST_TO_BOOL;
+    return false;
 }
 
 
@@ -222,13 +199,9 @@ bool fully_local(VarList* list, var_id v) {
 
 void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
                             VarList* vars, FlowNode* node, Arena* arena) {
-    enum QuadType q = quad->type & QUAD_TYPE_MASK;
-    uint64_t datatype = quad->type & QUAD_DATATYPE_MASK;
+    enum QuadType q = quad->type;
 
-    assert(datatype != QUAD_FLOAT);
-
-    if (is_standard_binop(quad->type)) {
-        assert(!(quad->type & QUAD_SCALE_MASK));
+    if (is_standard_binop(quad, vars)) {
         if (vars->data[quad->dest].alloc_type == ALLOC_MEM &&
             vars->data[quad->op2].alloc_type == ALLOC_MEM) {
             // Two memory ops not allowed, insert move
@@ -239,8 +212,8 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
             ConflictGraph_add_edge(graph, quad->dest + graph->reg_count,
                     quad->op2 + graph->reg_count);
         }
-    } else if (q == QUAD_ADD) {
-        assert(quad->type & QUAD_SCALE_MASK);
+    } else if (q == QUAD_ADD && vars->data[quad->dest].datatype != VARTYPE_FLOAT) {
+        assert(quad->scale != QUADSCALE_NONE);
         if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
             postinsert_move(graph, &quad->dest, live_set, quad, node, vars, arena);
         }
@@ -289,11 +262,12 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
             v = VarSet_getnext(live_set, v);
         }
     } else if (q == QUAD_CREATE) {
-        uint64_t data_size = quad->type & QUAD_DATASIZE_MASK;
+        uint64_t data_size = vars->data[quad->dest].byte_size;
+        enum VarDatatype datatype = vars->data[quad->dest].datatype;
         // 64 bit values require a register
-        if (data_size == QUAD_64_BIT && (
-            (datatype == QUAD_UINT && quad->op1.uint64 > UINT32_MAX) ||
-            (datatype == QUAD_SINT && (quad->op1.sint64 < INT32_MIN ||
+        if (data_size == 8 && (
+            (datatype == VARTYPE_UINT && quad->op1.uint64 > UINT32_MAX) ||
+            (datatype == VARTYPE_SINT && (quad->op1.sint64 < INT32_MIN ||
                                        quad->op1.sint64 > INT32_MAX)))) {
             if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
                 postinsert_move(graph, &quad->dest, live_set, quad, node, 
@@ -304,16 +278,15 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
         if (quad->next_quad == NULL || !fully_local(vars, quad->dest)) {
             return;
         }
-        uint64_t next = quad->next_quad->type;
+        Quad* next = quad->next_quad;
         bool good_datatype = false;
-        if (datatype == QUAD_SINT) {
-            good_datatype = data_size > QUAD_64_BIT || 
+        if (datatype == VARTYPE_SINT) {
+            good_datatype = data_size < 8 || 
                 (quad->op1.sint64 <= INT32_MAX &&
                  quad->op1.sint64 >= INT32_MIN);
-        } else if (datatype == QUAD_UINT) {
-            good_datatype = data_size > QUAD_16_BIT ||
-                quad->op1.uint64 <= INT32_MAX;
-        } else if (datatype == QUAD_BOOL) {
+        } else if (datatype == VARTYPE_UINT) {
+            good_datatype = data_size < 4 || quad->op1.uint64 <= INT32_MAX;
+        } else if (datatype == VARTYPE_BOOL) {
             good_datatype = true;
         }
         if (!good_datatype) {
@@ -323,21 +296,20 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
             // cmp into value generates conditional moves, needs registers
             return;
         }
-        if ((allow_op2_imm(next) && (quad->next_quad->op2 == quad->dest ||
+        if ((allow_op2_imm(next, vars) && (quad->next_quad->op2 == quad->dest ||
              is_symetrical(next) && quad->next_quad->op1.var == quad->dest)) ||
-             allow_op1_imm(next) && quad->next_quad->op1.var == quad->dest) {
+             allow_op1_imm(next, vars) && quad->next_quad->op1.var == quad->dest) {
             if (vars->data[quad->dest].alloc_type == ALLOC_NONE) {
                 vars->data[quad->dest].alloc_type = ALLOC_IMM;
-                uint64_t dt = (next & QUAD_DATATYPE_MASK);
-                if (dt == QUAD_SINT) {
+                if (datatype == VARTYPE_SINT) {
                     LOG_DEBUG("Created imm singed %lld", quad->op1.sint64);
                     vars->data[quad->dest].imm.int64 = quad->op1.sint64;
-                } else if (dt == QUAD_UINT) {
+                } else if (datatype == VARTYPE_UINT) {
                     LOG_DEBUG("Created imm unsinged %llu, %llu", quad->op1.uint64,
                                quad->dest);
                     vars->data[quad->dest].imm.uint64 = quad->op1.uint64;
                 } else {
-                    assert(dt == QUAD_BOOL);
+                    assert(datatype == VARTYPE_BOOL);
                     LOG_DEBUG("Created imm boolean %u", quad->op1.uint64);
                     vars->data[quad->dest].imm.boolean = quad->op1.uint64 != 0;
                 }
@@ -358,7 +330,7 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
         // If next quad is JMP_TRUE or JMP_FALSE, and uses quad->dest
         // and quad->dest is only used here, make it ALLOC_IMM
         if (quad->next_quad != NULL) {
-            enum QuadType next = quad->next_quad->type & QUAD_TYPE_MASK;
+            enum QuadType next = quad->next_quad->type;
             if ((next == QUAD_JMP_TRUE || next == QUAD_JMP_FALSE) &&
                 quad->next_quad->op2 == quad->dest &&
                 fully_local(vars, quad->dest)) {
@@ -385,9 +357,11 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
             ConflictGraph_add_edge(graph, quad->dest + graph->reg_count,
                                    quad->op1.var + graph->reg_count);
         }
-    } else if ((q == QUAD_MUL && (datatype == QUAD_UINT ||
-                 (quad->type & QUAD_DATASIZE_MASK) == QUAD_8_BIT)) ||
-        q == QUAD_DIV || q == QUAD_MOD) {
+    } else if ((q == QUAD_MUL && (vars->data[quad->dest].datatype == VARTYPE_UINT ||
+                 (vars->data[quad->dest].byte_size == 1))) ||
+                q == QUAD_DIV || q == QUAD_MOD) {
+        enum VarDatatype datatype = vars->data[quad->dest].datatype;
+        assert(datatype != VARTYPE_FLOAT);
         // Make sure RAX and RDX are free for MUL / DIV / IDIV
         var_id v = VarSet_get(live_set);
         while (v != VAR_ID_INVALID) {
@@ -418,6 +392,8 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
                                node, vars, arena);
         }
     } else if (q == QUAD_MUL) {
+        enum VarDatatype datatype = vars->data[quad->dest].datatype;
+        assert(datatype != VARTYPE_FLOAT);
         if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
             postinsert_move(graph, &quad->dest, live_set, quad, node, vars, arena);
         }
@@ -428,7 +404,7 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
     } else if (q == QUAD_CALL || q == QUAD_CALL_PTR) {
         if (q == QUAD_CALL_PTR) {
             // Just to make sure everything is fine when adding fn pointers
-            assert(vars->data[quad->op1.var].kind == VAR_FUNCTION);
+            assert(vars->data[quad->op1.var].kind == VAR_GLOBAL);
         }
         var_id v = VarSet_get(live_set);
         while (v != VAR_ID_INVALID) {
@@ -478,24 +454,39 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
         //requre_gen_reg_var(graph, RAX, &quad->op1.var, live_set, quad, 
         //                   node, vars, arena);
     } else if (q == QUAD_CAST_TO_UINT64 || q == QUAD_CAST_TO_INT64) {
-        uint64_t datasize = quad->type & QUAD_DATASIZE_MASK;
-        if (!(datasize & QUAD_64_BIT)) {
-            if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
-                postinsert_move(graph, &quad->dest, live_set, quad, node, vars, arena);
+        uint64_t datasize = vars->data[quad->op1.var].byte_size;
+        if (vars->data[quad->op1.var].datatype == VARTYPE_FLOAT) {
+            assert(false);
+        } else {
+            if (datasize != 8) {
+                if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
+                    postinsert_move(graph, &quad->dest, live_set, quad,
+                                    node, vars, arena);
+                }
             }
         }
     } else if (q == QUAD_CAST_TO_UINT32 || q == QUAD_CAST_TO_INT32) {
-        uint64_t datasize = quad->type & QUAD_DATASIZE_MASK;
-        if (!(datasize & (QUAD_64_BIT | QUAD_32_BIT))) {
-            if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
-                postinsert_move(graph, &quad->dest, live_set, quad, node, vars, arena);
+        uint64_t datasize = vars->data[quad->op1.var].byte_size;
+        if (vars->data[quad->op1.var].datatype == VARTYPE_FLOAT) {
+            assert(false);
+        } else {
+            if (datasize != 8 && datasize != 4) {
+                if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
+                    postinsert_move(graph, &quad->dest, live_set, quad, node,
+                                    vars, arena);
+                }
             }
         }
     } else if (q == QUAD_CAST_TO_UINT16 || q == QUAD_CAST_TO_INT16) {
-        uint64_t datasize = quad->type & QUAD_DATASIZE_MASK;
-        if (datasize & QUAD_8_BIT) {
-            if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
-                postinsert_move(graph, &quad->dest, live_set, quad, node, vars, arena);
+        uint64_t datasize = vars->data[quad->op1.var].byte_size;
+        if (vars->data[quad->op1.var].datatype == VARTYPE_FLOAT) {
+            assert(false);
+        } else {
+            if (datasize == 1) {
+                if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
+                    postinsert_move(graph, &quad->dest, live_set, quad,
+                                    node, vars, arena);
+                }
             }
         }
     } else if (q == QUAD_ARRAY_TO_PTR) {
@@ -505,8 +496,18 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
             postinsert_move(graph, &quad->dest, live_set, quad, node, vars, arena);
         }
     } else if (q == QUAD_CAST_TO_UINT8 || q == QUAD_CAST_TO_INT8) {
-        // Pass
-    } else if (q == QUAD_CAST_TO_BOOL || q == QUAD_MOVE) {
+        if (vars->data[quad->op1.var].datatype == VARTYPE_FLOAT) {
+            assert(false);
+        } else {
+            // Pass
+        }
+    } else if (q == QUAD_CAST_TO_BOOL) {
+        if (vars->data[quad->op1.var].datatype == VARTYPE_FLOAT) {
+            assert(false);
+        } else {
+            // Pass?
+        }
+    } else if (q == QUAD_MOVE) {
         // Pass?
     } else if (q == QUAD_LABEL || q == QUAD_JMP || q == QUAD_JMP_FALSE ||
                q == QUAD_JMP_TRUE) {
@@ -520,20 +521,6 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
     }
 }
 
-const char* sizestr(uint64_t mask) {
-    switch (mask & QUAD_DATASIZE_MASK) {
-    case QUAD_64_BIT:
-        return "QWORD";
-    case QUAD_32_BIT:
-        return "DWORD";
-    case QUAD_16_BIT:
-        return "WORD";
-    case QUAD_8_BIT:
-        return "BYTE";
-    }
-    assert(false);
-}
-
 bool is_same(VarData* vars, var_id a, var_id b) {
     if (a == b) {
         return true;
@@ -545,71 +532,57 @@ bool is_same(VarData* vars, var_id a, var_id b) {
     return false;
 }
 
-uint8_t size_val(uint64_t type) {
-    uint64_t size = type & QUAD_DATASIZE_MASK;
-    if (size == QUAD_64_BIT) {
-        return 8;
-    } else if (size == QUAD_32_BIT) {
-        return 4;
-    } else if (size == QUAD_16_BIT) {
-        return 2;
-    } else if (size == QUAD_8_BIT) {
+uint8_t scale_val(enum QuadScale scale) {
+    switch (scale) {
+    case QUADSCALE_1:
         return 1;
-    } else {
+    case QUADSCALE_2:
+        return 2;
+    case QUADSCALE_4:
+        return 4;
+    case QUADSCALE_8:
+        return 8;
+    default:
         assert(false);
     }
 }
 
-uint8_t scale_val(uint64_t type) {
-    uint64_t scale = type & QUAD_SCALE_4;
-    if (scale == QUAD_SCALE_8) {
-        return 8;
-    } else if (scale == QUAD_SCALE_4) {
-        return 4;
-    } else if (scale == QUAD_SCALE_2) {
-        return 2;
-    } else if (scale == QUAD_SCALE_1) {
-        return 1;
-    } else {
-        assert(false);
-    }
-}
-
-void emit_var(VarData* var, uint64_t datatype, uint64_t datasize, AsmCtx* ctx) {
+void emit_var_with_size(VarData* var, uint32_t datasize, AsmCtx* ctx) {
     if (var->alloc_type == ALLOC_MEM) {
         if (var_local(var->kind)) {
-            asm_mem_var(ctx, size_val(datasize), RSP, 0, RAX, var->memory.offset);
+            asm_mem_var(ctx, datasize, RSP, 0, RAX, var->memory.offset);
         } else if (var->kind == VAR_ARRAY_GLOBAL || var->kind == VAR_GLOBAL) {
-            asm_global_mem_var(ctx, size_val(datasize), var->symbol_ix);
+            asm_global_mem_var(ctx, datasize, var->symbol_ix);
         } else {
             assert(false);
         }
     } else if (var->alloc_type == ALLOC_REG) {
-        asm_reg_var(ctx, size_val(datasize), var->reg);
+        asm_reg_var(ctx, datasize, var->reg);
     } else if (var->alloc_type == ALLOC_IMM) {
         // TODO: endianness?
-        if (datatype == QUAD_SINT) {
-            if (datasize == QUAD_64_BIT) {
+        enum VarDatatype datatype = var->datatype;
+        if (datatype == VARTYPE_SINT) {
+            if (datasize == 8) {
                 assert(var->imm.int64 >= INT32_MIN && var->imm.int64 <= INT32_MAX);
-                datasize = QUAD_32_BIT;
+                datasize = 4;
             }
-            if (datasize == QUAD_32_BIT && var->imm.int64 >= INT8_MIN &&
+            if (datasize == 4 && var->imm.int64 >= INT8_MIN &&
                        var->imm.int64 <= INT8_MAX) {
-                datasize = QUAD_8_BIT;
+                datasize = 1;
             }
             const uint8_t* data = (const uint8_t*)&var->imm.int64;
-            asm_imm_var(ctx, size_val(datasize), data);
-        } else if (datatype == QUAD_UINT) {
-            if (datasize == QUAD_64_BIT) {
+            asm_imm_var(ctx, datasize, data);
+        } else if (datatype == VARTYPE_UINT) {
+            if (datasize == 8) {
                 assert(var->imm.uint64 <= UINT32_MAX);
-                datasize = QUAD_32_BIT;
+                datasize = 4;
             }
-            if (datasize == QUAD_32_BIT && var->imm.uint64 <= UINT8_MAX) {
-                datasize = QUAD_8_BIT;
+            if (datasize == 4 && var->imm.uint64 <= UINT8_MAX) {
+                datasize = 1;
             }
             const uint8_t* data = (const uint8_t*)&var->imm.uint64;
-            asm_imm_var(ctx, size_val(datasize), data);
-        } else if (datatype == QUAD_BOOL) {
+            asm_imm_var(ctx, datasize, data);
+        } else if (datatype == VARTYPE_BOOL) {
             uint8_t b = var->imm.boolean ? 1 : 0;
             asm_imm_var(ctx, 1, &b);
         } else {
@@ -620,52 +593,55 @@ void emit_var(VarData* var, uint64_t datatype, uint64_t datasize, AsmCtx* ctx) {
     }
 }
 
+void emit_var(VarData* var, AsmCtx* ctx) {
+    uint32_t datasize = var->byte_size;
+    emit_var_with_size(var, datasize, ctx);
+}
+
 void emit_op1_dest_move(Quad* quad, VarData* vars, AsmCtx* ctx) {
-    uint64_t datatype = quad->type & QUAD_DATATYPE_MASK;
-    uint64_t datasize = quad->type & QUAD_DATASIZE_MASK;
     VarData* op1 = &vars[quad->op1.var];
     VarData* dest = &vars[quad->dest];
 
     asm_instr(ctx, OP_MOV);
-    emit_var(dest, datatype, datasize, ctx);
+    emit_var(dest, ctx);
     if (op1->alloc_type == ALLOC_IMM) {
+        uint32_t datasize = op1->byte_size;
+        enum VarDatatype datatype = op1->datatype;
         const uint8_t* data;
-        if (datatype == QUAD_SINT) {
-            if (datasize == QUAD_64_BIT && op1->imm.int64 >= INT32_MIN &&
+        if (datatype == VARTYPE_SINT) {
+            if (datasize == 8 && op1->imm.int64 >= INT32_MIN &&
                 op1->imm.int64 <= INT32_MAX) {
                 int32_t v = op1->imm.int64;
                 asm_imm_var(ctx, 4, (const uint8_t*)&v);
             } else {
                 data = (const uint8_t*)&op1->imm.int64;
-                asm_imm_var(ctx, size_val(datasize), data);
+                asm_imm_var(ctx, datasize, data);
             }
-        } else if (datatype == QUAD_UINT) {
-            if (datasize == QUAD_64_BIT && op1->imm.uint64 < UINT32_MAX) {
+        } else if (datatype == VARTYPE_UINT) {
+            if (datasize == 8 && op1->imm.uint64 < UINT32_MAX) {
                 uint32_t v = op1->imm.uint64;
                 asm_imm_var(ctx, 4, (const uint8_t*)&v);
             } else {
                 data = (const uint8_t*)&op1->imm.uint64;
-                asm_imm_var(ctx, size_val(datasize), data);
+                asm_imm_var(ctx, datasize, data);
             }
         } else {
-            assert(datatype == QUAD_BOOL);
+            assert(datatype == VARTYPE_BOOL);
             uint8_t d = op1->imm.boolean ? 1 : 0;
             asm_imm_var(ctx, datasize, &d);
         }
     } else {
-        emit_var(op1, datatype, datasize, ctx);
+        emit_var(op1, ctx);
     }
     asm_instr_end(ctx);
 }
 
 void emit_binop(enum Amd64Opcode op, Quad* quad, VarData* vars, AsmCtx* ctx) {
-    uint64_t datatype = quad->type & QUAD_DATATYPE_MASK;
-    uint64_t datasize = quad->type & QUAD_DATASIZE_MASK;
     VarData* op1 = &vars[quad->op1.var];
     VarData* op2 = &vars[quad->op2];
     VarData* dest = &vars[quad->dest];
     if (op1->alloc_type == ALLOC_IMM) {
-        assert(is_symetrical(quad->type));
+        assert(is_symetrical(quad));
         VarData* tmp = op1;
         op1 = op2;
         op2 = tmp;
@@ -673,7 +649,7 @@ void emit_binop(enum Amd64Opcode op, Quad* quad, VarData* vars, AsmCtx* ctx) {
     assert(dest->alloc_type == ALLOC_MEM || dest->alloc_type == ALLOC_REG);
     assert(op1->alloc_type == ALLOC_MEM || op1->alloc_type == ALLOC_REG);
     if (!is_same(vars, quad->op1.var, quad->dest)) {
-        if (is_symetrical(quad->type) && 
+        if (is_symetrical(quad) &&
             is_same(vars, quad->op2, quad->dest)) {
             VarData* tmp = op1;
             op1 = op2;
@@ -684,8 +660,8 @@ void emit_binop(enum Amd64Opcode op, Quad* quad, VarData* vars, AsmCtx* ctx) {
     }
     assert(dest->alloc_type != ALLOC_MEM || op2->alloc_type != ALLOC_MEM);
     asm_instr(ctx, op);
-    emit_var(dest, datatype, datasize, ctx);
-    emit_var(op2, datatype, datasize, ctx);
+    emit_var(dest, ctx);
+    emit_var(op2, ctx);
     asm_instr_end(ctx);
 }
 
@@ -696,14 +672,14 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
                          NameTable* name_table, FunctionTable* func_table) {
     VarList* var_list = &def->vars;
     VarData* vars = var_list->data;
-    assert((def->quad_start->type & QUAD_TYPE_MASK) == QUAD_LABEL);
+    assert(def->quad_start->type == QUAD_LABEL);
     const uint8_t* name = name_table->data[def->name].name;
 
     uint32_t name_len = name_table->data[def->name].name_len;
     uint64_t stack_size = 32;
 
     for (Quad* q = def->quad_start; q != def->quad_end->next_quad; q = q->next_quad) {
-        if ((q->type & QUAD_TYPE_MASK) == QUAD_PUT_ARG) {
+        if (q->type == QUAD_PUT_ARG) {
             if (q->op1.uint64 >= 4 && q->op1.uint64 * 8 + 8 > stack_size) {
                 stack_size = q->op1.uint64 * 8 + 8;
             }
@@ -752,17 +728,18 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
     String out;
 
     for (; q != def->quad_end->next_quad; q = q->next_quad) {
-        enum QuadType type = q->type & QUAD_TYPE_MASK;
-        uint64_t datatype = q->type & QUAD_DATATYPE_MASK;
-        uint64_t datasize = q->type & QUAD_DATASIZE_MASK;
+        enum QuadType type = q->type;
 
         switch (type) {
         case QUAD_GET_ARG: {
+            uint32_t datasize = vars[q->dest].byte_size;
+            // For now...
+            assert(datasize <= 8);
             if (q->op1.uint64 > 3) {
                 assert(vars[q->dest].alloc_type == ALLOC_REG);
                 asm_instr(ctx, OP_MOV);
-                emit_var(&vars[q->dest], datatype, datasize, ctx);
-                asm_mem_var(ctx, size_val(datasize), RSP, 0, RAX,
+                emit_var(&vars[q->dest], ctx);
+                asm_mem_var(ctx, datasize, RSP, 0, RAX,
                             stack_size + q->op1.uint64 * 8 + 8);
                 asm_instr_end(ctx);
                 break;
@@ -772,19 +749,20 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
             if (vars[q->dest].alloc_type != ALLOC_REG ||
                 vars[q->dest].reg != src_reg) {
                 asm_instr(ctx, OP_MOV);
-                emit_var(&vars[q->dest], datatype, datasize, ctx);
-                asm_reg_var(ctx, size_val(datasize), src_reg);
+                emit_var(&vars[q->dest], ctx);
+                asm_reg_var(ctx, datasize, src_reg);
                 asm_instr_end(ctx);
             }
             break;
         }
         case QUAD_PUT_ARG: {
+            uint32_t datasize = vars[q->op2].byte_size;
             if (q->op1.uint64 > 3) {
                 assert(vars[q->op2].alloc_type == ALLOC_REG);
                 asm_instr(ctx, OP_MOV);
-                asm_mem_var(ctx, size_val(datasize), RSP, 0, RAX,
+                asm_mem_var(ctx, datasize, RSP, 0, RAX,
                             q->op1.uint64 * 8);
-                emit_var(&vars[q->op2], datatype, datasize, ctx);
+                emit_var(&vars[q->op2], ctx);
                 asm_instr_end(ctx);
                 break;
             }
@@ -792,8 +770,8 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
             if (vars[q->op2].alloc_type != ALLOC_REG ||
                 vars[q->op2].reg != reg) {
                 asm_instr(ctx, OP_MOV);
-                asm_reg_var(ctx, size_val(datasize), reg);
-                emit_var(&vars[q->dest], datatype, datasize, ctx);
+                asm_reg_var(ctx, datasize, reg);
+                emit_var(&vars[q->dest], ctx);
                 asm_instr_end(ctx);
             }
             break;
@@ -804,69 +782,66 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
             }
             emit_op1_dest_move(q, vars, ctx);
             break;
-        case QUAD_CREATE:
+        case QUAD_CREATE: {
             if (vars[q->dest].alloc_type == ALLOC_IMM) {
                 break;
             }
             asm_instr(ctx, OP_MOV);
-            emit_var(&vars[q->dest], datatype, datasize, ctx);
-            if (datatype == QUAD_UINT) {
-                if (datasize == QUAD_64_BIT) {
+            emit_var(&vars[q->dest], ctx);
+            enum VarDatatype datatype = vars[q->dest].datatype;
+            uint32_t datasize = vars[q->dest].byte_size;
+            if (datatype == VARTYPE_UINT) {
+                if (datasize == 8) {
                     if (q->op1.uint64 > UINT32_MAX) {
                         asm_imm_var(ctx, 8, (const uint8_t*)&q->op1.uint64);
                     } else {
                         uint32_t v = q->op1.uint64;
                         asm_imm_var(ctx, 4, (const uint8_t*)&v);
                     }
-                } else if (datasize == QUAD_32_BIT) {
+                } else if (datasize == 4) {
                     uint32_t v = q->op1.uint64;
                     asm_imm_var(ctx, 4, (const uint8_t*)&v);
-                } else if (datasize == QUAD_16_BIT) {
+                } else if (datasize == 2) {
                     uint16_t v = q->op1.uint64;
                     asm_imm_var(ctx, 2, (const uint8_t*)&v);
                 } else {
-                    assert(datasize == QUAD_8_BIT);
+                    assert(datasize == 1);
                     uint8_t v = q->op1.uint64;
                     asm_imm_var(ctx, 1, &v);
                 }
-            } else if (datatype == QUAD_SINT) {
-                if (datasize == QUAD_64_BIT) {
+            } else if (datatype == VARTYPE_SINT) {
+                if (datasize == 8) {
                     if (q->op1.sint64 > INT32_MAX || q->op1.sint64 < INT32_MIN) {
                         asm_imm_var(ctx, 8, (const uint8_t*)&q->op1.sint64);
                     } else {
                         int32_t v = q->op1.sint64;
                         asm_imm_var(ctx, 4, (const uint8_t*)&v);
                     }
-                } else if (datasize == QUAD_32_BIT) {
+                } else if (datasize == 4) {
                     int32_t v = q->op1.sint64;
                     asm_imm_var(ctx, 4, (const uint8_t*)&v);
-                } else if (datasize == QUAD_16_BIT) {
+                } else if (datasize == 2) {
                     int16_t v = q->op1.sint64;
                     asm_imm_var(ctx, 2, (const uint8_t*)&v);
                 } else {
-                    assert(datasize == QUAD_8_BIT);
+                    assert(datasize == 1);
                     int8_t v = q->op1.sint64;
                     asm_imm_var(ctx, 1, (const uint8_t*)&v);
                 }
-            } else if (datatype == QUAD_BOOL) {
-                if (datasize == QUAD_64_BIT || datasize == QUAD_32_BIT) {
-                    uint32_t v = (q->op1.uint64 == 0) ? 0 : 1;
-                    asm_imm_var(ctx, 4, (const uint8_t*)&v);
-                } else if (datasize == QUAD_16_BIT) {
-                    uint16_t v = (q->op1.uint64 == 0) ? 0 : 1;
-                    asm_imm_var(ctx, 2, (const uint8_t*)&v);
-                } else {
-                    assert(datasize == QUAD_8_BIT);
-                    uint8_t v = (q->op1.uint64 == 0) ? 0 : 1;
-                    asm_imm_var(ctx, 1, &v);
-                }
+            } else if (datatype == VARTYPE_BOOL) {
+                assert(datasize == 1);
+                uint8_t v = (q->op1.uint64 == 0) ? 0 : 1;
+                asm_imm_var(ctx, 1, &v);
             } else {
                 assert(false);
             }
             asm_instr_end(ctx);
             break;
-        case QUAD_MUL:
-            if (datatype == QUAD_UINT || datasize == QUAD_8_BIT) {
+        }
+        case QUAD_MUL: {
+            enum VarDatatype datatype = vars[q->dest].datatype;
+            uint32_t datasize = vars[q->dest].byte_size;
+            if (datatype == VARTYPE_UINT || datasize == 1) {
                 assert_in_reg(q->dest, vars, RAX);
                 if (!is_same(vars, q->op1.var, q->dest)) {
                     if (is_same(vars, q->op2, q->dest)) {
@@ -875,67 +850,70 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
                         emit_op1_dest_move(q, vars, ctx);
                     }
                 }
-                if (datatype == QUAD_UINT) {
+                if (datatype == VARTYPE_UINT) {
                     asm_instr(ctx, OP_MUL);
                 } else {
                     asm_instr(ctx, OP_IMUL);
                 }
-                emit_var(&vars[q->op2], datatype, datasize, ctx);
+                emit_var(&vars[q->op2], ctx);
                 asm_instr_end(ctx);
-            } else if (datatype == QUAD_SINT) {
+            } else if (datatype == VARTYPE_SINT) {
                 emit_binop(OP_IMUL, q, vars, ctx);
             } else {
                 assert(false);
             }
             break;
+        }
         case QUAD_DIV:
         case QUAD_MOD: {
+            enum VarDatatype datatype = vars[q->dest].datatype;
+            uint32_t datasize = vars[q->dest].byte_size;
+
             uint32_t reg = type == QUAD_DIV ? RAX : RDX;
             assert_in_reg(q->dest, vars, reg);
             if (vars[q->op1.var].alloc_type != ALLOC_REG ||
                 vars[q->op1.var].reg != RAX) {
                 asm_instr(ctx, OP_MOV);
-                asm_reg_var(ctx, size_val(datasize), RAX);
-                emit_var(&vars[q->op1.var], datatype, datasize, ctx);
+                asm_reg_var(ctx, datasize, RAX);
+                emit_var(&vars[q->op1.var], ctx);
                 asm_instr_end(ctx);
             }
             asm_instr(ctx, OP_XOR);
-            asm_reg_var(ctx, size_val(datasize), RDX);
-            asm_reg_var(ctx, size_val(datasize), RDX);
+            asm_reg_var(ctx, datasize, RDX);
+            asm_reg_var(ctx, datasize, RDX);
             asm_instr_end(ctx);
-            if (datatype & QUAD_SINT) {
+            if (datatype == VARTYPE_SINT) {
                 asm_instr(ctx, OP_IDIV);
             } else {
                 asm_instr(ctx, OP_DIV);
             }
-            emit_var(&vars[q->op2], datatype, datasize, ctx);
+            emit_var(&vars[q->op2], ctx);
             asm_instr_end(ctx);
             break;
         }
         case QUAD_RSHIFT:
         case QUAD_LSHIFT: {
+            enum VarDatatype datatype = vars[q->dest].datatype;
             if (vars[q->op2].alloc_type != ALLOC_IMM) {
                 assert_in_reg(q->op2, vars, RCX);
             }
             enum Amd64Opcode instr;
             if (type == QUAD_RSHIFT) {
-                instr = (datatype & QUAD_UINT) ? OP_SHR : OP_SAR;
+                instr = (datatype == VARTYPE_UINT) ? OP_SHR : OP_SAR;
             } else {
-                instr = (datasize & QUAD_UINT) ? OP_SHL : OP_SAL;
+                instr = (datatype == VARTYPE_UINT) ? OP_SHL : OP_SAL;
             }
             if (!is_same(vars, q->op1.var, q->dest)) {
                 emit_op1_dest_move(q, vars, ctx);
             }
             asm_instr(ctx, instr);
-            emit_var(&vars[q->dest], datatype, datasize, ctx);
-            emit_var(&vars[q->op2], datatype, QUAD_8_BIT, ctx);
+            emit_var(&vars[q->dest], ctx);
+            emit_var(&vars[q->op2], ctx);
             asm_instr_end(ctx);
             break;
         }
         case QUAD_CALL_PTR: {
-            if (vars[q->op1.var].kind == VAR_FUNCTION) { // Extern function call
-                // TODO: get func_def symbol?
-                assert(vars[q->op1.var].name != NAME_ID_INVALID);
+            if (vars[q->op1.var].kind == VAR_GLOBAL) {
                 symbol_ix ix = vars[q->op1.var].symbol_ix;
                 asm_instr(ctx, OP_CALL);
                 asm_global_mem_var(ctx, PTR_SIZE, ix);
@@ -961,13 +939,15 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
         case QUAD_CMP_GE:
         case QUAD_CMP_G:
         case QUAD_CMP_EQ:
-        case QUAD_CMP_NEQ:
+        case QUAD_CMP_NEQ: {
+            uint32_t datasize = vars[q->op1.var].byte_size;
+            enum VarDatatype datatype = vars[q->op1.var].datatype;
             if (vars[q->dest].alloc_type == ALLOC_IMM) {
-                assert(datatype != QUAD_FLOAT);
+                assert(datatype != VARTYPE_FLOAT);
                 Quad* next = q->next_quad;
                 enum Amd64Opcode instr;
-                bool inv = (next->type & QUAD_TYPE_MASK) == QUAD_JMP_FALSE;
-                bool sign = datatype == QUAD_SINT;
+                bool inv = next->type == QUAD_JMP_FALSE;
+                bool sign = datatype == VARTYPE_SINT;
                 if (type == QUAD_CMP_LE) {
                     instr = inv ? (sign ? OP_JG : OP_JA) : (sign ? OP_JLE : OP_JBE);
                 } else if (type == QUAD_CMP_L) {
@@ -982,11 +962,8 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
                     instr = inv ? (sign ? OP_JE : OP_JZ) : (sign ? OP_JNE : OP_JNZ);
                 }
                 asm_instr(ctx, OP_CMP);
-                emit_var(&vars[q->op1.var], datatype, datasize, ctx);
-                if (vars[q->op2].alloc_type == ALLOC_IMM) {
-                    LOG_DEBUG("%llu is imm", q->op2);
-                }
-                emit_var(&vars[q->op2], datatype, datasize, ctx);
+                emit_var(&vars[q->op1.var], ctx);
+                emit_var(&vars[q->op2], ctx);
                 asm_instr_end(ctx);
                 asm_instr(ctx, instr);
                 asm_label_var(ctx, next->op1.label);
@@ -994,52 +971,38 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
 
                 q = next;
             } else {
-                bool sign = datatype == QUAD_SINT;
+                bool sign = datatype == VARTYPE_SINT;
                 enum Amd64Opcode instr;
                 if (type == QUAD_CMP_LE) {
-                    instr = sign ? OP_CMOVLE : OP_CMOVBE;
+                    instr = sign ? OP_SETLE : OP_SETBE;
                 } else if (type == QUAD_CMP_L) {
-                    instr = sign ? OP_CMOVL : OP_CMOVB;
+                    instr = sign ? OP_SETL : OP_SETB;
                 } else if (type == QUAD_CMP_G) {
-                    instr = sign ? OP_CMOVG : OP_CMOVA;
+                    instr = sign ? OP_SETG : OP_SETA;
                 } else if (type == QUAD_CMP_GE) {
-                    instr = sign ? OP_CMOVGE : OP_CMOVAE;
+                    instr = sign ? OP_SETGE : OP_SETAE;
                 } else if (type == QUAD_CMP_EQ) {
-                    instr = sign ? OP_CMOVE : OP_CMOVZ;
+                    instr = sign ? OP_SETE : OP_SETZ;
                 } else {
-                    instr = sign ? OP_CMOVNE : OP_CMOVNZ;
+                    instr = sign ? OP_SETNE : OP_SETNZ;
                 }
 
-                assert(vars[q->dest].alloc_type == ALLOC_REG);
-                assert(vars[q->op1.var].alloc_type == ALLOC_REG);
-                assert(vars[q->op1.var].reg != vars[q->dest].reg);
+                assert(vars[q->op1.var].alloc_type == ALLOC_REG ||
+                       vars[q->op2].alloc_type == ALLOC_REG);
 
                 asm_instr(ctx, OP_CMP);
-                emit_var(&vars[q->op1.var], datatype, datasize, ctx);
-                emit_var(&vars[q->op2], datatype, datasize, ctx);
-                asm_instr_end(ctx);
-
-                asm_instr(ctx, OP_MOVZX);
-                emit_var(&vars[q->dest], QUAD_BOOL, QUAD_32_BIT, ctx); 
-                uint8_t v = 0;
-                asm_imm_var(ctx, 1, &v);
-                asm_instr_end(ctx);
-
-                asm_instr(ctx, OP_MOVZX);
-                emit_var(&vars[q->op1.var], QUAD_BOOL, QUAD_32_BIT, ctx);
-                v = 1;
-                asm_imm_var(ctx, 1, &v);
+                emit_var(&vars[q->op1.var], ctx);
+                emit_var(&vars[q->op2], ctx);
                 asm_instr_end(ctx);
 
                 asm_instr(ctx, instr);
-                emit_var(&vars[q->dest], QUAD_BOOL, QUAD_32_BIT, ctx);
-                emit_var(&vars[q->op1.var], QUAD_BOOL, QUAD_32_BIT, ctx);
+                emit_var(&vars[q->dest], ctx);
                 asm_instr_end(ctx);
             }
             break;
+        }
         case QUAD_JMP_FALSE:
-        case QUAD_JMP_TRUE:
-            assert(datatype == QUAD_BOOL);
+        case QUAD_JMP_TRUE: {
             if (vars[q->op2].alloc_type == ALLOC_IMM) {
                 if (vars[q->op2].imm.boolean) {
                     if (type == QUAD_JMP_TRUE) {
@@ -1056,14 +1019,14 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
                 }
             } else if (vars[q->op2].alloc_type == ALLOC_MEM) {
                 asm_instr(ctx, OP_CMP);
-                emit_var(&vars[q->op2], datatype, datasize, ctx);
+                emit_var(&vars[q->op2], ctx);
                 uint8_t v = 0;
                 asm_imm_var(ctx, 1, &v);
                 asm_instr_end(ctx);
             } else {
                 asm_instr(ctx, OP_TEST);
-                emit_var(&vars[q->op2], datatype, datasize, ctx);
-                emit_var(&vars[q->op2], datatype, datasize, ctx);
+                emit_var(&vars[q->op2], ctx);
+                emit_var(&vars[q->op2], ctx);
                 asm_instr_end(ctx);
             }
             if (type == QUAD_JMP_TRUE) {
@@ -1074,115 +1037,130 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
             asm_label_var(ctx, q->op1.label);
             asm_instr_end(ctx);
             break;
+        }
         case QUAD_LABEL:
             asm_put_label(ctx, q->op1.label);
             break;
         case QUAD_CAST_TO_UINT64:
-        case QUAD_CAST_TO_INT64:
-            if (datasize == QUAD_64_BIT && (datatype & (QUAD_SINT | QUAD_UINT))) {
+        case QUAD_CAST_TO_INT64: {
+            uint32_t datasize = vars[q->op1.var].byte_size;
+            enum VarDatatype datatype = vars[q->op1.var].datatype;
+            if (datasize == 8 && (datatype == VARTYPE_UINT || 
+                                  datatype == VARTYPE_SINT)) {
                 if (!is_same(vars, q->op1.var, q->dest)) {
                     emit_op1_dest_move(q, vars, ctx);
                 }
                 break;
             }
             assert(vars[q->dest].alloc_type == ALLOC_REG);
-            if (datasize & QUAD_32_BIT) {
-                if (datatype & QUAD_UINT) {
+            if (datasize == 4) {
+                if (datatype == VARTYPE_UINT) {
                     asm_instr(ctx, OP_MOV);
-                    emit_var(&vars[q->dest], QUAD_UINT, QUAD_32_BIT, ctx);
-                    emit_var(&vars[q->op1.var], QUAD_UINT, QUAD_32_BIT, ctx);
+                    emit_var_with_size(&vars[q->dest], 4, ctx);
+                    emit_var(&vars[q->op1.var], ctx);
                     asm_instr_end(ctx);
                     break;
-                } else if (datatype & QUAD_SINT) {
+                } else if (datatype == VARTYPE_UINT) {
                     asm_instr(ctx, OP_MOVSXD);
-                    emit_var(&vars[q->dest], QUAD_SINT, QUAD_64_BIT, ctx);
-                    emit_var(&vars[q->op1.var], QUAD_SINT, QUAD_32_BIT, ctx);
+                    emit_var(&vars[q->dest], ctx);
+                    emit_var(&vars[q->op1.var], ctx);
                     asm_instr_end(ctx);
                     break;
                 }
-            } else if (datasize & (QUAD_16_BIT | QUAD_8_BIT)) {
-                if (datatype & (QUAD_UINT | QUAD_BOOL)) {
+            } else if (datasize == 2 || datasize == 1) {
+                if (datatype == VARTYPE_UINT || datatype == VARTYPE_BOOL) {
                     asm_instr(ctx, OP_MOVZX);
-                } else if (datatype & QUAD_SINT) {
+                } else if (datatype == VARTYPE_SINT) {
                     asm_instr(ctx, OP_MOVSX);
                 } else {
                     assert(false);
                 }
-                emit_var(&vars[q->dest], datatype, QUAD_64_BIT, ctx);
-                emit_var(&vars[q->op1.var], datatype, datasize, ctx);
+                emit_var(&vars[q->dest], ctx);
+                emit_var(&vars[q->op1.var], ctx);
                 asm_instr_end(ctx);
                 break;
             }
             assert(false);
             break;
+        }
         case QUAD_CAST_TO_UINT32:
-        case QUAD_CAST_TO_INT32:
-            if ((datasize & (QUAD_64_BIT | QUAD_32_BIT)) && (datatype & (QUAD_SINT | QUAD_UINT))) {
+        case QUAD_CAST_TO_INT32: {
+            uint32_t datasize = vars[q->op1.var].byte_size;
+            enum VarDatatype datatype = vars[q->op1.var].datatype;
+            if ((datasize == 8 || datasize == 4) && 
+                (datatype == VARTYPE_SINT || datatype == VARTYPE_UINT)) {
                 if (!is_same(vars, q->op1.var, q->dest)) {
                     asm_instr(ctx, OP_MOV);
-                    emit_var(&vars[q->dest], datatype, QUAD_32_BIT, ctx);
-                    emit_var(&vars[q->op1.var], datatype, QUAD_32_BIT, ctx);
+                    emit_var(&vars[q->dest], ctx);
+                    emit_var_with_size(&vars[q->op1.var], 4, ctx);
                     asm_instr_end(ctx);
                 }
                 break;
             }
             assert(vars[q->dest].alloc_type == ALLOC_REG);
-            if (datasize & (QUAD_16_BIT | QUAD_8_BIT)) {
-                if (datatype & (QUAD_UINT | QUAD_BOOL)) {
+            if (datasize == 2 || datasize == 1) {
+                if (datatype == VARTYPE_UINT || datatype == VARTYPE_BOOL) {
                     asm_instr(ctx, OP_MOVZX);
-                } else if (datatype & QUAD_SINT) {
+                } else if (datatype == VARTYPE_SINT) {
                     asm_instr(ctx, OP_MOVSX);
                 } else {
                     assert(false);
                 }
-                emit_var(&vars[q->dest], datatype, QUAD_32_BIT, ctx);
-                emit_var(&vars[q->op1.var], datatype, datasize, ctx);
+                emit_var(&vars[q->dest], ctx);
+                emit_var(&vars[q->op1.var], ctx);
                 asm_instr_end(ctx);
                 break;
             }
             assert(false);
             break;
+        }
         case QUAD_CAST_TO_INT16:
-        case QUAD_CAST_TO_UINT16:
-            if ((datasize & (QUAD_64_BIT | QUAD_32_BIT | QUAD_16_BIT)) && 
-                (datatype & (QUAD_SINT | QUAD_UINT))) {
+        case QUAD_CAST_TO_UINT16: {
+            uint32_t datasize = vars[q->op1.var].byte_size;
+            enum VarDatatype datatype = vars[q->op1.var].datatype;
+            if ((datasize == 8 || datasize == 4 || datasize == 2) &&
+                (datatype == VARTYPE_UINT || datatype == VARTYPE_SINT)) {
                 if (!is_same(vars, q->op1.var, q->dest)) {
                     asm_instr(ctx, OP_MOV);
-                    emit_var(&vars[q->dest], datatype, QUAD_16_BIT, ctx);
-                    emit_var(&vars[q->op1.var], datatype, QUAD_16_BIT, ctx);
+                    emit_var(&vars[q->dest], ctx);
+                    emit_var_with_size(&vars[q->op1.var], 2, ctx);
                     asm_instr_end(ctx);
                 }
                 break;
             }
             assert(vars[q->dest].alloc_type == ALLOC_REG);
-            if (datatype & (QUAD_UINT | QUAD_BOOL)) {
+            if (datatype == VARTYPE_UINT || datatype == VARTYPE_BOOL) {
                 asm_instr(ctx, OP_MOVZX);
-            } else if (datatype & QUAD_SINT) {
+            } else if (datatype == VARTYPE_SINT) {
                 asm_instr(ctx, OP_MOVSX);
             } else {
                 assert(false);
             }
-            emit_var(&vars[q->dest], datatype, QUAD_16_BIT, ctx);
-            emit_var(&vars[q->op1.var], datatype, datasize, ctx);
+            emit_var(&vars[q->dest], ctx);
+            emit_var(&vars[q->op1.var], ctx);
             asm_instr_end(ctx);
             break;
+        }
         case QUAD_CAST_TO_INT8:
-        case QUAD_CAST_TO_UINT8:
-            assert(datatype & (QUAD_SINT | QUAD_UINT | QUAD_BOOL));
+        case QUAD_CAST_TO_UINT8: {
+            enum VarDatatype datatype = vars[q->op1.var].datatype;
+            assert(datatype == VARTYPE_UINT || datatype == VARTYPE_SINT ||
+                   datatype == VARTYPE_BOOL);
             if (!is_same(vars, q->op1.var, q->dest)) {
                 asm_instr(ctx, OP_MOV);
-                emit_var(&vars[q->dest], datatype, QUAD_8_BIT, ctx);
-                emit_var(&vars[q->op1.var], datatype, QUAD_8_BIT, ctx);
+                emit_var(&vars[q->dest], ctx);
+                emit_var_with_size(&vars[q->op1.var], 1, ctx);
                 asm_instr_end(ctx);
             }
             break;
+        }
         case QUAD_ARRAY_TO_PTR:
             assert(vars[q->op1.var].kind == VAR_ARRAY ||
                    vars[q->op1.var].kind == VAR_ARRAY_GLOBAL);
             assert(vars[q->dest].alloc_type == ALLOC_REG);
             asm_instr(ctx, OP_LEA);
-            emit_var(&vars[q->dest], QUAD_UINT, QUAD_PTR_SIZE, ctx);
-            emit_var(&vars[q->op1.var], datatype, datasize, ctx);
+            emit_var(&vars[q->dest], ctx);
+            emit_var_with_size(&vars[q->op1.var], PTR_SIZE, ctx);
             asm_instr_end(ctx);
             break;
         case QUAD_JMP:
@@ -1194,20 +1172,20 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
             emit_binop(OP_SUB, q, vars, ctx);
             break;
         case QUAD_ADD:
-            if (q->type & QUAD_SCALE_MASK) {
+            if (q->scale != QUADSCALE_NONE) {
                 assert(vars[q->dest].alloc_type == ALLOC_REG);
                 assert(vars[q->op2].alloc_type == ALLOC_REG);
                 if (vars[q->op1.var].alloc_type != ALLOC_REG) {
                     emit_op1_dest_move(q, vars, ctx);
                     asm_instr(ctx, OP_LEA);
-                    emit_var(&vars[q->dest], datatype, datasize, ctx);
-                    asm_mem_var(ctx, size_val(q->type), vars[q->dest].reg,
-                                scale_val(q->type), vars[q->op2].reg, 0);
+                    emit_var(&vars[q->dest], ctx);
+                    asm_mem_var(ctx, PTR_SIZE, vars[q->dest].reg,
+                                scale_val(q->scale), vars[q->op2].reg, 0);
                 } else {
                     asm_instr(ctx, OP_LEA);
-                    emit_var(&vars[q->dest], datatype, datasize, ctx);
-                    asm_mem_var(ctx, size_val(q->type), vars[q->op1.var].reg,
-                                scale_val(q->type), vars[q->op2].reg, 0);
+                    emit_var(&vars[q->dest], ctx);
+                    asm_mem_var(ctx, PTR_SIZE, vars[q->op1.var].reg,
+                                scale_val(q->scale), vars[q->op2].reg, 0);
                 }
                 asm_instr_end(ctx);
             } else {
@@ -1222,38 +1200,38 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
             break;
         case QUAD_BIT_XOR:
             emit_binop(OP_XOR, q, vars, ctx);
-        case QUAD_BOOL_NOT:
-            assert(datatype == QUAD_BOOL);
-            assert(datasize == QUAD_8_BIT);
+        case QUAD_BOOL_NOT: {
             if (vars[q->op1.var].alloc_type == ALLOC_IMM) {
                 asm_instr(ctx, OP_MOV);
-                emit_var(&vars[q->dest], datatype, datasize, ctx);
+                emit_var(&vars[q->dest], ctx);
                 uint8_t v = vars[q->op1.var].imm.boolean ? 1 : 0;
                 asm_imm_var(ctx, 1, &v);
                 asm_instr_end(ctx);
                 break;
             } else if (vars[q->op1.var].alloc_type == ALLOC_MEM) {
                 asm_instr(ctx, OP_CMP);
-                emit_var(&vars[q->op1.var], datatype, datasize, ctx);
+                emit_var(&vars[q->op1.var], ctx);
                 uint8_t v = 0;
                 asm_imm_var(ctx, 1, &v);
                 asm_instr_end(ctx);
             } else {
                 asm_instr(ctx, OP_TEST);
-                emit_var(&vars[q->op1.var], datatype, datasize, ctx);
-                emit_var(&vars[q->op1.var], datatype, datasize, ctx);
+                emit_var(&vars[q->op1.var], ctx);
+                emit_var(&vars[q->op1.var], ctx);
                 asm_instr_end(ctx);
             }
             asm_instr(ctx, OP_SETZ);
-            emit_var(&vars[q->dest], datatype, datasize, ctx);
+            emit_var(&vars[q->dest], ctx);
             asm_instr_end(ctx);
             break;
+        }
         case QUAD_RETURN:
             if (vars[q->op1.var].alloc_type != ALLOC_REG ||
                 vars[q->op1.var].reg != RAX) {
+                uint32_t datasize = vars[q->dest].byte_size;
                 asm_instr(ctx, OP_MOV);
-                asm_reg_var(ctx, size_val(datasize), RAX);
-                emit_var(&vars[q->op1.var], datatype, datasize, ctx);
+                asm_reg_var(ctx, datasize, RAX);
+                emit_var(&vars[q->op1.var], ctx);
                 asm_instr_end(ctx);
             }
             asm_instr(ctx, OP_JMP);
@@ -1266,44 +1244,48 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
             assert(vars[q->dest].alloc_type == ALLOC_REG);
             assert(vars[q->op1.var].kind == VAR_ARRAY ||
                    vars[q->op1.var].kind == VAR_ARRAY_GLOBAL);
+            uint32_t datasize = vars[q->dest].byte_size;
             asm_instr(ctx, OP_LEA);
-            emit_var(&vars[q->dest], QUAD_UINT, QUAD_PTR_SIZE, ctx);
-            emit_var(&vars[q->op1.var], QUAD_UINT, QUAD_PTR_SIZE, ctx);
+            emit_var_with_size(&vars[q->dest], PTR_SIZE, ctx);
+            emit_var_with_size(&vars[q->op1.var], datasize, ctx);
             asm_instr_end(ctx);
             if (type == QUAD_GET_ARRAY_ADDR) {
                 asm_instr(ctx, OP_MOV);
             } else {
                 asm_instr(ctx, OP_LEA);
             }
-            emit_var(&vars[q->dest], datatype, datasize, ctx);
-            asm_mem_var(ctx, size_val(q->type), vars[q->dest].reg,
-                        scale_val(q->type), vars[q->op2].reg, 0);
+            emit_var(&vars[q->dest], ctx);
+            asm_mem_var(ctx, datasize, vars[q->dest].reg,
+                        scale_val(q->scale), vars[q->op2].reg, 0);
             asm_instr_end(ctx);
             break;
         }
-        case QUAD_SET_ADDR:
+        case QUAD_SET_ADDR: {
             assert(vars[q->op1.var].alloc_type == ALLOC_REG);
             assert(vars[q->op2].alloc_type == ALLOC_REG);
+            uint32_t datasize = vars[q->op2].byte_size;
             asm_instr(ctx, OP_MOV);
 
-            asm_mem_var(ctx, size_val(datasize), vars[q->op1.var].reg, 0, RAX, 0);
-            emit_var(&vars[q->op2], datatype, datasize, ctx);
+            asm_mem_var(ctx, datasize, vars[q->op1.var].reg, 0, RAX, 0);
+            emit_var(&vars[q->op2], ctx);
             asm_instr_end(ctx);
             break;
+        }
         case QUAD_ADDROF:
             assert(vars[q->dest].alloc_type == ALLOC_REG);
             assert(vars[q->op1.var].alloc_type == ALLOC_MEM);
             asm_instr(ctx, OP_LEA);
             asm_reg_var(ctx, PTR_SIZE, vars[q->dest].reg);
-            emit_var(&vars[q->op1.var], datatype, datasize, ctx);
+            emit_var(&vars[q->op1.var], ctx);
             asm_instr_end(ctx);
             break;
         case QUAD_DEREF:
             assert(vars[q->dest].alloc_type == ALLOC_REG);
             assert(vars[q->op1.var].alloc_type == ALLOC_REG);
+            uint32_t datasize = vars[q->dest].byte_size;
             asm_instr(ctx, OP_MOV);
-            asm_reg_var(ctx, size_val(datasize), vars[q->dest].reg);
-            asm_mem_var(ctx, size_val(datasize), vars[q->op1.var].reg, 0, RAX, 0);
+            asm_reg_var(ctx, datasize, vars[q->dest].reg);
+            asm_mem_var(ctx, datasize, vars[q->op1.var].reg, 0, RAX, 0);
             asm_instr_end(ctx);
             break;
         case QUAD_NEGATE:
@@ -1311,7 +1293,7 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
                 emit_op1_dest_move(q, vars, ctx);
             }
             asm_instr(ctx, OP_NEG);
-            emit_var(&vars[q->dest], datatype, datasize, ctx);
+            emit_var(&vars[q->dest], ctx);
             asm_instr_end(ctx);
             break;
         default:

@@ -204,9 +204,15 @@ type_id typecheck_binop(Parser* parser, Expression* op) {
         a = require_number(parser, op->binop.lhs);
         b = require_number(parser, op->binop.rhs);
         return merge_numbers(parser, a, b, op->binop.lhs, op->binop.rhs);
-    case BINOP_MOD:
     case BINOP_BIT_LSHIFT:
     case BINOP_BIT_RSHIFT:
+        a = require_interger(parser, op->binop.lhs, true, true);
+        b = require_interger(parser, op->binop.rhs, true, true);
+        if (b != TYPE_ID_INT8 && b != TYPE_ID_UINT8) {
+            cast_to(parser, op->binop.rhs, TYPE_ID_UINT8);
+        }
+        return a;
+    case BINOP_MOD:
     case BINOP_BIT_AND:
     case BINOP_BIT_XOR:
     case BINOP_BIT_OR:

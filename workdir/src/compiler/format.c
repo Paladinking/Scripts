@@ -20,15 +20,14 @@ const static char* quadnames[] = {
 };
 
 void fmt_quad(const Quad* quad, String* dest) {
-    enum QuadType type = quad->type & QUAD_TYPE_MASK;
-    if (type >= 0 && type < QUAD_COUNT) {
-        String_extend(dest, quadnames[type]);
+    if (quad->type >= 0 && quad->type < QUAD_COUNT) {
+        String_extend(dest, quadnames[quad->type]);
     } else {
         String_extend(dest, "QUNKOWN");
         return;
     }
     String_append(dest, ' ');
-    switch (type) {
+    switch (quad->type) {
     case QUAD_DIV:
     case QUAD_MUL:
     case QUAD_MOD:
@@ -101,31 +100,14 @@ void fmt_quad(const Quad* quad, String* dest) {
         String_format_append(dest, "<%llu> -> <%llu>", quad->op1.var, quad->dest);
         break;
     }
-    if (quad->type & QUAD_UINT) {
-        String_extend(dest, " UINT");
-    } else if (quad->type & QUAD_SINT) {
-        String_extend(dest, " SINT");
-    } else if (quad->type & QUAD_FLOAT) {
-        String_extend(dest, " FLOAT");
-    } else if (quad->type & QUAD_BOOL) {
-        String_extend(dest, " BOOL");
-    }
-    if (quad->type & QUAD_64_BIT) {
-        String_extend(dest, " 64");
-    } else if (quad->type & QUAD_32_BIT) {
-        String_extend(dest, " 32");
-    } else if (quad->type & QUAD_16_BIT) {
-        String_extend(dest, " 16");
-    } else if (quad->type & QUAD_8_BIT) {
-        String_extend(dest, " 8");
-    }
-    if (quad->type & QUAD_SCALE_8) {
+
+    if (quad->scale == QUADSCALE_8) {
         String_extend(dest, " SCALE 8");
-    } else if (quad->type & QUAD_SCALE_4) {
+    } else if (quad->scale == QUADSCALE_4) {
         String_extend(dest, " SCALE 4");
-    } else if (quad->type & QUAD_SCALE_2) {
+    } else if (quad->scale == QUADSCALE_2) {
         String_extend(dest, " SCALE 2");
-    } else if (quad->type & QUAD_SCALE_1) {
+    } else if (quad->scale == QUADSCALE_1) {
         String_extend(dest, " SCALE 1");
     }
 }

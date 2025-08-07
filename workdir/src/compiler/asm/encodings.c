@@ -2358,6 +2358,149 @@ const Encoding MOVZX_ENCODING[] = {
     }
 };
 
+const Encoding SETG_ENCODING[] = {
+    {
+        1, 3,
+        {{OPCODE2, 0x9f}, {MOD_RM, 0x0}, {RM_MEM}},
+        {OPERAND_MEM8},
+    },
+    {
+        1, 3,
+        {{OPCODE2, 0x9f}, {MOD_RM, 0x0}, {RM_REG}},
+        {OPERAND_REG8},
+    }
+};
+
+const Encoding SETA_ENCODING[] = {
+    {
+        1, 3,
+        {{OPCODE2, 0x97}, {MOD_RM, 0x0}, {RM_MEM}},
+        {OPERAND_MEM8},
+    },
+    {
+        1, 3,
+        {{OPCODE2, 0x97}, {MOD_RM, 0x0}, {RM_REG}},
+        {OPERAND_REG8},
+    }
+};
+
+const Encoding SETLE_ENCODING[] = {
+    {
+        1, 3,
+        {{OPCODE2, 0x9e}, {MOD_RM, 0x0}, {RM_MEM}},
+        {OPERAND_MEM8},
+    },
+    {
+        1, 3,
+        {{OPCODE2, 0x9e}, {MOD_RM, 0x0}, {RM_REG}},
+        {OPERAND_REG8},
+    }
+};
+
+const Encoding SETBE_ENCODING[] = {
+    {
+        1, 3,
+        {{OPCODE2, 0x96}, {MOD_RM, 0x0}, {RM_MEM}},
+        {OPERAND_MEM8},
+    },
+    {
+        1, 3,
+        {{OPCODE2, 0x96}, {MOD_RM, 0x0}, {RM_REG}},
+        {OPERAND_REG8},
+    }
+};
+
+const Encoding SETGE_ENCODING[] = {
+    {
+        1, 3,
+        {{OPCODE2, 0x9d}, {MOD_RM, 0x0}, {RM_MEM}},
+        {OPERAND_MEM8},
+    },
+    {
+        1, 3,
+        {{OPCODE2, 0x9d}, {MOD_RM, 0x0}, {RM_REG}},
+        {OPERAND_REG8},
+    }
+};
+
+const Encoding SETAE_ENCODING[] = {
+    {
+        1, 3,
+        {{OPCODE2, 0x93}, {MOD_RM, 0x0}, {RM_MEM}},
+        {OPERAND_MEM8},
+    },
+    {
+        1, 3,
+        {{OPCODE2, 0x93}, {MOD_RM, 0x0}, {RM_REG}},
+        {OPERAND_REG8},
+    }
+};
+
+const Encoding SETL_ENCODING[] = {
+    {
+        1, 3,
+        {{OPCODE2, 0x9c}, {MOD_RM, 0x0}, {RM_MEM}},
+        {OPERAND_MEM8},
+    },
+    {
+        1, 3,
+        {{OPCODE2, 0x9c}, {MOD_RM, 0x0}, {RM_REG}},
+        {OPERAND_REG8},
+    }
+};
+
+const Encoding SETB_ENCODING[] = {
+    {
+        1, 3,
+        {{OPCODE2, 0x92}, {MOD_RM, 0x0}, {RM_MEM}},
+        {OPERAND_MEM8},
+    },
+    {
+        1, 3,
+        {{OPCODE2, 0x92}, {MOD_RM, 0x0}, {RM_REG}},
+        {OPERAND_REG8},
+    }
+};
+
+const Encoding SETNE_ENCODING[] = {
+    {
+        1, 3,
+        {{OPCODE2, 0x95}, {MOD_RM, 0x0}, {RM_MEM}},
+        {OPERAND_MEM8},
+    },
+    {
+        1, 3,
+        {{OPCODE2, 0x95}, {MOD_RM, 0x0}, {RM_REG}},
+        {OPERAND_REG8},
+    }
+};
+
+const Encoding SETNZ_ENCODING[] = {
+    {
+        1, 3,
+        {{OPCODE2, 0x95}, {MOD_RM, 0x0}, {RM_MEM}},
+        {OPERAND_MEM8},
+    },
+    {
+        1, 3,
+        {{OPCODE2, 0x95}, {MOD_RM, 0x0}, {RM_REG}},
+        {OPERAND_REG8},
+    }
+};
+
+const Encoding SETE_ENCODING[] = {
+    {
+        1, 3,
+        {{OPCODE2, 0x94}, {MOD_RM, 0x0}, {RM_MEM}},
+        {OPERAND_MEM8},
+    },
+    {
+        1, 3,
+        {{OPCODE2, 0x94}, {MOD_RM, 0x0}, {RM_REG}},
+        {OPERAND_REG8},
+    }
+};
+
 const Encoding SETZ_ENCODING[] = {
     {
         1, 3,
@@ -2423,5 +2566,16 @@ const Encodings ENCODINGS[] = {
     {2, MOVSXD_ENCODING}, //48
     {10, MOVSX_ENCODING}, //49
     {10, MOVZX_ENCODING}, //50
-    {2, SETZ_ENCODING} //51
+    {2, SETG_ENCODING}, //51
+    {2, SETA_ENCODING}, //52
+    {2, SETLE_ENCODING}, //53
+    {2, SETBE_ENCODING}, //54
+    {2, SETGE_ENCODING}, //55
+    {2, SETAE_ENCODING}, //56
+    {2, SETL_ENCODING}, //57
+    {2, SETB_ENCODING}, //58
+    {2, SETNE_ENCODING}, //59
+    {2, SETNZ_ENCODING}, //60
+    {2, SETE_ENCODING}, //61
+    {2, SETZ_ENCODING} //62
 };
