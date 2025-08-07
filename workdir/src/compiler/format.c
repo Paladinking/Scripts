@@ -438,6 +438,9 @@ void fmt_expression(const Expression* expr, const Parser* parser, String* dest) 
                 String_extend(dest, "{false}");
             }
             return;
+        case EXPRESSION_LITERAL_NULL:
+            String_extend(dest, "{null}");
+            return;
         case EXPRESSION_LITERAL_INT:
             String_format_append(dest, "{%lld}", expr->literal.iint);
             return;

@@ -1,17 +1,18 @@
 include: "ast.h";
 
-atoms: kFn, kStruct, kIf, kWhile, kElse, kReturn, kTrue, kFalse, kExtern,
-       typeid, identifier, integer, real, string;
+atoms: kwFn, kwStruct, kwIf, kwWhile, kwElse, kwReturn, kwTrue, kwFalse, kwExtern,
+       kwNull, typeid, identifier, integer, real, string;
 
-type: kFn = name_id;
-type: kStruct = name_id;
-type: kIf = name_id;
-type: kWhile = name_id;
-type: kElse = name_id;
-type: kReturn = name_id;
-type: kTrue = name_id;
-type: kFalse = name_id;
-type: kExtern = name_id;
+type: kwFn = name_id;
+type: kwStruct = name_id;
+type: kwIf = name_id;
+type: kwWhile = name_id;
+type: kwElse = name_id;
+type: kwReturn = name_id;
+type: kwTrue = name_id;
+type: kwFalse = name_id;
+type: kwExtern = name_id;
+type: kwNull = name_id;
 
 type: typeid = type_id;
 type: identifier = StrWithLength;
@@ -58,13 +59,13 @@ type: ARRAYDECL = ArraySizes*;
 PROGRAM = '' |
           PROGRAM + FUNCTION;
 
-FN_HEAD = kFn + identifier : OnFnHead;
+FN_HEAD = kwFn + identifier : OnFnHead;
 
 FUNCTION = FN_HEAD + 
            '(' + ?ARG_LIST + ')' +
            ?RET_TYPE + STATEMENTS : OnFunction;
 
-FUNCTION = kExtern + FN_HEAD + '(' + ?ARG_LIST + ')' +
+FUNCTION = kwExtern + FN_HEAD + '(' + ?ARG_LIST + ')' +
            ?RET_TYPE + ';' : OnExternFunction;
 
 ?RET_TYPE = '' :$ TYPE_ID_NONE |
@@ -84,13 +85,13 @@ STATEMENTS = '{' + STATEMENT_LIST + '}' : OnStatements;
 STATEMENT_LIST = '' :$ NULL |
                  STATEMENT_LIST + STATEMENT : OnStatementList;
 
-STATEMENT = kWhile + COND + STATEMENTS : OnWhile |
+STATEMENT = kwWhile + COND + STATEMENTS : OnWhile |
             IF :$ $0 |
             typeid + ARRAYDECL + identifier + ?ASSIGN + ';' : OnDecl |
             typeid + PTRDECL + identifier + ?ASSIGN + ';' : OnPtrDecl |
             EXPRESSION + '=' + EXPRESSION + ';' : OnAssign |
             EXPRESSION + ';' : OnExprStatement |
-            kReturn + EXPRESSION + ';' : OnReturn;
+            kwReturn + EXPRESSION + ';' : OnReturn;
 
 PTRDECL = '*' :$ 1 | 
           PTRDECL + '*' :$ 1 + $0;
@@ -103,16 +104,17 @@ ARRAYDECL = '' :$ NULL |
 
 COND = '(' + EXPRESSION + ')' : OnCond;
 
-ELSE = kElse: OnElseHead;
+ELSE = kwElse: OnElseHead;
 
 ?ELSE = '' :$ NULL |
-        kElse + IF :$ $1 |
+        kwElse + IF :$ $1 |
         ELSE + STATEMENTS : OnElse;
 
-IF = kIf + COND + STATEMENTS + ?ELSE : OnIf;
+IF = kwIf + COND + STATEMENTS + ?ELSE : OnIf;
 
-EXPR = kTrue : OnTrue |
-       kFalse : OnFalse | 
+EXPR = kwTrue : OnTrue |
+       kwFalse : OnFalse |
+       kwNull : OnNull |
        identifier : OnIdentExpr | 
        integer : OnInt |
        real : OnReal |

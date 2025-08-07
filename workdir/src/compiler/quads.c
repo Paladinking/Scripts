@@ -162,6 +162,8 @@ uint64_t quad_datatype(Parser* parser, type_id type) {
         return QUAD_32_BIT | QUAD_FLOAT;
     case TYPE_ID_BOOL:
         return QUAD_8_BIT | QUAD_BOOL;
+    case TYPE_ID_NULL:
+        return QUAD_PTR_SIZE | QUAD_UINT;
     case TYPE_ID_NONE:
         return QUAD_0_BIT | QUAD_UINT;
     }
@@ -437,6 +439,11 @@ var_id quads_cast(Parser* parser, Expression* expr, QuadList* quads,
                   var_id dest) {
     type_id src_type = QuadList_getvar(quads, expr->cast.e->var)->type;
     if (dest == VAR_ID_INVALID) {
+        if (parser->type_table.data[expr->type].kind == TYPE_PTR &&
+            src_type == TYPE_ID_NULL) {
+            // null to ptr: no-op
+            return expr->cast.e->var;
+        }
         if (src_type == expr->type) {
             // cast to same type: no-op
             return expr->cast.e->var;
@@ -460,7 +467,11 @@ var_id quads_cast(Parser* parser, Expression* expr, QuadList* quads,
         };
         q = QuadList_addquad(quads, map[expr->type] | datatype, dest);
     } else if (parser->type_table.data[expr->type].kind == TYPE_PTR) { 
-        q = QuadList_addquad(quads, QUAD_ARRAY_TO_PTR | datatype, dest);
+        if (src_type == TYPE_ID_NULL) {
+            q = QuadList_addquad(quads, QUAD_MOVE | datatype, dest);
+        } else {
+            q = QuadList_addquad(quads, QUAD_ARRAY_TO_PTR | datatype, dest);
+        }
     } else {
         fatal_error(parser, PARSE_ERROR_INTERNAL, expr->line);
         return dest;
@@ -607,6 +618,10 @@ loop:
             case EXPRESSION_LITERAL_BOOL:
                 q = QuadList_addquad(quads, QUAD_CREATE | datatype, dest);
                 q->op1.uint64 = e->literal.uint;
+                break;
+            case EXPRESSION_LITERAL_NULL:
+                q = QuadList_addquad(quads, QUAD_CREATE | datatype, dest);
+                q->op1.uint64 = 0;
                 break;
             case EXPRESSION_LITERAL_INT:
                 q = QuadList_addquad(quads, QUAD_CREATE | datatype, dest);

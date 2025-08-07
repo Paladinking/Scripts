@@ -30,7 +30,8 @@ typedef uint64_t type_id;
 
 #define TYPE_ID_NONE 10
 #define TYPE_ID_BOOL 11
-#define TYPE_ID_BUILTIN_COUNT 12
+#define TYPE_ID_NULL 12
+#define TYPE_ID_BUILTIN_COUNT 13
 
 // Index into var_table (part of quads)
 typedef uint64_t var_id;
@@ -57,7 +58,8 @@ typedef uint64_t name_id;
 #define NAME_ID_TRUE 6
 #define NAME_ID_FALSE 7
 #define NAME_ID_EXTERN 8
-#define NAME_ID_BUILTIN_COUNT 9
+#define NAME_ID_NULL 9
+#define NAME_ID_BUILTIN_COUNT 10
 
 // Index into hash table
 typedef uint32_t hash_id;
