@@ -403,6 +403,8 @@ def main() -> None:
         output(op, v)
 
     call = split_encoding((OPERAND_IMM32,), (Opcode(0xE8), RelAddr(4)))
+    call += split_encoding((OperandRegOrMem64(),),
+                           (Opcode(0xFF), ModRmOpcode(2), RmMemAndReg()))
     output('CALL', call)
 
     for (name, o1, o2) in [('JG', 0x7F, 0x8F), ('JA', 0x77, 0x87), ('JLE', 0x7E, 0x8E),
