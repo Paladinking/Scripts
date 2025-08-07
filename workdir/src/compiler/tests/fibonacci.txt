@@ -15,7 +15,7 @@ fn main() -> uint64 {
     uint8* str = "Hello world\n";
 
     uint32 w;
-    WriteFile(0, str, 12, &w, NULL);
+    WriteFile(0, str, 12, &w, null);
 
     uint64 ix = 0;
     int32 sum = 0;

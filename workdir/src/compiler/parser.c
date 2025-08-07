@@ -114,6 +114,7 @@ bool Parser_create(Parser* parser) {
     parser_add_keyword(parser, "true", NAME_ID_TRUE);
     parser_add_keyword(parser, "false", NAME_ID_FALSE);
     parser_add_keyword(parser, "extern", NAME_ID_EXTERN);
+    parser_add_keyword(parser, "null", NAME_ID_NULL);
 
     parser_add_builtin(parser, TYPE_ID_UINT64, 8, 8, "uint64");
     parser_add_builtin(parser, TYPE_ID_UINT32, 4, 4, "uint32");
@@ -127,6 +128,7 @@ bool Parser_create(Parser* parser) {
     parser_add_builtin(parser, TYPE_ID_FLOAT32, 4, 4, "float32");
     parser_add_builtin(parser, TYPE_ID_NONE, 0, 1, "<None Type>");
     parser_add_builtin(parser, TYPE_ID_BOOL, 1, 1, "bool");
+    parser_add_builtin(parser, TYPE_ID_NULL, 8, 8, "<Null Type>");
 
     parser->name_table.scope_stack[0] = parser->name_table.size - 1;
 
@@ -486,6 +488,12 @@ ArraySizes* OnArrayDecl(void* ctx, uint64_t start, uint64_t end, ArraySizes* siz
     return s;
 }
 
+Expression* OnNull(void* ctx, uint64_t start, uint64_t end, name_id name) {
+    Expression* e = create_expr(PARSER(ctx), EXPRESSION_LITERAL_NULL, start, end);
+    e->literal.uint = 0;
+    return e;
+}
+
 Expression* OnTrue(void* ctx, uint64_t start, uint64_t end, name_id name) {
     Expression* e = create_expr(PARSER(ctx), EXPRESSION_LITERAL_BOOL, start, end);
     e->literal.uint = 1;
@@ -717,11 +725,12 @@ void consume_token(void* ctx, uint64_t* start, uint64_t* end) {
             t->last_token.identifier.len = len;
         } else if (name < NAME_ID_BUILTIN_COUNT) {
             static enum TokenType map[] = {
-                TOKEN_KFN, TOKEN_KSTRUCT, TOKEN_KIF, TOKEN_KWHILE, TOKEN_KELSE, 
-                TOKEN_KRETURN, TOKEN_KTRUE, TOKEN_KFALSE, TOKEN_KEXTERN
+                TOKEN_KWFN, TOKEN_KWSTRUCT, TOKEN_KWIF, TOKEN_KWWHILE, TOKEN_KWELSE,
+                TOKEN_KWRETURN, TOKEN_KWTRUE, TOKEN_KWFALSE, TOKEN_KWEXTERN,
+                TOKEN_KWNULL
             };
             t->last_token.id = map[name];
-            t->last_token.kFn = name;
+            t->last_token.kwFn = name;
         } else if (p->name_table.data[name].kind == NAME_TYPE) {
             t->last_token.id = TOKEN_TYPEID;
             t->last_token.typeid = p->name_table.data[name].type;

@@ -50,6 +50,9 @@ type_id typecheck_cast(Parser* parser, Expression* op) {
             return type;
         }
     }
+    if (t == TYPE_ID_NULL && parser->type_table.data[type].kind == TYPE_PTR) {
+        return type;
+    }
     add_error(parser, TYPE_ERROR_ILLEGAL_CAST, op->line);
     return type;
 }
@@ -333,6 +336,9 @@ loop:
             break;
         case EXPRESSION_LITERAL_BOOL:
             type = TYPE_ID_BOOL;
+            break;
+        case EXPRESSION_LITERAL_NULL:
+            type = TYPE_ID_NULL;
             break;
         case EXPRESSION_LITERAL_UINT:
             type = TYPE_ID_UINT64;
