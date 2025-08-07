@@ -631,11 +631,22 @@ void emit_op1_dest_move(Quad* quad, VarData* vars, AsmCtx* ctx) {
     if (op1->alloc_type == ALLOC_IMM) {
         const uint8_t* data;
         if (datatype == QUAD_SINT) {
-            data = (const uint8_t*)&op1->imm.int64;
-            asm_imm_var(ctx, size_val(datasize), data);
+            if (datasize == QUAD_64_BIT && op1->imm.int64 >= INT32_MIN &&
+                op1->imm.int64 <= INT32_MAX) {
+                int32_t v = op1->imm.int64;
+                asm_imm_var(ctx, 4, (const uint8_t*)&v);
+            } else {
+                data = (const uint8_t*)&op1->imm.int64;
+                asm_imm_var(ctx, size_val(datasize), data);
+            }
         } else if (datatype == QUAD_UINT) {
-            data = (const uint8_t*)&op1->imm.uint64;
-            asm_imm_var(ctx, size_val(datasize), data);
+            if (datasize == QUAD_64_BIT && op1->imm.uint64 < UINT32_MAX) {
+                uint32_t v = op1->imm.uint64;
+                asm_imm_var(ctx, 4, (const uint8_t*)&v);
+            } else {
+                data = (const uint8_t*)&op1->imm.uint64;
+                asm_imm_var(ctx, size_val(datasize), data);
+            }
         } else {
             assert(datatype == QUAD_BOOL);
             uint8_t d = op1->imm.boolean ? 1 : 0;
