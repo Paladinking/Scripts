@@ -134,15 +134,24 @@ static inline bool var_local(enum VarKind kind) {
 
 typedef uint32_t symbol_ix;
 
+enum VarDatatype {
+    VARTYPE_UINT, // Unsigned integer (or pointer)
+    VARTYPE_SINT, // Signed integer
+    VARTYPE_FLOAT, // Float (32 or 64 bit)
+    VARTYPE_BOOL, // 8-bit value 0 or 1
+    VARTYPE_ARRAY, // Array
+    VARTYPE_STRUCT, // Struct
+    VARTYPE_FUNCTION, // Function (Not function pointer!)
+};
+
 typedef struct VarData {
     enum VarKind kind;
+    enum VarDatatype datatype;
     name_id name; // NAME_ID_INVALID for unnamed / temporary variables.
-    type_id type;
+    // type_id type; // will probably need to be readded at some point
 
     uint32_t byte_size;
     uint32_t alignment;
-
-    func_id function;
 
     uint32_t reads;
     uint32_t writes;
@@ -151,11 +160,11 @@ typedef struct VarData {
     } alloc_type;
     union {
         symbol_ix symbol_ix; // Valid for non-local variables
-        struct {
+        struct { // Valid for ALLOC_MEM
             uint32_t offset;
         } memory;
-        uint32_t reg;
-        struct {
+        uint32_t reg; // Valid for ALLOC_REG
+        struct { // Valid for ALLOC_IMM
             uint64_t uint64;
             int64_t int64;
             double float64;

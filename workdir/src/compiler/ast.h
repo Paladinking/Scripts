@@ -109,10 +109,8 @@ typedef struct CastExpr {
 
 struct Expression {
     enum ExpressionKind kind;
-    union {
-        type_id type; // set by typechecker
-        var_id var; // set by quads
-    };
+    type_id type; // set by typechecker
+    var_id var; // set by quads
     LineInfo line;
     union {
         VariableExpr variable;

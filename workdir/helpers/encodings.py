@@ -461,9 +461,12 @@ def main() -> None:
                             include_byte=False)
     output('MOVZX', movzx)
 
-    setz = split_encoding((OperandRegOrMem8(),),
-                          (Opcode2(0x94), ModRmOpcode(0), RmMemAndReg()))
-    output('SETZ', setz)
+    for (name, o) in [('SETG', 0x9f), ('SETA', 0x97), ('SETLE', 0x9e), ('SETBE', 0x96),
+                      ('SETGE', 0x9d), ('SETAE', 0x93), ('SETL', 0x9c), ('SETB', 0x92),
+                      ('SETNE', 0x95), ('SETNZ', 0x95), ('SETE', 0x94), ('SETZ', 0x94)]:
+        setcc = split_encoding((OperandRegOrMem8(),), 
+                               (Opcode2(o), ModRmOpcode(0), RmMemAndReg()))
+        output(name, setcc)
 
     s = '\n\n'.join([val for name, val, count in encodings])
     parts = [f'    {{{count}, {name}_ENCODING}}{"," if ix + 1 < len(encodings) else ""} //{ix}' 

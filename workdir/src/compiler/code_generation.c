@@ -303,12 +303,11 @@ var_id create_temp_var(ConflictGraph* graph, VarList* vars, FlowNode* node,
     RESERVE(vars->data, vars->size + 1, vars->cap);
     var_id id = vars->size;
     vars->size += 1;
-    vars->data[id].type = vars->data[base].type;
+    vars->data[id].datatype = vars->data[base].datatype;
     vars->data[id].alloc_type = ALLOC_NONE;
     vars->data[id].name = NAME_ID_INVALID;
     vars->data[id].byte_size = vars->data[base].byte_size;
     vars->data[id].alignment = vars->data[base].alignment;
-    vars->data[id].function = vars->data[base].function;
     vars->data[id].reads = 1;
     vars->data[id].writes = 1;
     vars->data[id].kind = VAR_TEMP;
@@ -421,7 +420,7 @@ void Generate_function(Quads* quads, Quad* start, Quad* end,
 
     Quad* q = start;
     for (Quad* q = start; q != end->next_quad; q = q->next_quad) {
-        enum QuadType type = q->type & QUAD_TYPE_MASK;
+        enum QuadType type = q->type;
         if (type == QUAD_JMP_FALSE || type == QUAD_JMP_TRUE || type == QUAD_JMP ||
             type == QUAD_RETURN) {
             RESERVE(nodes, node_count + 1, node_cap);
@@ -456,7 +455,7 @@ void Generate_function(Quads* quads, Quad* start, Quad* end,
     for (uint64_t ix = 0; ix < node_count; ++ix) {
         assert(nodes[ix].start != NULL);
         Quad* last = nodes[ix].end;
-        enum QuadType type = last->type & QUAD_TYPE_MASK;
+        enum QuadType type = last->type;
         if (type == QUAD_JMP_FALSE || type == QUAD_JMP_TRUE) {
             nodes[ix].successors[0] = label_map[last->op1.label];
             if (ix + 1 < node_count) {

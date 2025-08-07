@@ -157,6 +157,7 @@ static inline Expression* create_expr(Parser* p, enum ExpressionKind kind, uint6
 
     Expression* e = Arena_alloc_type(&p->arena, Expression);
     e->type = TYPE_ID_INVALID;
+    e->var = VAR_ID_INVALID;
     e->kind = kind;
     e->line = (LineInfo){start, end};
     return e;
