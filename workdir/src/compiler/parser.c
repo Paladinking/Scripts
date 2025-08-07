@@ -579,9 +579,21 @@ ExpressionList* OnAddParamList(void* ctx, uint64_t start, uint64_t end,
     return l2;
 }
 
+Expression* OnMemberRef(void* ctx, uint64_t start, uint64_t end,
+                        Expression* structvar, StrWithLength ident) {
+    Parser* p = PARSER(ctx);
+    Expression* e = create_expr(p, EXPRESSION_ACCESS_MEMBER, start, end);
+    e->member_access.structexpr = structvar;
+    e->member_access.member_ix = 0;
+    uint8_t* member = Arena_alloc_count(&p->arena, uint8_t, ident.len);
+    memcpy(member, ident.str, ident.len);
+    e->member_access.member.str = member;
+    e->member_access.member.len = ident.len;
+    return e;
+}
+
 Expression* OnCall(void* ctx, uint64_t start, uint64_t end, Expression* f, ExpressionList* l) {
     Expression* e = create_expr(PARSER(ctx), EXPRESSION_CALL, start, end);
-    e->kind = EXPRESSION_CALL;
     e->call.function = f;
 
     // TODO: Use linked list everywhere?

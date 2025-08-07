@@ -17,6 +17,7 @@ enum ExpressionKind {
     EXPRESSION_CALL,
     EXPRESSION_ARRAY_INDEX,
     EXPRESSION_CAST,
+    EXPRESSION_ACCESS_MEMBER,
     EXPRESSION_INVALID
 };
 
@@ -107,6 +108,12 @@ typedef struct CastExpr {
     Expression* e;
 } CastExpr;
 
+typedef struct MemberAccessExpr {
+    Expression* structexpr;
+    StrWithLength member;
+    uint32_t member_ix;
+} MemberAccessExpr;
+
 struct Expression {
     enum ExpressionKind kind;
     type_id type; // set by typechecker
@@ -121,6 +128,7 @@ struct Expression {
         CallExpr call;
         ArrayIndexExpr array_index;
         CastExpr cast;
+        MemberAccessExpr member_access;
     };
 };
 
