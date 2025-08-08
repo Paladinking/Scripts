@@ -1060,7 +1060,7 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
                     emit_var(&vars[q->op1.var], ctx);
                     asm_instr_end(ctx);
                     break;
-                } else if (datatype == VARTYPE_UINT) {
+                } else if (datatype == VARTYPE_SINT) {
                     asm_instr(ctx, OP_MOVSXD);
                     emit_var(&vars[q->dest], ctx);
                     emit_var(&vars[q->op1.var], ctx);
@@ -1228,7 +1228,7 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
         case QUAD_RETURN:
             if (vars[q->op1.var].alloc_type != ALLOC_REG ||
                 vars[q->op1.var].reg != RAX) {
-                uint32_t datasize = vars[q->dest].byte_size;
+                uint32_t datasize = vars[q->op1.var].byte_size;
                 asm_instr(ctx, OP_MOV);
                 asm_reg_var(ctx, datasize, RAX);
                 emit_var(&vars[q->op1.var], ctx);
