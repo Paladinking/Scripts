@@ -158,6 +158,7 @@ name_id name_insert(NameTable *names, StrWithLength name,
     names->size += 1;
     names->data[n_id].kind = kind;
     names->data[n_id].has_var = false;
+    names->data[n_id].implicit_ptr = false;
     names->data[n_id].parent = id;
     names->data[n_id].hash_link = h;
     names->data[n_id].name = name_ptr;
@@ -189,6 +190,7 @@ type_id type_of(NameTable* name_table, name_id name) {
 }
 
 type_id type_ptr_of(TypeTable *type_table, type_id id) {
+    assert(id != TYPE_ID_INVALID);
     if (type_table->data[id].ptr_type == TYPE_ID_INVALID) {
         type_id t = create_type_id(type_table);
         type_table->data[id].ptr_type = t;

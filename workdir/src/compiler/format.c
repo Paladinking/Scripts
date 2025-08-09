@@ -277,6 +277,7 @@ void fmt_unary_operator(enum UnaryOperator op, String *dest) {
         String_append(dest, '*');
         return;
     case UNOP_ADDROF:
+    case UNOP_ADDROF2:
         String_append(dest, '&');
         return;
     case UNOP_PAREN:
@@ -414,7 +415,7 @@ void fmt_expression(const Expression* expr, const Parser* parser, String* dest) 
             fmt_expression(expr->call.function, parser, dest);
             String_append(dest, '(');
             for (uint64_t ix = 0; ix < expr->call.arg_count; ++ix) {
-                fmt_expression(expr->call.args[ix], parser, dest);
+                fmt_expression(expr->call.args[ix].e, parser, dest);
                 if (ix < expr->call.arg_count - 1) {
                     String_append_count(dest, ", ", 2);
                 }

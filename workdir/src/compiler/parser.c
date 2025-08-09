@@ -393,7 +393,7 @@ void add_func(Parser* p, ArgList* args, func_id id, FunctionDef* f,
     f->return_type = ret_type;
     a = args;
 
-    f->args = Arena_alloc_count(&p->arena, CallArg, f->arg_count);
+    f->args = Arena_alloc_count(&p->arena, FunctionArg, f->arg_count);
     for (uint64_t ix = 0; ix < arg_count; ++ix) {
         f->args[arg_count - 1 - ix].name = a->arg.name;
         f->args[arg_count - 1 - ix].type = p->name_table.data[a->arg.name].type;
@@ -640,6 +640,8 @@ Expression* OnMemberRef(void* ctx, uint64_t start, uint64_t end,
 Expression* OnCall(void* ctx, uint64_t start, uint64_t end, Expression* f, ExpressionList* l) {
     Expression* e = create_expr(PARSER(ctx), EXPRESSION_CALL, start, end);
     e->call.function = f;
+    e->call.ptr_return = false;
+    e->call.get_addr = false;
 
     // TODO: Use linked list everywhere?
     uint64_t arg_count = 0;
@@ -650,10 +652,11 @@ Expression* OnCall(void* ctx, uint64_t start, uint64_t end, Expression* f, Expre
     }
 
     e->call.arg_count = arg_count;
-    e->call.args = Arena_alloc_count(&PARSER(ctx)->arena, Expression*, arg_count);
+    e->call.args = Arena_alloc_count(&PARSER(ctx)->arena, CallArg, arg_count);
     list = l;
     for (uint64_t ix = 0; ix < arg_count; ++ix) {
-        e->call.args[arg_count - 1 - ix] = list->expr;
+        e->call.args[arg_count - 1 - ix].e = list->expr;
+        e->call.args[arg_count - 1 - ix].ptr_copy = false;
         list = list->next;
     }
 

@@ -1,9 +1,5 @@
 
 
-extern fn WriteFile(uint64 h, uint8* b, uint32 to_write, uint32* written, 
-                    uint8* overlapped) -> bool;
-extern fn GetStdHandle(uint32 n) -> uint64;
-
 struct Y {
     uint64 n;
     X x;
@@ -16,25 +12,11 @@ struct X {
     uint16[12] arr;
 }
 
+fn take_x(X x) -> int64 {
+    X x2 = x;
+
+    return x2.a + x2.b;
+}
+
 fn main() -> uint64 {
-    Y y;
-    y.x.a = 123;
-    y.x.b = 456;
-
-    X x1 = y.x;
-
-    Y y2;
-    y2.x = y.x;
-
-
-    Y[5] arr;
-
-    uint64 ix = 0;
-    while (ix < 5) {
-        arr[ix].arr[1].arr[6] = ix;
-
-        ix = ix + 1;
-    }
-
-    return arr[2].arr[1].arr[6] + arr[3].arr[1].arr[6] + x1.a + y2.x.b;
 }
