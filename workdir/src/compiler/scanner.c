@@ -99,20 +99,39 @@ FunctionDef* OnScanFunction(void* ctx, uint64_t start, uint64_t end, StrWithLeng
     if (id == NAME_ID_INVALID) {
         LineInfo l = {start, end};
         add_error(parser, PARSE_ERROR_BAD_NAME, l);
-        return false;
+        return NULL;
     }
 
     func->name = id;
     return func;
 }
 
+type_id OnScanStruct(void* ctx, uint64_t start, uint64_t end, StrWithLength name, 
+                     int64_t statements) {
+    struct Tokenizer *t = ctx;
+    Parser* p = t->parser;
+    type_id struct_type = type_struct_create(&p->type_table, &p->arena);
+    TypeDef* def = p->type_table.data[struct_type].type_def;
+    def->struct_.line.start = start;
+    def->struct_.line.end = end;
+    
+    name_id id = name_type_insert(&p->name_table, name, struct_type, 
+                                  def, &p->arena);
+    def->struct_.name = id;
+
+    if (id == NAME_ID_INVALID) {
+        LineInfo l = {start, end};
+        add_error(p, PARSE_ERROR_BAD_NAME, l);
+        return TYPE_ID_INVALID;
+    }
+
+    return struct_type;
+}
+
+
 FunctionDef* OnScanExtern(void* ctx, uint64_t start, uint64_t end, StrWithLength name,
                           uint64_t arg_count, int64_t ret) {
     return OnScanFunction(ctx, start, end, name, arg_count, ret, 0);
-}
-
-int64_t OnScanProgram(void* ctx, uint64_t start, uint64_t end, int64_t i, FunctionDef* f) {
-    return 0;
 }
 
 void scan_program(Parser* parser, String* indata) {

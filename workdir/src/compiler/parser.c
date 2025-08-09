@@ -267,6 +267,7 @@ Statement* OnAssign(void* ctx, uint64_t start, uint64_t end, Expression* lhs, Ex
     Statement* s = create_stmt(PARSER(ctx), STATEMENT_ASSIGN, start, end);
     s->assignment.lhs = lhs;
     s->assignment.rhs = rhs;
+    s->assignment.ptr_copy = false;
     return s;
 }
 
@@ -325,6 +326,7 @@ Statement* declare_variable(Parser* p, uint64_t start, uint64_t end,
     lhs->variable.ix = name;
     s->assignment.lhs = lhs;
     s->assignment.rhs = val;
+    s->assignment.ptr_copy = false;
 
     return s;
 }
@@ -349,16 +351,6 @@ Arg* OnArg(void* ctx, uint64_t start, uint64_t end, type_id type, StrWithLength 
     arg->line = pos;
     return arg;
 }
-
-Arg* OnPtrArg(void* ctx, uint64_t start, uint64_t end, type_id type, uint64_t ptr,
-              StrWithLength s) {
-    Parser* p = PARSER(ctx);
-    for (uint64_t i = 0; i < ptr; ++i) {
-        type = type_ptr_of(&p->type_table, type); 
-    }
-    return OnArg(ctx, start, end, type, s);
-}
-
 
 ArgList* OnArgList(void* ctx, uint64_t start, uint64_t end, Arg* arg) {
     Parser* p = PARSER(ctx);
@@ -443,6 +435,70 @@ FunctionDef* OnExternFunction(void* ctx, uint64_t start, uint64_t end, name_id k
     return f;
 }
 
+type_id OnType(void* ctx, uint64_t start, uint64_t end, type_id type, 
+               ArraySizes* sizes) {
+    Parser* p = PARSER(ctx);
+    while (sizes != NULL) {
+        type = type_array_of(&p->type_table, type, sizes->size);
+        sizes = sizes->next;
+    }
+
+    return type;
+}
+
+type_id OnPtrType(void* ctx, uint64_t start, uint64_t end, type_id type,
+                  uint64_t ptr_count, ArraySizes* sizes) {
+    Parser* p = PARSER(ctx);
+    for (uint64_t i = 0; i < ptr_count; ++i) {
+        type = type_ptr_of(&p->type_table, type);
+    }
+    return OnType(ctx, start, end, type, sizes);
+}
+
+type_id OnStruct(void* ctx, uint64_t start, uint64_t end, name_id kwStruct,
+                 type_id type, FieldList* fields) {
+    Parser* p = PARSER(ctx);
+    uint64_t field_count = 0;
+    FieldList* f = fields;
+    while (f != NULL) {
+        ++field_count;
+        f = f->next;
+    }
+    // Sanity check
+    assert(field_count < 0xffffff);
+
+    StructMember* members = Arena_alloc_count(&p->arena, StructMember, field_count);
+
+    f = fields;
+    for (uint32_t ix = 0; ix < field_count; ++ix) {
+        members[field_count - ix - 1] = f->field;
+        f = f->next;
+    }
+
+    assert(type != TYPE_ID_INVALID);
+    TypeDef* def = p->type_table.data[type].type_def;
+    def->struct_.line.start = start;
+    def->struct_.line.end = start;
+    def->struct_.fields = members;
+    def->struct_.field_count = field_count;
+    // Cannot initialize byte_size and byte_alignment yet
+    // in case this struct contains another struct defined later
+
+    return type;
+}
+
+FieldList* OnField(void* ctx, uint64_t start, uint64_t end, FieldList* fields, 
+                   type_id type, StrWithLength ident) {
+    FieldList* f = Arena_alloc_type(&PARSER(ctx)->arena, FieldList);
+    f->field.type = type;
+    f->field.name = ident;
+    f->field.line = (LineInfo){start, end};
+    f->field.offset = 0;
+    f->next = fields;
+    return f;
+}
+
+
 FunctionDef* OnFunction(void* ctx, uint64_t start, uint64_t end,
                         name_id fn_name, ArgList* arglist, type_id ret_type, 
                         Statements statements) {
@@ -463,22 +519,9 @@ FunctionDef* OnFunction(void* ctx, uint64_t start, uint64_t end,
     return f;
 }
 
-Statement* OnPtrDecl(void* ctx, uint64_t start, uint64_t end, type_id type, uint64_t ptr,
-                     StrWithLength ident, Expression* value) {
-    Parser* p = PARSER(ctx);
-    for (uint64_t i = 0; i < ptr; ++i) {
-        type = type_ptr_of(&p->type_table, type);
-    }
-    return declare_variable(p, start, end, ident, type, value);
-}
-
-Statement* OnDecl(void* ctx, uint64_t start, uint64_t end, type_id type, ArraySizes* arr,
+Statement* OnDecl(void* ctx, uint64_t start, uint64_t end, type_id type, 
                   StrWithLength ident, Expression* value) {
     Parser* p = PARSER(ctx);
-    while (arr != NULL) {
-        type = type_array_of(&p->type_table, type, arr->size);
-        arr = arr->next;
-    }
     return declare_variable(p, start, end, ident, type, value);
 }
 
@@ -579,16 +622,18 @@ ExpressionList* OnAddParamList(void* ctx, uint64_t start, uint64_t end,
     return l2;
 }
 
-Expression* OnMemberRef(void* ctx, uint64_t start, uint64_t end,
+Expression* OnMemberRef(void* ctx, uint64_t start, uint64_t end, 
                         Expression* structvar, StrWithLength ident) {
     Parser* p = PARSER(ctx);
     Expression* e = create_expr(p, EXPRESSION_ACCESS_MEMBER, start, end);
     e->member_access.structexpr = structvar;
-    e->member_access.member_ix = 0;
+    e->member_access.member_offset = 0;
     uint8_t* member = Arena_alloc_count(&p->arena, uint8_t, ident.len);
     memcpy(member, ident.str, ident.len);
     e->member_access.member.str = member;
     e->member_access.member.len = ident.len;
+    e->member_access.get_addr = false;
+    e->member_access.via_ptr = false;
     return e;
 }
 
@@ -766,7 +811,11 @@ void consume_token(void* ctx, uint64_t* start, uint64_t* end) {
         t->last_token.id = TOKEN_STRING;
         return;
     }
-    if (c == '.' || (c >= '0' && c <= '9')) {
+
+    bool leading_dec_point = c == '.' && p->pos + 1 < p->input_size &&
+            p->indata[p->pos + 1] >= '0' && p->indata[p->pos + 1] <= '9';
+
+    if (leading_dec_point || (c >= '0' && c <= '9')) {
         uint64_t i;
         double d;
         bool is_int;

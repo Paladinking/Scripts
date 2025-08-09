@@ -116,6 +116,7 @@ typedef struct NameTable {
     name_id* scope_stack; // id of first name not to be freed on scope end
 } NameTable;
 
+// TODO: remove VAR_ARRAY and VAR_ARRAY_GLOBAL, replace with checking datatype
 enum VarKind {
     VAR_FUNCTION, // Function reference, not allocated
     VAR_TEMP, // Unnamed variable, function allocated
@@ -179,10 +180,21 @@ typedef struct VarList {
     VarData* data;
 } VarList;
 
+typedef struct StructMember {
+    type_id type;
+    StrWithLength name;
+    uint32_t offset;
+    LineInfo line;
+} StructMember;
+
 typedef struct StructDef {
     name_id name;
-    uint64_t field_count;
-    type_id* fields;
+    uint32_t field_count;
+    StructMember* fields;
+    LineInfo line;
+    uint32_t byte_size;
+    // alignment of struct, 0 before struct layout is known
+    uint32_t byte_alignment;
 } StructDef;
 
 typedef struct BuiltinDef {
@@ -231,7 +243,7 @@ typedef struct FunctionTable {
 
 typedef struct AllocationInfo {
     uint64_t size;
-    uint64_t allignment;
+    uint64_t alignment;
 } AllocInfo;
 
 typedef struct StringLiteral {
@@ -269,6 +281,8 @@ type_id type_array_of(TypeTable* type_table, type_id id, uint64_t size);
 type_id type_ptr_of(TypeTable* type_table, type_id id);
 
 type_id type_function_create(TypeTable* type_table, FunctionDef* def, Arena* arena);
+
+type_id type_struct_create(TypeTable* type_table, Arena* arena);
 
 void name_scope_begin(NameTable* name_table);
 

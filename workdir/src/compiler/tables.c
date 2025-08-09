@@ -33,6 +33,26 @@ type_id type_function_create(TypeTable *type_table, FunctionDef *def, Arena* are
     return t;
 }
 
+type_id type_struct_create(TypeTable* type_table, Arena* arena) {
+    type_id t = create_type_id(type_table);
+    TypeData* d = &type_table->data[t];
+    d->parent = TYPE_ID_INVALID;
+    d->kind = TYPE_NORMAL;
+    d->ptr_type = TYPE_ID_INVALID;
+    d->array_size = 0;
+    d->type_def = Arena_alloc_type(arena, TypeDef);
+    d->type_def->kind = TYPEDEF_STRUCT;
+
+    d->type_def->struct_.field_count = 0;
+    d->type_def->struct_.fields = NULL;
+    d->type_def->struct_.name = NAME_ID_INVALID;
+    d->type_def->struct_.byte_size = 0;
+    d->type_def->struct_.byte_alignment = 0;
+    d->type_def->struct_.line = LINE_INFO_NONE;
+
+    return t;
+}
+
 void name_scope_begin(NameTable *name_table) {
     if (name_table->scope_count == name_table->scope_capacity) {
         uint64_t c = name_table->scope_capacity * 2;
@@ -199,7 +219,11 @@ static AllocInfo allocation_of_type(TypeDef* def) {
     if (def->kind == TYPEDEF_FUNCTION) {
         return (AllocInfo){0, 1};
     }
-    // TODO: struct
+    if (def->kind == TYPEDEF_STRUCT) {
+        assert(def->struct_.byte_alignment != 0);
+        return (AllocInfo){def->struct_.byte_size, def->struct_.byte_alignment};
+    }
+    
     LOG_ERROR("Unkown typedef %d", def->kind);
     assert(false);
     return (AllocInfo){0, 0};

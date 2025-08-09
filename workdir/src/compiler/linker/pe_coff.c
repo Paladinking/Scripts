@@ -823,6 +823,11 @@ void rewrite_idata(Object* obj, section_ix section, uint32_t* iat_offset,
     *iat_offset = 0xffffffff;
     uint32_t last_ait = 0;
 
+    uint32_t* saved = Mem_alloc(s->relocation_count * sizeof(uint32_t));
+    if (saved == NULL) {
+        out_of_memory(NULL);
+    }
+
     for (uint32_t i = 0; i < s->relocation_count; ++i) {
         Relocation* r = s->relocations + i;
         if (r->offset < importdir_end && (r->offset % 20) == 16) {
@@ -834,6 +839,7 @@ void rewrite_idata(Object* obj, section_ix section, uint32_t* iat_offset,
             }
         }
         if (r->type == RELOCATE_RVA32) {
+            memcpy(saved + i, s->data.data + r->offset, sizeof(uint32_t));
             uint32_t val = 0xffffffff;
             memcpy(s->data.data + r->offset, &val, sizeof(uint32_t));
         }
@@ -854,6 +860,14 @@ void rewrite_idata(Object* obj, section_ix section, uint32_t* iat_offset,
         }
     }
     *iat_size = last_ait - *iat_offset;
+
+    for (uint32_t i = 0; i < s->relocation_count; ++i) {
+        Relocation* r = s->relocations + i;
+        if (r->type == RELOCATE_RVA32) {
+            memcpy(s->data.data + r->offset, saved + i, sizeof(uint32_t));
+        }
+    }
+    Mem_free(saved);;
 
     if (rdata == obj->section_count) {
         s->type = SECTION_RDATA;
@@ -1042,14 +1056,19 @@ void PeExectutable_create(Object* obj, ByteBuffer* dest, symbol_ix entrypoint) {
             if (reloc->type == RELOCATE_ABS) {
                 continue;
             } else if (reloc->type == RELOCATE_RVA32) {
+                uint32_t old;
+                memcpy(&old, data, sizeof(uint32_t));
+                sym_rva += old;
                 memcpy(data, &sym_rva, sizeof(uint32_t));
             } else if (reloc->type == RELOCATE_REL32) {
+                int32_t old;
+                memcpy(&old, data, sizeof(int32_t));
                 int64_t src = reloc_rva + 4;
                 int64_t dest = sym_rva;
-                int64_t delta = dest - src;
+                int64_t delta = dest - src + old;
                 assert(delta >= INT32_MIN && delta <= INT32_MAX);
                 int32_t delta32 = delta;
-                memcpy(data, &delta32, sizeof(uint32_t));
+                memcpy(data, &delta32, sizeof(int32_t));
             } else {
                 assert(false);
             }

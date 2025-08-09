@@ -44,7 +44,7 @@ enum QuadType {
     QUAD_BOOL_AND, // <op1>, <op2> -> <dest>
     QUAD_BOOL_OR, // <op1>, <op2> -> <dest>
     QUAD_BOOL_NOT, // <op1>, x -> <dest>
-    
+
     QUAD_BIT_AND, // <op1>, <op2> -> <dest>
     QUAD_BIT_OR, // <op1>, <op2> -> <dest>
     QUAD_BIT_XOR, // <op1>, <op2> -> <dest>
@@ -63,7 +63,7 @@ enum QuadType {
     QUAD_CAST_TO_BOOL, // <val>, x -> <dest>
 
     QUAD_ARRAY_TO_PTR, // <array>, x -> <dest>
-    
+
     QUAD_PUT_ARG, // [argNr], <var> -> x
     QUAD_CALL, // $func, x -> x
     QUAD_CALL_PTR, // <ptr>, x -> x
@@ -77,12 +77,14 @@ enum QuadType {
     QUAD_SET_ADDR, // <ptr>, <data> -> x
 
     QUAD_CREATE, // [val], x -> <dest>
-    
+
     QUAD_ADDROF, // <val>, x -> <dest>
-    QUAD_DEREF // <ptr>, x -> <dest>
+    QUAD_DEREF, // <ptr>, x -> <dest>
+
+    QUAD_STRUCT_ADDR, // [offset], <val> -> <ptr>
 };
 
-#define QUAD_COUNT 50
+#define QUAD_COUNT 51
 
 typedef struct Quad {
     enum QuadType type;

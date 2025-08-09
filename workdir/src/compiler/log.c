@@ -46,7 +46,7 @@ void Log_Init() {
 
     res = connect(log_socket, (struct sockaddr *)&sin, sizeof(struct sockaddr_in));
     if (res != 0 && WSAGetLastError() != WSAEWOULDBLOCK) {
-        _wprintf_e(L"Failed connecting socket\n");
+        //_wprintf_e(L"Failed connecting socket\n");
         closesocket(log_socket);
         WSACleanup();
         log_socket = INVALID_SOCKET;
@@ -63,14 +63,14 @@ void Log_Init() {
 
     res = select(log_socket + 1, NULL, &write, NULL, &timeout);
     if (res != 1) {
-        _wprintf_e(L"Failed connecting socket\n");
+        //_wprintf_e(L"Failed connecting socket\n");
         closesocket(log_socket);
         WSACleanup();
         log_socket = INVALID_SOCKET;
         return;
     }
 
-    _wprintf_e(L"Logging initialized\n");
+    //_wprintf_e(L"Logging initialized\n");
 }
 
 void Log_Shutdown() {

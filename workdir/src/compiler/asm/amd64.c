@@ -232,7 +232,7 @@ static uint64_t assemble_op(AsmCtx* ctx, Amd64Op* op, uint64_t* offset, AddrBuf*
         case OPERAND_GLOBAL_MEM32:
         case OPERAND_GLOBAL_MEM64: {
             operands[ix].type = simple_operand(op->operands[ix].type);
-            operands[ix].offset = 0;
+            operands[ix].offset = op->operands[ix].offset;
             operands[ix].reg = 255;
             operands[ix].scale = 0;
             operands[ix].scale_reg = 255;
@@ -306,9 +306,8 @@ static uint64_t assemble_op(AsmCtx* ctx, Amd64Op* op, uint64_t* offset, AddrBuf*
                     symbol_ix symbol = op->operands[oper_ix].symbol;
                     obj->sections[sec].data.data[mod_rm_ix] |= 0x5;
                     Object_add_reloc(obj, sec, symbol, RELOCATE_REL32);
-                    for (int i = 0; i < 4; ++i) {
-                        Object_append_byte(obj, sec, 0);
-                    }
+                    const uint8_t* b = (const uint8_t*)&operands[oper_ix].offset;
+                    Object_append_data(obj, sec, b, 4);
                 } else {
                     if (operands[oper_ix].scale != 0 ||
                          operands[oper_ix].reg == RSP ||
@@ -378,6 +377,7 @@ static uint64_t assemble_op(AsmCtx* ctx, Amd64Op* op, uint64_t* offset, AddrBuf*
                     assert(op->operands[oper_ix].type == OPERAND_SYMBOL_LABEL);
                     symbol_ix symbol = op->operands[oper_ix].symbol;
                     Object_add_reloc(obj, sec, symbol, RELOCATE_REL32);
+                    assert(e->mnemonic[j].byte == 4);
                 }
                 Object_append_data(obj, sec, operands[oper_ix].imm,
                                    e->mnemonic[j].byte);
@@ -507,7 +507,8 @@ void asm_mem_var(AsmCtx* ctx, uint8_t size, uint8_t reg, uint8_t scale,
     op->operands[op->count++].offset = offset;
 }
 
-void asm_global_mem_var(AsmCtx* ctx, uint8_t size, symbol_ix symbol) {
+void asm_global_mem_var(AsmCtx* ctx, uint8_t size, symbol_ix symbol,
+                        int32_t offset) {
     Amd64Op* op = ctx->end;
     if (size == 1) {
         op->operands[op->count].type = OPERAND_GLOBAL_MEM8;
@@ -519,6 +520,10 @@ void asm_global_mem_var(AsmCtx* ctx, uint8_t size, symbol_ix symbol) {
         assert(size == 8);
         op->operands[op->count].type = OPERAND_GLOBAL_MEM64;
     }
+    // Sanity check, not actually needed
+    assert(offset < 65535 && offset + 65535 > 0);
+
+    op->operands[op->count].offset = offset;
     op->operands[op->count++].symbol = symbol;
 }
 

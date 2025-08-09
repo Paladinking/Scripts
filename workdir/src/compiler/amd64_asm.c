@@ -53,6 +53,8 @@ void preinsert_move(ConflictGraph* graph, var_id* var, VarSet* live_set,
     var_id tmp = create_temp_var(graph, vars, node, live_set, *var);
     ConflictGraph_add_edge(graph, RSP, tmp + graph->reg_count);
     Quad* nq = Arena_alloc_type(arena, Quad);
+    uint32_t datasize = vars->data[*var].byte_size;
+    assert(datasize == 1 || datasize == 2 || datasize == 4 || datasize == 8);
     nq->type = QUAD_MOVE;
     nq->op1.var = *var;
     nq->dest = tmp;
@@ -75,6 +77,8 @@ void postinsert_move(ConflictGraph* graph, var_id* dest, VarSet* live_set,
     var_id tmp = create_temp_var(graph, vars, node, live_set, *dest);
     ConflictGraph_add_edge(graph, RSP, tmp + graph->reg_count);
     Quad* nq = Arena_alloc_type(arena, Quad);
+    uint32_t datasize = vars->data[*dest].byte_size;
+    assert(datasize == 1 || datasize == 2 || datasize == 4 || datasize == 8);
     nq->type = QUAD_MOVE;
     nq->op1.var = tmp;
     nq->dest = *dest;
@@ -512,7 +516,12 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
     } else if (q == QUAD_LABEL || q == QUAD_JMP || q == QUAD_JMP_FALSE ||
                q == QUAD_JMP_TRUE) {
         // Pass
-    } else {
+    } else if (q == QUAD_STRUCT_ADDR) {
+        if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
+            postinsert_move(graph, &quad->dest, live_set, quad, node, vars, arena);
+        }
+        require_mem(graph, quad->op2);
+    } else { 
         String out;
         String_create(&out);
         fmt_quad(quad, &out);
@@ -552,7 +561,7 @@ void emit_var_with_size(VarData* var, uint32_t datasize, AsmCtx* ctx) {
         if (var_local(var->kind)) {
             asm_mem_var(ctx, datasize, RSP, 0, RAX, var->memory.offset);
         } else if (var->kind == VAR_ARRAY_GLOBAL || var->kind == VAR_GLOBAL) {
-            asm_global_mem_var(ctx, datasize, var->symbol_ix);
+            asm_global_mem_var(ctx, datasize, var->symbol_ix, 0);
         } else {
             assert(false);
         }
@@ -916,7 +925,7 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
             if (vars[q->op1.var].kind == VAR_GLOBAL) {
                 symbol_ix ix = vars[q->op1.var].symbol_ix;
                 asm_instr(ctx, OP_CALL);
-                asm_global_mem_var(ctx, PTR_SIZE, ix);
+                asm_global_mem_var(ctx, PTR_SIZE, ix, 0);
                 asm_instr_end(ctx);
             } else {
                 assert("Fn pointer not supported" && false);
@@ -1261,6 +1270,7 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
             break;
         }
         case QUAD_SET_ADDR: {
+            assert(vars[q->op1.var].byte_size == PTR_SIZE);
             assert(vars[q->op1.var].alloc_type == ALLOC_REG);
             assert(vars[q->op2].alloc_type == ALLOC_REG);
             uint32_t datasize = vars[q->op2].byte_size;
@@ -1276,7 +1286,7 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
             assert(vars[q->op1.var].alloc_type == ALLOC_MEM);
             asm_instr(ctx, OP_LEA);
             asm_reg_var(ctx, PTR_SIZE, vars[q->dest].reg);
-            emit_var(&vars[q->op1.var], ctx);
+            emit_var_with_size(&vars[q->op1.var], 8, ctx);
             asm_instr_end(ctx);
             break;
         case QUAD_DEREF:
@@ -1294,6 +1304,21 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
             }
             asm_instr(ctx, OP_NEG);
             emit_var(&vars[q->dest], ctx);
+            asm_instr_end(ctx);
+            break;
+        case QUAD_STRUCT_ADDR:
+            assert(vars[q->op2].alloc_type == ALLOC_MEM);
+            assert(vars[q->op2].datatype == VARTYPE_STRUCT);
+            assert(vars[q->dest].alloc_type == ALLOC_REG);
+            asm_instr(ctx, OP_LEA);
+            emit_var(&vars[q->dest], ctx);
+            if (var_local(vars[q->op2].kind)) {
+                int32_t offset = vars[q->op2].memory.offset + q->op1.uint64;
+                asm_mem_var(ctx, PTR_SIZE, RSP, 0, RAX, offset);
+            } else {
+                int32_t offset = q->op1.uint64;
+                asm_global_mem_var(ctx, PTR_SIZE, vars[q->op2].symbol_ix, offset);
+            }
             asm_instr_end(ctx);
             break;
         default:

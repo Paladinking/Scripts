@@ -16,7 +16,7 @@ const static char* quadnames[] = {
     "QCAST_TO_BOOL", "QARRAY_TO_PTR", "QPUT_ARG", 
     "QCALL", "QCALL_PTR", "QRETURN", "QGET_RET", "QGET_ARG",
     "QMOVE", "QGET_ARRAY_ADDR", "QCALC_ARRAY_ADDR",
-    "QSET_ADDR", "QCREATE", "QADDROF", "QDEREF"
+    "QSET_ADDR", "QCREATE", "QADDROF", "QDEREF", "QSTRUCT_ADDR"
 };
 
 void fmt_quad(const Quad* quad, String* dest) {
@@ -98,6 +98,10 @@ void fmt_quad(const Quad* quad, String* dest) {
     case QUAD_ADDROF:
     case QUAD_DEREF:
         String_format_append(dest, "<%llu> -> <%llu>", quad->op1.var, quad->dest);
+        break;
+    case QUAD_STRUCT_ADDR:
+        String_format_append(dest, "[%llu] <%llu> -> <%llu>", 
+                             quad->op1.uint64, quad->op2, quad->dest);
         break;
     }
 
@@ -229,6 +233,15 @@ void fmt_errors(const Parser* parser, String* dest) {
             break;
         case TYPE_ERROR_WRONG_ARG_COUNT:
             String_extend(dest, "Type Error: Wrong number of arguments");
+            break;
+        case TYPE_ERROR_MEMBER_ACCES_NOT_STRUCT:
+            String_extend(dest, "Type Error: member access from non-struct type");
+            break;
+        case TYPE_ERROR_UNKOWN_MEMBER:
+            String_extend(dest, "Type Error: member access using unkown name");
+            break;
+        case TYPE_ERROR_RECURSIVE_STRUCT:
+            String_extend(dest, "Type Error: recursive structure");
             break;
         case ASM_ERROR_MISSING_ENCODING:
             String_extend(dest, "Assembly Error: Missing encoding");
@@ -386,10 +399,20 @@ void fmt_double(double d, String* dest) {
 
 void fmt_expression(const Expression* expr, const Parser* parser, String* dest) {
     switch (expr->kind) {
+        case EXPRESSION_ACCESS_MEMBER:
+            String_append(dest, '(');
+            String_append(dest, '(');
+            fmt_expression(expr->member_access.structexpr, parser, dest);
+            String_append(dest, ')');
+            String_append(dest, '.');
+            String_append_count(dest, (const char*)expr->member_access.member.str,
+                                expr->member_access.member.len);
+            String_append(dest, ')');
+            break;
         case EXPRESSION_CALL:
-            String_append(dest, L'(');
+            String_append(dest, '(');
             fmt_expression(expr->call.function, parser, dest);
-            String_append(dest, L'(');
+            String_append(dest, '(');
             for (uint64_t ix = 0; ix < expr->call.arg_count; ++ix) {
                 fmt_expression(expr->call.args[ix], parser, dest);
                 if (ix < expr->call.arg_count - 1) {

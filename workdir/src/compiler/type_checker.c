@@ -97,6 +97,7 @@ type_id typecheck_unop(Parser* parser, Expression* op) {
     case UNOP_ADDROF:
         if (op->unop.expr->kind != EXPRESSION_VARIABLE &&
             op->unop.expr->kind != EXPRESSION_ARRAY_INDEX &&
+            op->unop.expr->kind != EXPRESSION_ACCESS_MEMBER &&
             (op->unop.expr->kind != EXPRESSION_UNOP ||
              op->unop.expr->unop.op != UNOP_DEREF)) {
             add_error(parser, TYPE_ERROR_ILLEGAL_TYPE, op->unop.expr->line);
@@ -112,6 +113,10 @@ type_id typecheck_unop(Parser* parser, Expression* op) {
             op->line = l;
             assert(parser->type_table.data[op->type].kind == TYPE_PTR);
             return op->type;
+        } else if (op->unop.expr->kind == EXPRESSION_ACCESS_MEMBER) {
+            *op = *op->unop.expr;
+            op->member_access.get_addr = true;
+            return type_ptr_of(&parser->type_table, op->type);
         }
         return type_ptr_of(&parser->type_table, op->unop.expr->type);
     case UNOP_DEREF:
@@ -247,8 +252,28 @@ type_id typecheck_binop(Parser* parser, Expression* op) {
 
 type_id typecheck_array_index(Parser* parser, Expression* e) {
     type_id a = e->array_index.array->type;
-    if (parser->type_table.data[a].kind == TYPE_PTR) {
+
+    uint32_t kind = parser->type_table.data[a].kind;
+
+    if (kind == TYPE_PTR ||
+        e->array_index.array->kind == EXPRESSION_ACCESS_MEMBER) {
+
+        if (e->array_index.array->kind == EXPRESSION_ACCESS_MEMBER &&
+            kind != TYPE_PTR) {
+            if (kind != TYPE_ARRAY) {
+                add_error(parser, TYPE_ERROR_ILLEGAL_TYPE,
+                          e->array_index.array->line);
+                return TYPE_ID_INT64;
+            }
+            type_id parent = parser->type_table.data[a].parent;
+
+            e->array_index.array->member_access.get_addr = true;
+            e->array_index.array->type = type_ptr_of(&parser->type_table, 
+                                                     parent);
+        }
+
         // Convert a[10] => *(a + 10)
+        // Convert a.b[10] => *(a.b + 10)
         Expression* add = Arena_alloc_type(&parser->arena, Expression);
         add->type = TYPE_ID_INVALID;
         add->kind = EXPRESSION_BINOP;
@@ -269,8 +294,7 @@ type_id typecheck_array_index(Parser* parser, Expression* e) {
     if (ix > TYPE_ID_UNSIGNED_COUNT) {
         cast_to(parser, e->array_index.index, ix - TYPE_ID_UNSIGNED_COUNT);
     }
-    if (parser->type_table.data[a].kind != TYPE_ARRAY &&
-        parser->type_table.data[a].kind != TYPE_PTR) {
+    if (kind != TYPE_ARRAY && kind != TYPE_PTR) {
         add_error(parser, TYPE_ERROR_ILLEGAL_TYPE, e->line);
         return a;
     }
@@ -303,6 +327,58 @@ type_id typecheck_call(Parser* parser, Expression* e) {
     }
 
     return func->return_type;
+}
+
+type_id typecheck_access_member(Parser* parser, Expression* e) {
+    type_id s = e->member_access.structexpr->type;
+
+    if (parser->type_table.data[s].kind != TYPE_NORMAL) {
+        add_error(parser, TYPE_ERROR_MEMBER_ACCES_NOT_STRUCT, e->line);
+        return TYPE_ID_INT64;
+    }
+    TypeDef* def = parser->type_table.data[s].type_def;
+    if (def->kind != TYPEDEF_STRUCT) {
+        add_error(parser, TYPE_ERROR_MEMBER_ACCES_NOT_STRUCT, e->line);
+        return TYPE_ID_INT64;
+    }
+
+    StrWithLength str = e->member_access.member;
+
+    uint32_t i = 0;
+
+    for (; i < def->struct_.field_count; ++i) {
+        StructMember* member = &def->struct_.fields[i];
+        if (member->name.len != str.len) {
+            continue;
+        }
+        if (memcmp(member->name.str, str.str, str.len) == 0) {
+            e->member_access.member_offset = member->offset;
+            break;
+        }
+    }
+    if (i == def->struct_.field_count) {
+        add_error(parser, TYPE_ERROR_UNKOWN_MEMBER, e->line);
+        return TYPE_ID_INT64;
+    }
+
+    Expression* child = e->member_access.structexpr;
+
+    if (child->kind == EXPRESSION_ACCESS_MEMBER) {
+        // Merge a.b.c into one offset
+        e->member_access.member_offset += child->member_access.member_offset;
+        e->member_access.structexpr = child->member_access.structexpr;
+    } else if (child->kind == EXPRESSION_ARRAY_INDEX) {
+        e->member_access.via_ptr = true;
+        child->array_index.get_addr = true;
+        child->type = type_ptr_of(&parser->type_table, child->type);
+    } else if (child->kind == EXPRESSION_UNOP && child->unop.op == UNOP_DEREF) {
+        e->member_access.via_ptr = true;
+        e->member_access.structexpr = child->unop.expr;
+    } else {
+        assert(child->kind == EXPRESSION_VARIABLE);
+    }
+
+    return def->struct_.fields[i].type;
 }
 
 type_id typecheck_expression(Parser* parser, Expression* e) {
@@ -375,6 +451,12 @@ loop:
             stack[stack_size++] = (struct Node){e, 0};
             e = e->call.function;
             goto loop;
+        case EXPRESSION_ACCESS_MEMBER:
+            stack[stack_size++] = (struct Node){e, 0};
+            e = e->member_access.structexpr;
+            goto loop;
+        default:
+            assert(false);
         }
         e->type = type;
 
@@ -405,8 +487,10 @@ loop:
                     goto loop;
                 }
                 type = typecheck_call(parser, prev);
+            } else if (prev->kind == EXPRESSION_ACCESS_MEMBER) {
+                type = typecheck_access_member(parser, prev);
             } else {
-                fatal_error(parser, PARSE_ERROR_INTERNAL, prev->line);
+                assert(false);
             }
             prev->type = type;
             e = prev;
@@ -416,6 +500,71 @@ loop:
         return type;
     }
 }
+
+
+void typecheck_assignment(Parser* parser, Statement* s) {
+    type_id src = typecheck_expression(parser, s->assignment.rhs);
+    type_id dst = typecheck_expression(parser, s->assignment.lhs);
+    if (s->assignment.lhs->kind != EXPRESSION_VARIABLE &&
+        s->assignment.lhs->kind != EXPRESSION_ARRAY_INDEX && 
+        s->assignment.lhs->kind != EXPRESSION_ACCESS_MEMBER &&
+        (s->assignment.lhs->kind != EXPRESSION_UNOP ||
+         s->assignment.lhs->unop.op != UNOP_DEREF)) {
+        add_error(parser, TYPE_ERROR_ILLEGAL_TYPE, s->assignment.lhs->line);
+        return;
+    }
+    if (parser->type_table.data[src].kind == TYPE_ARRAY) {
+        add_error(parser, TYPE_ERROR_ILLEGAL_TYPE, s->assignment.rhs->line);
+        return;
+    }
+    if (parser->type_table.data[src].kind == TYPE_PTR) {
+        cast_to(parser, s->assignment.rhs, dst);
+        typecheck_cast(parser, s->assignment.rhs);
+        return;
+    }
+    assert(parser->type_table.data[src].kind == TYPE_NORMAL);
+
+    TypeDef* def = parser->type_table.data[src].type_def;
+    if (def->kind == TYPEDEF_BUILTIN) {
+        cast_to(parser, s->assignment.rhs, dst);
+        typecheck_cast(parser, s->assignment.rhs);
+        return;
+    }
+
+    if (def->kind == TYPEDEF_FUNCTION) {
+        add_error(parser, TYPE_ERROR_ILLEGAL_TYPE, 
+                  s->assignment.rhs->line);
+        return;
+    }
+    assert(def->kind == TYPEDEF_STRUCT);
+
+    if (src != dst) {
+        add_error(parser, TYPE_ERROR_ILLEGAL_CAST, s->line);
+        return;
+    }
+    // This is a struct assignment
+    // Get ptrs and copy
+
+    Expression* lhs = Arena_alloc_type(&parser->arena, Expression);
+    lhs->kind = EXPRESSION_UNOP;
+    lhs->line = s->assignment.lhs->line;
+    lhs->var = VAR_ID_INVALID;
+    lhs->unop.op = UNOP_ADDROF;
+    lhs->unop.expr = s->assignment.lhs;
+    lhs->type = typecheck_unop(parser, lhs);
+    Expression* rhs = Arena_alloc_type(&parser->arena, Expression);
+    rhs->kind = EXPRESSION_UNOP;
+    rhs->line = s->assignment.rhs->line;
+    rhs->var = VAR_ID_INVALID;
+    rhs->unop.op = UNOP_ADDROF;
+    rhs->unop.expr = s->assignment.rhs;
+    rhs->type = typecheck_unop(parser, rhs);
+
+    s->assignment.lhs = lhs;
+    s->assignment.rhs = rhs;
+    s->assignment.ptr_copy = true;
+}
+
 
 Statement** add_statement(Parser* parser, Statement** stack, uint64_t* stack_size, uint64_t* stack_cap, Statement* s) {
     if (*stack_size == *stack_cap) {
@@ -448,17 +597,7 @@ void typecheck_statements(Parser* parser, Statement** statements, uint64_t state
         uint64_t new_statement_count = 0;
         switch (top->type) {
         case STATEMENT_ASSIGN: {
-            type_id src = typecheck_expression(parser, top->assignment.rhs);
-            type_id dst = typecheck_expression(parser, top->assignment.lhs);
-            if (top->assignment.lhs->kind != EXPRESSION_VARIABLE &&
-                top->assignment.lhs->kind != EXPRESSION_ARRAY_INDEX && 
-                (top->assignment.lhs->kind != EXPRESSION_UNOP ||
-                 top->assignment.lhs->unop.op != UNOP_DEREF)) {
-                add_error(parser, TYPE_ERROR_ILLEGAL_TYPE, top->assignment.lhs->line);
-            } else if (src != dst) {
-                cast_to(parser, top->assignment.rhs, dst);
-                typecheck_cast(parser, top->assignment.rhs);
-            }
+            typecheck_assignment(parser, top);
             break;
         }
         case STATEMENT_EXPRESSION:
@@ -504,6 +643,10 @@ void typecheck_statements(Parser* parser, Statement** statements, uint64_t state
 
 
 bool TypeChecker_run(Parser* parser) {
+    if (!TypeChecker_resolve_structs(parser)) {
+        return false;
+    }
+
     NameTable* name_table = &parser->name_table;
     TypeTable* type_table = &parser->type_table;
 
@@ -516,4 +659,97 @@ bool TypeChecker_run(Parser* parser) {
     }
 
     return parser->first_error == NULL;
+}
+
+
+bool resolve_struct(Parser* parser, TypeDef* struc) {
+    uint32_t offset = 0;
+    uint32_t align = 1;
+
+    for (uint32_t i = 0; i < struc->struct_.field_count; ++i) {
+        StructMember* m = &struc->struct_.fields[i];
+
+        TypeData* m_type = &parser->type_table.data[m->type];
+        if ((m_type->kind == TYPE_NORMAL || m_type->kind == TYPE_ARRAY) &&
+            m_type->type_def->kind == TYPEDEF_STRUCT) {
+            if (m_type->type_def->struct_.byte_alignment == 0) {
+                // member is struct that has not yet been resolved
+                return false;
+            }
+        }
+        AllocInfo i = type_allocation(&parser->type_table, m->type);
+        offset = ALIGNED_TO(offset, i.alignment);
+        m->offset = offset;
+        if (i.alignment > align) {
+            align = i.alignment;
+        }
+        offset += i.size;
+    }
+    struc->struct_.byte_alignment = align;
+    struc->struct_.byte_size = ALIGNED_TO(offset, align);
+
+    uint32_t name_len = parser->name_table.data[struc->struct_.name].name_len;
+    const uint8_t* name = parser->name_table.data[struc->struct_.name].name;
+    LOG_INFO("Resolved struct %*.*s (Size %u, alignment %u)", 
+             name_len, name_len, name, struc->struct_.byte_size, align);
+
+    for (uint32_t i = 0; i < struc->struct_.field_count; ++i) {
+        LOG_INFO("  Member %*.*s: offset %u", 
+                 struc->struct_.fields[i].name.len,
+                 struc->struct_.fields[i].name.len,
+                 struc->struct_.fields[i].name.str,
+                 struc->struct_.fields[i].offset);
+    }
+
+    return true;
+}
+
+
+bool TypeChecker_resolve_structs(Parser* parser) {
+    // Not realy a queue... just a list
+    TypeDef** queue = Mem_alloc(16 * sizeof(TypeDef*));
+    if (queue == NULL) {
+        out_of_memory(parser);
+    }
+    uint32_t queue_size = 0;
+    uint32_t queue_cap = 16;
+
+    for (uint64_t ix = 0; ix < parser->type_table.size; ++ix) {
+        if (parser->type_table.data[ix].kind != TYPE_NORMAL) {
+            continue;
+        }
+        TypeDef* def = parser->type_table.data[ix].type_def;
+        if (def->kind != TYPEDEF_STRUCT) {
+            continue;
+        }
+        if (!resolve_struct(parser, def)) {
+            //NOLINTNEXTLINE 
+            RESERVE32(queue, queue_size + 1, queue_cap);
+            queue[queue_size++] = def;
+        }
+    }
+
+    while (queue_size > 0) {
+        uint32_t last_queue_size = queue_size;
+        uint32_t ix = 0;
+        for (uint32_t ix = 0; ix < queue_size;) {
+            TypeDef* def = queue[ix];
+            if (resolve_struct(parser, def)) {
+                queue[ix] = queue[queue_size - 1];
+                --queue_size;
+            } else {
+                ++ix;
+            }
+        }
+
+        if (last_queue_size == queue_size) {
+            // We have recursive structures...
+            for (uint32_t ix = 0; ix < queue_size; ++ix) {
+                add_error(parser, TYPE_ERROR_RECURSIVE_STRUCT, queue[ix]->struct_.line);
+            }
+            return false;
+        }
+    }
+
+    return true;
 }

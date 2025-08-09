@@ -119,8 +119,8 @@ typedef struct Adm64Operand {
     uint8_t reg;
     uint8_t scale_reg;
     uint8_t scale; // 0 (no scaled offset), 1, 2, 4 or 8
+    int32_t offset;
     union {
-        int32_t offset;
         uint32_t label;
         symbol_ix symbol;
         uint8_t imm[8];
@@ -175,7 +175,8 @@ void asm_symbol_label_var(AsmCtx* ctx, symbol_ix symbol);
 void asm_mem_var(AsmCtx* ctx, uint8_t size, uint8_t reg, uint8_t scale,
                  uint8_t scale_reg, int32_t offset);
 
-void asm_global_mem_var(AsmCtx* ctx, uint8_t size, symbol_ix symbol);
+void asm_global_mem_var(AsmCtx* ctx, uint8_t size, symbol_ix symbol,
+                        int32_t offset);
 
 void asm_imm_var(AsmCtx* ctx, uint8_t size, const uint8_t* data);
 
