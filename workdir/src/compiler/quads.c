@@ -661,17 +661,12 @@ var_id quads_call(Parser* parser, Expression* expr, QuadList* quads,
         q->op1.var = f;
     }
 
-    if (dest == VAR_ID_INVALID) {
+    // On ptr_return return a new copy of the pointer
+    // This means the old copy does not have to be saved on chained returns
+    if (dest == VAR_ID_INVALID || expr->call.ptr_return) {
         dest = QuadList_addvar(quads, NAME_ID_INVALID, expr->type, parser);
-        if (expr->call.ptr_return) {
-            Quad* q = QuadList_addquad(quads, QUAD_ADDROF, dest);
-            q->op1.var = dst;
-        } else {
-            QuadList_addquad(quads, QUAD_GET_RET, dest);
-        }
-    } else if (!expr->call.ptr_return) {
-        QuadList_addquad(quads, QUAD_GET_RET, dest);
     }
+    QuadList_addquad(quads, QUAD_GET_RET, dest);
 
     return dest;
 }
@@ -920,6 +915,7 @@ loop:
 // type is ptr type, not parent
 void quads_ptr_copy(Parser* parser, type_id type, var_id dst, var_id src,
                     QuadList* quads) {
+    assert(parser->type_table.data[type].kind == TYPE_PTR);
     type_id parent = parser->type_table.data[type].parent;
     AllocInfo i = type_allocation(&parser->type_table, parent);
 
@@ -983,6 +979,15 @@ void quads_ptr_copy(Parser* parser, type_id type, var_id dst, var_id src,
 
 void quads_assign_ptr_copy(Parser* parser, Expression* lhs, Expression* rhs,
                            QuadList* quads) {
+    if (rhs->kind == EXPRESSION_CALL) {
+        assert(rhs->call.ptr_return);
+        assert(rhs->call.get_addr);
+        var_id lval = quads_expression(parser, lhs, quads, LABEL_ID_INVALID, 
+                                       0, VAR_ID_INVALID, true);
+        quads_expression(parser, rhs, quads, LABEL_ID_INVALID, 
+                         0, lval, true);
+        return;
+    }
     var_id rval = quads_expression(parser, rhs, quads, LABEL_ID_INVALID, 
                                    0, VAR_ID_INVALID, true);
     var_id lval = quads_expression(parser, lhs, quads, LABEL_ID_INVALID, 
@@ -1029,9 +1034,27 @@ void quads_assign_access_member(Parser* parser, Expression* lhs,
     q->op2 = rval;
 }
 
+void quads_return_ptr(Parser* parser, QuadList* quads, Expression* val,
+                      var_id retvar) {
+    if (val->kind == EXPRESSION_CALL) {
+        assert(val->call.ptr_return);
+        assert(val->call.get_addr);
+        var_id v = quads_expression(parser, val, quads, LABEL_ID_INVALID, 0, 
+                                    retvar, true);
+        Quad* q = QuadList_addquad(quads, QUAD_RETURN, VAR_ID_INVALID);
+        q->op1.var = v;
+    } else {
+        var_id v = quads_expression(parser, val, quads, LABEL_ID_INVALID,
+                                    0, VAR_ID_INVALID, true);
+        quads_ptr_copy(parser, val->type, retvar, v, quads);
+        Quad* q = QuadList_addquad(quads, QUAD_RETURN, VAR_ID_INVALID);
+        q->op1.var = retvar;
+    }
+}
 
+// retvar is VAR_ID_INVALID unless pointer return is used
 void quads_statements(Parser* parser, QuadList* quads, Statement** statements,
-                      uint64_t count) {
+                      uint64_t count, var_id retvar) {
     struct Node {
         Statement* s;
         uint64_t ix;
@@ -1198,11 +1221,17 @@ void quads_statements(Parser* parser, QuadList* quads, Statement** statements,
                              0, VAR_ID_INVALID, false);
             continue;
         } else if (s->type == STATEMENT_RETURN) {
-            Expression* ret = s->return_.return_value;
-            var_id v = quads_expression(parser, ret, quads,
-                    LABEL_ID_INVALID, 0, VAR_ID_INVALID, true);
-            Quad* q = QuadList_addquad(quads, QUAD_RETURN, VAR_ID_INVALID);
-            q->op1.var = v;
+            if (s->return_.ptr_return) {
+                assert(retvar != VAR_ID_INVALID);
+                quads_return_ptr(parser, quads, s->return_.return_value, 
+                                 retvar);
+            } else {
+                Expression* ret = s->return_.return_value;
+                var_id v = quads_expression(parser, ret, quads,
+                        LABEL_ID_INVALID, 0, VAR_ID_INVALID, true);
+                Quad* q = QuadList_addquad(quads, QUAD_RETURN, VAR_ID_INVALID);
+                q->op1.var = v;
+            }
             continue;
         }
     }
@@ -1437,6 +1466,16 @@ void Quad_GenerateQuads(Parser* parser, Quads* quads, Arena* arena) {
         def->quad_start = q;
         q->op1.label = l;
 
+        type_id rettype = def->return_type;
+        AllocInfo info = type_allocation(&parser->type_table, rettype);
+        var_id retvar = VAR_ID_INVALID;
+        if (Backend_return_as_ptr(info)) {
+            rettype = type_ptr_of(&parser->type_table, rettype);
+            retvar = QuadList_addvar(&list, NAME_ID_INVALID, rettype, parser);
+            Quad* q = QuadList_addquad(&list, QUAD_GET_ARG, retvar);
+            q->op1.uint64 = 0;
+        }
+
         for (uint64_t i = 0; i < def->arg_count; ++i) {
             // Add all arguments
             type_id var_t = parser->name_table.data[def->args[i].name].type;
@@ -1445,10 +1484,11 @@ void Quad_GenerateQuads(Parser* parser, Quads* quads, Arena* arena) {
             QuadList_mark_arg(&list, var);
 
             Quad* q = QuadList_addquad(&list, QUAD_GET_ARG, var);
-            q->op1.uint64 = i;
+            q->op1.uint64 = (retvar == VAR_ID_INVALID) ? i : i + 1;
         }
-        var_id start = list.vars.size;
-        quads_statements(parser, &list, def->statements, def->statement_count);
+
+        quads_statements(parser, &list, def->statements, def->statement_count,
+                         retvar);
 
         label_id end_label = QuadList_addlabel(&list);
 

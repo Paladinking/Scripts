@@ -3,13 +3,17 @@
 struct Y {
     uint64 n;
     X x;
-    X[2] arr;
+    X[8] arr;
 }
-
 struct X {
     uint64 a;
     int64 b;
     uint16[12] arr;
+}
+struct Z {
+    uint8 a;
+    uint8 b;
+    uint8 c;
 }
 
 fn take_x(X x) -> int64 {
@@ -18,5 +22,44 @@ fn take_x(X x) -> int64 {
     return x2.a + x2.b;
 }
 
+fn give_x(uint64 a, int64 b) -> X {
+    X x; 
+    x.a = a;
+    x.b = b;
+
+    return x;
+}
+
+fn test(uint64 x) -> uint64 {
+    return x * 3;
+}
+
+
+
+
+
+
+
+
+
+
+fn take_z(Z z) -> uint32 {
+    return z.a + z.b + z.c;
+}
+
 fn main() -> uint64 {
+    Z z;
+    z.a = 10;
+    z.b = 11;
+    z.c = 12;
+    uint32 zval = take_z(z);
+    
+    Y y;
+    uint64 ix = 0;
+    while (ix < 8) {
+        y.arr[ix] = give_x(10, ix * 5);
+
+        ix = ix + 1;
+    }
+    return y.arr[5].a + y.arr[5].b + zval;
 }

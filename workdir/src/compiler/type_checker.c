@@ -653,12 +653,19 @@ void typecheck_statements(Parser* parser, Statement** statements, uint64_t state
             }
             break;
         }
-        case STATEMENT_RETURN:
-            if (typecheck_expression(parser, top->return_.return_value) != rettype) {
+        case STATEMENT_RETURN: {
+            type_id ret = typecheck_expression(parser, top->return_.return_value);
+            if (ret != rettype) {
                 cast_to(parser, top->return_.return_value, rettype);
                 typecheck_cast(parser, top->return_.return_value);
             }
+            AllocInfo i = type_allocation(&parser->type_table, rettype);
+            if (Backend_return_as_ptr(i)) {
+                addr_to(parser, top->return_.return_value);
+                top->return_.ptr_return = true;
+            }
             break;
+        }
         case STATEMENT_IF: {
             if (top->if_.condition != NULL) {
                 type_id cond = typecheck_expression(parser, top->if_.condition);

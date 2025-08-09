@@ -1173,6 +1173,10 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
             asm_instr_end(ctx);
             break;
         case QUAD_JMP:
+            if (q->next_quad->type == QUAD_LABEL &&
+                q->next_quad->op1.label == q->op1.label) {
+                break;
+            }
             asm_instr(ctx, OP_JMP);
             asm_label_var(ctx, q->op1.label);
             asm_instr_end(ctx);
@@ -1242,6 +1246,11 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
                 asm_reg_var(ctx, datasize, RAX);
                 emit_var(&vars[q->op1.var], ctx);
                 asm_instr_end(ctx);
+            }
+            if (q->next_quad == NULL ||
+                (q->next_quad->type == QUAD_LABEL &&
+                q->next_quad->op1.label == def->end_label)) {
+                break;
             }
             asm_instr(ctx, OP_JMP);
             asm_label_var(ctx, def->end_label);
@@ -1473,9 +1482,10 @@ void Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
 
 
 bool Backend_arg_is_ptr(AllocInfo info) {
-    return info.size > 8;
+    return !(info.size == 1 || info.size == 2 ||
+             info.size == 4 || info.size == 8);
 }
 
 bool Backend_return_as_ptr(AllocInfo info) {
-    return info.size > 8;
+    return Backend_arg_is_ptr(info);
 }

@@ -274,6 +274,7 @@ Statement* OnAssign(void* ctx, uint64_t start, uint64_t end, Expression* lhs, Ex
 Statement* OnReturn(void* ctx, uint64_t start, uint64_t end, name_id kw, Expression* e) {
     Statement* s = create_stmt(PARSER(ctx), STATEMENT_RETURN, start, end);
     s->return_.return_value = e;
+    s->return_.ptr_return = false;
     return s;
 }
 

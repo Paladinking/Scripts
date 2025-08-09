@@ -949,7 +949,7 @@ void rewrite_bss(Object* obj, section_ix* data,
 
 void PeExectutable_create(Object* obj, ByteBuffer* dest, symbol_ix entrypoint) {
 
-    uint32_t iat_offset, iat_size, id_offset, id_size;
+    uint32_t iat_offset = 0, iat_size = 0, id_offset = 0, id_size = 0;
     section_ix import_section = SECTION_IX_NONE;
     // Write .idata section to end of .rdata secton
     for (section_ix i = 0; i < obj->section_count; ++i) {
@@ -988,8 +988,10 @@ void PeExectutable_create(Object* obj, ByteBuffer* dest, symbol_ix entrypoint) {
             Coff64Image_add_code_section(&img, s->data.data, s->data.size, 
                                          (const char*)s->name);
         } else if (s->type == SECTION_RDATA) {
-            Coff64Image_add_rdata_section(&img, s->data.data, s->data.size, 
-                                          (const char*)s->name);
+            if (i == import_section || s->data.size > 0) {
+                Coff64Image_add_rdata_section(&img, s->data.data, s->data.size, 
+                                              (const char*)s->name);
+            }
         } else if (s->type == SECTION_DATA) {
             if (s->data.size > 0) {
                 Coff64Image_add_data_section(&img, s->data.data, s->data.size, 
@@ -1016,6 +1018,11 @@ void PeExectutable_create(Object* obj, ByteBuffer* dest, symbol_ix entrypoint) {
             rvas[ix] = 0;
             continue;
         }
+        if (ix != import_section && s->type == SECTION_RDATA &&
+            s->data.size == 0) {
+            rvas[ix] = 0;
+            continue;
+        }
 
         rvas[ix] = img.section_table[img_ix].virtual_address;
         ++img_ix;
@@ -1032,6 +1039,11 @@ void PeExectutable_create(Object* obj, ByteBuffer* dest, symbol_ix entrypoint) {
             s->type == SECTION_DATA && s->data.size == 0) {
             continue;
         }
+        if (i != import_section && s->type == SECTION_RDATA &&
+            s->data.size == 0) {
+            continue;
+        }
+
         uint32_t rva = rvas[i];
         if (i == import_section) {
             struct DataDirectory* dir = img.optional_header->data_directories;
