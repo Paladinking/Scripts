@@ -48,4 +48,8 @@ var_id create_temp_var(ConflictGraph* graph, VarList* vars, FlowNode* node,
 void Generate_code(Quads* quads, FunctionTable* functions, FunctionTable* externs,
                    NameTable* name_table, StringLiteral* literals, Arena* arena);
 
+bool Backend_arg_is_ptr(AllocInfo info);
+
+bool Backend_return_as_ptr(AllocInfo info);
+
 #endif

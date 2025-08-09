@@ -575,7 +575,7 @@ void Generate_function(Quads* quads, Quad* start, Quad* end,
             // spill it
             assert(vars->data[max_var].alloc_type == ALLOC_NONE);
             vars->data[max_var].alloc_type = ALLOC_MEM;
-            LOG_DEBUG("Spill %llu", max_var);
+            LOG_INFO("Spill %llu", max_var);
             continue;
         }
         break;

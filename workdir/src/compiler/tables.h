@@ -85,6 +85,9 @@ typedef struct NameData {
  
     enum NameKind kind;
     bool has_var;
+    // Set for variables declared as non-pointer that
+    // has been made into a pointer due to e.g calling convention
+    bool implicit_ptr;
     union {
         // Used when kind == NAME_FUNCTION
         FunctionDef* func_def;

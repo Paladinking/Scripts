@@ -36,7 +36,9 @@ enum BinaryOperator {
 
 enum UnaryOperator {
     UNOP_BITNOT, UNOP_BOOLNOT, UNOP_NEGATIVE, UNOP_POSITIVE, UNOP_PAREN,
-    UNOP_ADDROF, UNOP_DEREF
+    UNOP_ADDROF, UNOP_DEREF,
+    // Same as UNOP_ADDROF, but only generated internaly, and not typechecked
+    UNOP_ADDROF2
 };
 
 typedef struct Expression Expression;
@@ -77,10 +79,21 @@ typedef struct ExpressionList {
     struct ExpressionList* next;
 } ExpressionList;
 
+typedef struct CallArg {
+    Expression* e;
+    // True if this argument is implicitly passed as a pointer
+    bool ptr_copy;
+} CallArg;
+
 typedef struct CallExpr {
     Expression* function;
     uint64_t arg_count;
-    Expression** args;
+    CallArg* args;
+    // True if the return value is implicitly passed as pointer in first arg
+    bool ptr_return;
+    // True when taking the address of a call and ptr_return is true.
+    // Used to avoid copies in some situations.
+    bool get_addr;
 } CallExpr;
 
 typedef struct ArrayIndexExpr {
@@ -180,11 +193,11 @@ typedef struct Statements {
     uint64_t count;
 } Statements;
 
-typedef struct CallArg {
+typedef struct FunctionArg {
     name_id name;
     type_id type;
     LineInfo line;
-} CallArg;
+} FunctionArg;
 
 typedef struct FieldList {
     StructMember field;
@@ -197,7 +210,7 @@ typedef struct FunctionDef {
     name_id name;
     type_id return_type;
     uint64_t arg_count;
-    CallArg* args;
+    FunctionArg* args;
     uint64_t statement_count;
     Statement** statements;
     LineInfo line;

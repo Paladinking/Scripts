@@ -1,4 +1,5 @@
 #include "type_checker.h"
+#include "code_generation.h"
 #include "ast.h"
 #include <mem.h>
 
@@ -66,6 +67,18 @@ void cast_to(Parser* parser, Expression* e, type_id type) {
     e->cast.e = new;
 }
 
+type_id typecheck_unop(Parser* parser, Expression* e);
+
+// type is the non-pointer type
+void addr_to(Parser* parser, Expression* e) {
+    Expression* new = Arena_alloc_type(&parser->arena, Expression);
+    *new = *e;
+    e->kind = EXPRESSION_UNOP;
+    e->unop.op = UNOP_ADDROF2;
+    e->unop.expr = new;
+    e->type = typecheck_unop(parser, e);
+}
+
 type_id merge_numbers(Parser* parser, type_id a, type_id b, Expression* expr_a, Expression* expr_b) {
     if (a == b) {
         return a;
@@ -95,18 +108,22 @@ type_id merge_numbers(Parser* parser, type_id a, type_id b, Expression* expr_a, 
 type_id typecheck_unop(Parser* parser, Expression* op) {
     switch(op->unop.op) {
     case UNOP_ADDROF:
-        if (op->unop.expr->kind != EXPRESSION_VARIABLE &&
+    case UNOP_ADDROF2:
+        if (op->unop.op == UNOP_ADDROF &&
+            op->unop.expr->kind != EXPRESSION_VARIABLE &&
             op->unop.expr->kind != EXPRESSION_ARRAY_INDEX &&
             op->unop.expr->kind != EXPRESSION_ACCESS_MEMBER &&
             (op->unop.expr->kind != EXPRESSION_UNOP ||
              op->unop.expr->unop.op != UNOP_DEREF)) {
             add_error(parser, TYPE_ERROR_ILLEGAL_TYPE, op->unop.expr->line);
+            return type_ptr_of(&parser->type_table, op->unop.expr->type);
         }
         if (op->unop.expr->kind == EXPRESSION_ARRAY_INDEX) {
             *op = *op->unop.expr;
             op->array_index.get_addr = true;
             return type_ptr_of(&parser->type_table, op->type);
         } else if (op->unop.expr->kind == EXPRESSION_UNOP) {
+            assert(op->unop.expr->unop.op == UNOP_DEREF);
             Expression* child = op->unop.expr;
             LineInfo l = op->line;
             *op = *child->unop.expr;
@@ -117,8 +134,20 @@ type_id typecheck_unop(Parser* parser, Expression* op) {
             *op = *op->unop.expr;
             op->member_access.get_addr = true;
             return type_ptr_of(&parser->type_table, op->type);
+        } else if (op->unop.expr->kind == EXPRESSION_CALL) {
+            if (op->unop.expr->call.ptr_return) {
+                *op = *op->unop.expr;
+                op->call.get_addr = true;
+                return type_ptr_of(&parser->type_table, op->type);
+            } else {
+                // This might be allowed in some edge cases?
+                assert(false);
+                return type_ptr_of(&parser->type_table, op->unop.expr->type);
+            }
+        } else {
+            assert(op->unop.expr->kind == EXPRESSION_VARIABLE);
+            return type_ptr_of(&parser->type_table, op->unop.expr->type);
         }
-        return type_ptr_of(&parser->type_table, op->unop.expr->type);
     case UNOP_DEREF:
         if (parser->type_table.data[op->unop.expr->type].kind != TYPE_PTR) {
             add_error(parser, TYPE_ERROR_ILLEGAL_TYPE, op->unop.expr->line);
@@ -320,10 +349,20 @@ type_id typecheck_call(Parser* parser, Expression* e) {
     }
 
     for (uint64_t ix = 0; ix < func->arg_count; ++ix) {
-        if (func->args[ix].type != e->call.args[ix]->type) {
-            cast_to(parser, e->call.args[ix], func->args[ix].type);
-            typecheck_cast(parser, e->call.args[ix]);
+        type_id t = func->args[ix].type;
+        if (t != e->call.args[ix].e->type) {
+            cast_to(parser, e->call.args[ix].e, t);
+            typecheck_cast(parser, e->call.args[ix].e);
         }
+        AllocInfo i = type_allocation(&parser->type_table, t);
+        if (Backend_arg_is_ptr(i)) {
+            addr_to(parser, e->call.args[ix].e);
+            e->call.args[ix].ptr_copy = true;
+        }
+    }
+    AllocInfo rec = type_allocation(&parser->type_table, func->return_type);
+    if (Backend_return_as_ptr(rec)) {
+        e->call.ptr_return = true;
     }
 
     return func->return_type;
@@ -412,6 +451,17 @@ loop:
             break;
         case EXPRESSION_VARIABLE:
             type = type_of(&parser->name_table, e->variable.ix);
+            if (parser->name_table.data[e->variable.ix].implicit_ptr) {
+                Expression* n = Arena_alloc_type(&parser->arena, Expression);
+                *n = *e;
+                n->type = type;
+                e->kind = EXPRESSION_UNOP;
+                e->unop.op = UNOP_DEREF;
+                e->line = e->line;
+                e->var = VAR_ID_INVALID;
+                e->unop.expr = n;
+                type = typecheck_unop(parser, e);
+            }
             break;
         case EXPRESSION_LITERAL_INT:
             type = TYPE_ID_INT64;
@@ -482,7 +532,7 @@ loop:
                 type = typecheck_array_index(parser, prev);
             } else if (prev->kind == EXPRESSION_CALL) {
                 if (stack[stack_size - 1].ix < prev->call.arg_count) {
-                    e = prev->call.args[stack[stack_size - 1].ix];
+                    e = prev->call.args[stack[stack_size - 1].ix].e;
                     stack[stack_size - 1].ix += 1;
                     goto loop;
                 }
@@ -518,16 +568,20 @@ void typecheck_assignment(Parser* parser, Statement* s) {
         return;
     }
     if (parser->type_table.data[src].kind == TYPE_PTR) {
-        cast_to(parser, s->assignment.rhs, dst);
-        typecheck_cast(parser, s->assignment.rhs);
+        if (src != dst) {
+            cast_to(parser, s->assignment.rhs, dst);
+            typecheck_cast(parser, s->assignment.rhs);
+        }
         return;
     }
     assert(parser->type_table.data[src].kind == TYPE_NORMAL);
 
     TypeDef* def = parser->type_table.data[src].type_def;
     if (def->kind == TYPEDEF_BUILTIN) {
-        cast_to(parser, s->assignment.rhs, dst);
-        typecheck_cast(parser, s->assignment.rhs);
+        if (src != dst) {
+            cast_to(parser, s->assignment.rhs, dst);
+            typecheck_cast(parser, s->assignment.rhs);
+        }
         return;
     }
 
@@ -545,23 +599,9 @@ void typecheck_assignment(Parser* parser, Statement* s) {
     // This is a struct assignment
     // Get ptrs and copy
 
-    Expression* lhs = Arena_alloc_type(&parser->arena, Expression);
-    lhs->kind = EXPRESSION_UNOP;
-    lhs->line = s->assignment.lhs->line;
-    lhs->var = VAR_ID_INVALID;
-    lhs->unop.op = UNOP_ADDROF;
-    lhs->unop.expr = s->assignment.lhs;
-    lhs->type = typecheck_unop(parser, lhs);
-    Expression* rhs = Arena_alloc_type(&parser->arena, Expression);
-    rhs->kind = EXPRESSION_UNOP;
-    rhs->line = s->assignment.rhs->line;
-    rhs->var = VAR_ID_INVALID;
-    rhs->unop.op = UNOP_ADDROF;
-    rhs->unop.expr = s->assignment.rhs;
-    rhs->type = typecheck_unop(parser, rhs);
+    addr_to(parser, s->assignment.lhs);
+    addr_to(parser, s->assignment.rhs);
 
-    s->assignment.lhs = lhs;
-    s->assignment.rhs = rhs;
     s->assignment.ptr_copy = true;
 }
 
@@ -600,9 +640,19 @@ void typecheck_statements(Parser* parser, Statement** statements, uint64_t state
             typecheck_assignment(parser, top);
             break;
         }
-        case STATEMENT_EXPRESSION:
-            typecheck_expression(parser, top->expression);
+        case STATEMENT_EXPRESSION: {
+            Expression* e = top->expression;
+            typecheck_expression(parser, e);
+            if (e->kind == EXPRESSION_ACCESS_MEMBER ||
+                (e->kind == EXPRESSION_UNOP && e->unop.op == UNOP_DEREF) ||
+                e->kind == EXPRESSION_ARRAY_INDEX) {
+                // A bit ugly, but if the expression does not fit in a register,
+                // it cannot be allowed to fully evaluate.
+                // EXPRESSION_VARIABLE is skipped since no quads are generated
+                addr_to(parser, top->expression);
+            }
             break;
+        }
         case STATEMENT_RETURN:
             if (typecheck_expression(parser, top->return_.return_value) != rettype) {
                 cast_to(parser, top->return_.return_value, rettype);
@@ -633,8 +683,8 @@ void typecheck_statements(Parser* parser, Statement** statements, uint64_t state
                 stack = add_statement(parser, stack, &stack_size, &stack_cap, top->while_.statements[ix]);
             }
             break;
-        case STATEMET_INVALID:
-            fatal_error(parser, PARSE_ERROR_INTERNAL, top->line);
+        default:
+            assert("Invalid statement" && false);
             break;
         }
     }
@@ -653,7 +703,28 @@ bool TypeChecker_run(Parser* parser) {
     FunctionTable* funcs = &parser->function_table;
 
     for (uint64_t ix = 0; ix < funcs->size; ++ix) {
+        for (uint64_t arg = 0; arg < funcs->data[ix]->arg_count; ++arg) {
+            type_id t = funcs->data[ix]->args[arg].type;
+            AllocInfo i = type_allocation(&parser->type_table, t);
+            if (!Backend_arg_is_ptr(i)) {
+                continue;
+            }
+            name_id name = funcs->data[ix]->args[arg].name;
+            LOG_INFO("Argument '%*.*s' of '%*.*s()' is implicit ptr",
+                     parser->name_table.data[name].name_len,
+                     parser->name_table.data[name].name_len,
+                     parser->name_table.data[name].name,
+                     parser->name_table.data[funcs->data[ix]->name].name_len,
+                     parser->name_table.data[funcs->data[ix]->name].name_len,
+                     parser->name_table.data[funcs->data[ix]->name].name);
+
+            parser->name_table.data[name].implicit_ptr = true;
+            t = type_ptr_of(&parser->type_table, t);
+            parser->name_table.data[name].type = t;
+        }
+
         type_id rettype = funcs->data[ix]->return_type;
+
         typecheck_statements(parser, funcs->data[ix]->statements,
                 funcs->data[ix]->statement_count, rettype);
     }

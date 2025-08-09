@@ -1468,5 +1468,14 @@ void Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
     const char** s = Mem_alloc(2 * sizeof(char*));
     s[0] = "build-gcc\\ntutils.lib";
     s[1] = "C:\\Program Files (x86)\\Windows Kits\\10\\lib\\10.0.19041.0\\um\\x64\\kernel32.Lib";
-    Linker_run(&set, s, 2);
+    Linker_run(&set, s, 0);
+}
+
+
+bool Backend_arg_is_ptr(AllocInfo info) {
+    return info.size > 8;
+}
+
+bool Backend_return_as_ptr(AllocInfo info) {
+    return info.size > 8;
 }
