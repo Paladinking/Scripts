@@ -937,4 +937,5 @@ void Linker_run(ObjectSet* objects, const ochar_t** argv, uint32_t argc) {
     PeExectutable_create(dest, &data, entry - dest->symbols);
 
     write_file("out.exe", data.data, data.size);
+    LOG_INFO("Created 'out.exe'");
 }

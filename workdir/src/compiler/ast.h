@@ -111,7 +111,12 @@ typedef struct CastExpr {
 typedef struct MemberAccessExpr {
     Expression* structexpr;
     StrWithLength member;
-    uint32_t member_ix;
+    uint32_t member_offset;
+    // set for expressions like &x.y;
+    bool get_addr;
+    // set for expressions like (*a).b; or arr[10].b;
+    // Both get_addr and via_ptr can be true at the same time (&arr[10].b;)
+    bool via_ptr;
 } MemberAccessExpr;
 
 struct Expression {
@@ -144,6 +149,7 @@ struct Statement {
         struct {
             Expression* lhs;
             Expression* rhs;
+            bool ptr_copy;
         } assignment;
         Expression* expression;
         struct {
@@ -179,6 +185,11 @@ typedef struct CallArg {
     type_id type;
     LineInfo line;
 } CallArg;
+
+typedef struct FieldList {
+    StructMember field;
+    struct FieldList* next;
+} FieldList;
 
 struct Quad;
 

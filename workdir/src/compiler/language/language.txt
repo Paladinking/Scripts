@@ -34,6 +34,7 @@ type: ARRAY_INDEX = Expression*;
 type: COND = Expression*;
 
 type: PTRDECL = uint64_t;
+type: TYPE = type_id;
 
 type: ?ASSIGN = Expression*;
 type: STATEMENT = Statement*;
@@ -43,6 +44,9 @@ type: ELSE = void*;
 
 type: STATEMENTS = Statements;
 type: STATEMENT_LIST = StatementList*;
+
+type: STRUCT = type_id;
+type: FIELDS = FieldList*;
 
 type: FUNCTION = FunctionDef*;
 type: FN_HEAD = name_id;
@@ -58,7 +62,8 @@ type: ARG_LIST = ArgList*;
 type: ARRAYDECL = ArraySizes*;
 
 PROGRAM = '' |
-          PROGRAM + FUNCTION;
+          PROGRAM + FUNCTION |
+          PROGRAM + STRUCT;
 
 FN_HEAD = kwFn + identifier : OnFnHead;
 
@@ -69,17 +74,23 @@ FUNCTION = FN_HEAD +
 FUNCTION = kwExtern + FN_HEAD + '(' + ?ARG_LIST + ')' +
            ?RET_TYPE + ';' : OnExternFunction;
 
-?RET_TYPE = '' :$ TYPE_ID_NONE |
-            '->' + typeid :$ $0;
+TYPE = typeid + ARRAYDECL : OnType |
+       typeid + PTRDECL + ARRAYDECL : OnPtrType;
 
+?RET_TYPE = '' :$ TYPE_ID_NONE |
+            '->' + TYPE :$ $0;
+
+STRUCT = kwStruct + typeid + '{' + FIELDS + '}' :  OnStruct;
+
+FIELDS = '' :$ NULL |
+        FIELDS + TYPE + identifier + ';' : OnField;
 
 ?ARG_LIST = '' :$ NULL |
             ARG_LIST :$ $0;
 
 ARG_LIST = ARG : OnArgList |
            ARG_LIST + ',' + ARG : OnAddArgList;
-ARG = typeid + identifier : OnArg |
-      typeid + PTRDECL + identifier : OnPtrArg;
+ARG = TYPE + identifier : OnArg;
 
 STATEMENTS = '{' + STATEMENT_LIST + '}' : OnStatements;
 
@@ -88,8 +99,7 @@ STATEMENT_LIST = '' :$ NULL |
 
 STATEMENT = kwWhile + COND + STATEMENTS : OnWhile |
             IF :$ $0 |
-            typeid + ARRAYDECL + identifier + ?ASSIGN + ';' : OnDecl |
-            typeid + PTRDECL + identifier + ?ASSIGN + ';' : OnPtrDecl |
+            TYPE + identifier + ?ASSIGN + ';' : OnDecl |
             EXPRESSION + '=' + EXPRESSION + ';' : OnAssign |
             EXPRESSION + ';' : OnExprStatement |
             kwReturn + EXPRESSION + ';' : OnReturn;

@@ -19,9 +19,9 @@ bool Arena_create(Arena* arena, size_t max_size,
 
 void Arena_release(Arena* arena);
 
-#define Arena_alloc_type(a, t) Arena_alloc(a, sizeof(t), __alignof(t))
+#define Arena_alloc_type(a, t) ((t*)Arena_alloc(a, sizeof(t), __alignof(t)))
 
-#define Arena_alloc_count(a, t, c) Arena_alloc(a, sizeof(t) * (c), __alignof(t))
+#define Arena_alloc_count(a, t, c) ((t*)Arena_alloc(a, sizeof(t) * (c), __alignof(t)))
 
 void* Arena_alloc(Arena* arena, size_t alloc_size, size_t allignment);
 

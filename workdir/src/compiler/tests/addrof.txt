@@ -1,0 +1,9 @@
+
+
+fn main() -> uint64 {
+    uint64 x = 10;
+
+    uint64* ptr = &x;
+
+    uint64* ptr2 = &ptr[5];
+}

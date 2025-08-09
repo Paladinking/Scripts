@@ -52,7 +52,7 @@ int compiler(char** argv, int argc) {
         String s;
         if (String_create(&s)) {
             fmt_functiondef(parser.function_table.data[i], &parser, &s);
-            //outputUtf8(s.buffer, s.length);
+            outputUtf8(s.buffer, s.length);
             String_free(&s);
         }
     }
@@ -67,7 +67,7 @@ int compiler(char** argv, int argc) {
         String s;
         if (String_create(&s)) {
             fmt_functiondef(parser.function_table.data[i], &parser, &s);
-            //outputUtf8(s.buffer, s.length);
+            outputUtf8(s.buffer, s.length);
             String_free(&s);
         }
     }

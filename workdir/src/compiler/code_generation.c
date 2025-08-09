@@ -113,10 +113,6 @@ void VarSet_grow(VarSet* s, var_id new_max) {
     memset(s->bitmap + old_len, 0, (new_len - old_len) * sizeof(uint64_t));
 }
 
-#ifdef _MSC_VER
-#pragma function(memset)
-#endif
-
 // Compute dest = dest U src
 void VarSet_union(VarSet* dest, const VarSet* src) {
     uint64_t len = dest->max / 64;
@@ -130,11 +126,19 @@ void VarSet_copy(VarSet* dest, const VarSet* src) {
     if (dest->max < src->max) {
         VarSet_grow(dest, src->max);
     }
-    uint64_t len = dest->max / 64;
+    uint64_t len = src->max / 64;
     for (uint64_t ix = 0; ix < len; ++ix) {
         dest->bitmap[ix] = src->bitmap[ix];
     }
+    if (src->max < dest->max) {
+        uint64_t dlen = dest->max / 64;
+        memset(dest->bitmap + len, 0, (dlen - len) * sizeof(uint64_t));
+    }
 }
+
+#ifdef _MSC_VER
+#pragma function(memset)
+#endif
 
 // Compute dest = dest - src
 void VarSet_diff(VarSet* dest, const VarSet* src) {
@@ -163,6 +167,8 @@ void ConflictGraph_clear(ConflictGraph* graph) {
 void ConflictGraph_add_var(ConflictGraph* graph, var_id var) {
     assert(var == graph->var_count);
     uint64_t total = graph->reg_count + graph->var_count + 1;
+
+    LOG_INFO("ConflictGraph add var: %llu, %llu", var, total);
     if (total <= graph->width) {
         VarSet_grow(&graph->members, total);
         VarSet_set(&graph->members, var + graph->reg_count);
@@ -216,6 +222,8 @@ void ConflictGraph_create(ConflictGraph* graph, uint64_t reg_count, uint64_t var
     for (uint64_t ix = 0; ix < reg_count + var_count; ++ix) {
         VarSet_set(&graph->members, ix);
     }
+
+    LOG_INFO("ConflictGraph create: %llu", graph->edges.max);
 }
 
 void ConflictGraph_free(ConflictGraph* graph) {
@@ -277,6 +285,7 @@ void ConflictGraph_update_for_live(ConflictGraph* graph, VarSet* live) {
         var_id next = VarSet_getnext(live, a);
         var_id b = next;
         while (b != VAR_ID_INVALID) {
+            assert(b < graph->var_count);
             ConflictGraph_add_edge(graph, a + graph->reg_count, b + graph->reg_count);
             b = VarSet_getnext(live, b);
         }
@@ -487,6 +496,7 @@ void Generate_function(Quads* quads, Quad* start, Quad* end,
         if (vars->data[id].kind == VAR_FUNCTION ||
             vars->data[id].kind == VAR_ARRAY ||
             vars->data[id].kind == VAR_GLOBAL ||
+            vars->data[id].datatype == VARTYPE_STRUCT ||
             vars->data[id].kind == VAR_ARRAY_GLOBAL) {
             vars->data[id].alloc_type = ALLOC_MEM;
         }
