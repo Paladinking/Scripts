@@ -178,6 +178,7 @@ struct Statement {
         } while_;
         struct {
             Expression* return_value;
+            bool ptr_return;
         } return_;
     };
     LineInfo line;

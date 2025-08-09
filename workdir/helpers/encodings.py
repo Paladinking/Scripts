@@ -412,12 +412,10 @@ def main() -> None:
                            ('JL', 0x7C, 0x8C), ('JB', 0x72, 0x82), ('JNE', 0x75, 0x85),
                            ('JNZ', 0x75, 0x85), ('JE', 0x74, 0x84), ('JZ', 0x74, 0x84)]:
         v = split_encoding((OPERAND_IMM8,), (Opcode(o1), RelAddr(1)))
-        v += split_encoding((OPERAND_IMM16,), (Prefix(0x66), Opcode2(o2), RelAddr(2)))
         v += split_encoding((OPERAND_IMM32,), (Opcode2(o2), RelAddr(4)))
         output(name, v)
 
     jmp = split_encoding((OPERAND_IMM8,), (Opcode(0xEB), RelAddr(1)))
-    jmp += split_encoding((OPERAND_IMM16,), (Prefix(0x66), Opcode(0xE9), RelAddr(2)))
     jmp += split_encoding((OPERAND_IMM32,), (Opcode(0xE9), RelAddr(4)))
     output('JMP', jmp)
 

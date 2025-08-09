@@ -1400,11 +1400,6 @@ const Encoding JG_ENCODING[] = {
         {OPERAND_IMM8},
     },
     {
-        1, 3,
-        {{PREFIX, 0x66}, {OPCODE2, 0x8f}, {REL_ADDR, 2}},
-        {OPERAND_IMM16},
-    },
-    {
         1, 2,
         {{OPCODE2, 0x8f}, {REL_ADDR, 4}},
         {OPERAND_IMM32},
@@ -1416,11 +1411,6 @@ const Encoding JA_ENCODING[] = {
         1, 2,
         {{OPCODE, 0x77}, {REL_ADDR, 1}},
         {OPERAND_IMM8},
-    },
-    {
-        1, 3,
-        {{PREFIX, 0x66}, {OPCODE2, 0x87}, {REL_ADDR, 2}},
-        {OPERAND_IMM16},
     },
     {
         1, 2,
@@ -1436,11 +1426,6 @@ const Encoding JLE_ENCODING[] = {
         {OPERAND_IMM8},
     },
     {
-        1, 3,
-        {{PREFIX, 0x66}, {OPCODE2, 0x8e}, {REL_ADDR, 2}},
-        {OPERAND_IMM16},
-    },
-    {
         1, 2,
         {{OPCODE2, 0x8e}, {REL_ADDR, 4}},
         {OPERAND_IMM32},
@@ -1452,11 +1437,6 @@ const Encoding JBE_ENCODING[] = {
         1, 2,
         {{OPCODE, 0x76}, {REL_ADDR, 1}},
         {OPERAND_IMM8},
-    },
-    {
-        1, 3,
-        {{PREFIX, 0x66}, {OPCODE2, 0x86}, {REL_ADDR, 2}},
-        {OPERAND_IMM16},
     },
     {
         1, 2,
@@ -1472,11 +1452,6 @@ const Encoding JGE_ENCODING[] = {
         {OPERAND_IMM8},
     },
     {
-        1, 3,
-        {{PREFIX, 0x66}, {OPCODE2, 0x8d}, {REL_ADDR, 2}},
-        {OPERAND_IMM16},
-    },
-    {
         1, 2,
         {{OPCODE2, 0x8d}, {REL_ADDR, 4}},
         {OPERAND_IMM32},
@@ -1488,11 +1463,6 @@ const Encoding JAE_ENCODING[] = {
         1, 2,
         {{OPCODE, 0x73}, {REL_ADDR, 1}},
         {OPERAND_IMM8},
-    },
-    {
-        1, 3,
-        {{PREFIX, 0x66}, {OPCODE2, 0x83}, {REL_ADDR, 2}},
-        {OPERAND_IMM16},
     },
     {
         1, 2,
@@ -1508,11 +1478,6 @@ const Encoding JL_ENCODING[] = {
         {OPERAND_IMM8},
     },
     {
-        1, 3,
-        {{PREFIX, 0x66}, {OPCODE2, 0x8c}, {REL_ADDR, 2}},
-        {OPERAND_IMM16},
-    },
-    {
         1, 2,
         {{OPCODE2, 0x8c}, {REL_ADDR, 4}},
         {OPERAND_IMM32},
@@ -1524,11 +1489,6 @@ const Encoding JB_ENCODING[] = {
         1, 2,
         {{OPCODE, 0x72}, {REL_ADDR, 1}},
         {OPERAND_IMM8},
-    },
-    {
-        1, 3,
-        {{PREFIX, 0x66}, {OPCODE2, 0x82}, {REL_ADDR, 2}},
-        {OPERAND_IMM16},
     },
     {
         1, 2,
@@ -1544,11 +1504,6 @@ const Encoding JNE_ENCODING[] = {
         {OPERAND_IMM8},
     },
     {
-        1, 3,
-        {{PREFIX, 0x66}, {OPCODE2, 0x85}, {REL_ADDR, 2}},
-        {OPERAND_IMM16},
-    },
-    {
         1, 2,
         {{OPCODE2, 0x85}, {REL_ADDR, 4}},
         {OPERAND_IMM32},
@@ -1560,11 +1515,6 @@ const Encoding JNZ_ENCODING[] = {
         1, 2,
         {{OPCODE, 0x75}, {REL_ADDR, 1}},
         {OPERAND_IMM8},
-    },
-    {
-        1, 3,
-        {{PREFIX, 0x66}, {OPCODE2, 0x85}, {REL_ADDR, 2}},
-        {OPERAND_IMM16},
     },
     {
         1, 2,
@@ -1580,11 +1530,6 @@ const Encoding JE_ENCODING[] = {
         {OPERAND_IMM8},
     },
     {
-        1, 3,
-        {{PREFIX, 0x66}, {OPCODE2, 0x84}, {REL_ADDR, 2}},
-        {OPERAND_IMM16},
-    },
-    {
         1, 2,
         {{OPCODE2, 0x84}, {REL_ADDR, 4}},
         {OPERAND_IMM32},
@@ -1598,11 +1543,6 @@ const Encoding JZ_ENCODING[] = {
         {OPERAND_IMM8},
     },
     {
-        1, 3,
-        {{PREFIX, 0x66}, {OPCODE2, 0x84}, {REL_ADDR, 2}},
-        {OPERAND_IMM16},
-    },
-    {
         1, 2,
         {{OPCODE2, 0x84}, {REL_ADDR, 4}},
         {OPERAND_IMM32},
@@ -1614,11 +1554,6 @@ const Encoding JMP_ENCODING[] = {
         1, 2,
         {{OPCODE, 0xeb}, {REL_ADDR, 1}},
         {OPERAND_IMM8},
-    },
-    {
-        1, 3,
-        {{PREFIX, 0x66}, {OPCODE, 0xe9}, {REL_ADDR, 2}},
-        {OPERAND_IMM16},
     },
     {
         1, 2,
@@ -2536,19 +2471,19 @@ const Encodings ENCODINGS[] = {
     {16, SHL_ENCODING}, //18
     {16, SAL_ENCODING}, //19
     {3, CALL_ENCODING}, //20
-    {3, JG_ENCODING}, //21
-    {3, JA_ENCODING}, //22
-    {3, JLE_ENCODING}, //23
-    {3, JBE_ENCODING}, //24
-    {3, JGE_ENCODING}, //25
-    {3, JAE_ENCODING}, //26
-    {3, JL_ENCODING}, //27
-    {3, JB_ENCODING}, //28
-    {3, JNE_ENCODING}, //29
-    {3, JNZ_ENCODING}, //30
-    {3, JE_ENCODING}, //31
-    {3, JZ_ENCODING}, //32
-    {3, JMP_ENCODING}, //33
+    {2, JG_ENCODING}, //21
+    {2, JA_ENCODING}, //22
+    {2, JLE_ENCODING}, //23
+    {2, JBE_ENCODING}, //24
+    {2, JGE_ENCODING}, //25
+    {2, JAE_ENCODING}, //26
+    {2, JL_ENCODING}, //27
+    {2, JB_ENCODING}, //28
+    {2, JNE_ENCODING}, //29
+    {2, JNZ_ENCODING}, //30
+    {2, JE_ENCODING}, //31
+    {2, JZ_ENCODING}, //32
+    {2, JMP_ENCODING}, //33
     {26, CMP_ENCODING}, //34
     {16, TEST_ENCODING}, //35
     {6, CMOVG_ENCODING}, //36

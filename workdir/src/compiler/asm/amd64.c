@@ -217,10 +217,8 @@ static uint64_t assemble_op(AsmCtx* ctx, Amd64Op* op, uint64_t* offset, AddrBuf*
             int64_t delta64 = target_offset - cur_offset;
             assert(delta64 >= INT32_MIN && delta64 <= INT32_MAX);
             int32_t delta = delta64;
-            if (op->opcode == OP_CALL || delta < INT16_MIN || delta > INT16_MAX) {
+            if (op->opcode == OP_CALL || delta < INT8_MIN || delta > INT8_MAX) {
                 operands[ix].type = OPERAND_IMM32;
-            } else if (delta < INT8_MIN || delta > INT8_MAX) {
-                operands[ix].type = OPERAND_IMM16;
             } else {
                 operands[ix].type = OPERAND_IMM8;
             }
