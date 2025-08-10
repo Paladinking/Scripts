@@ -462,11 +462,9 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
         if (vars->data[quad->op1.var].datatype == VARTYPE_FLOAT) {
             assert(false);
         } else {
-            if (datasize != 8) {
-                if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
-                    postinsert_move(graph, &quad->dest, live_set, quad,
-                                    node, vars, arena);
-                }
+            if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
+                postinsert_move(graph, &quad->dest, live_set, quad,
+                                node, vars, arena);
             }
         }
     } else if (q == QUAD_CAST_TO_UINT32 || q == QUAD_CAST_TO_INT32) {
@@ -474,11 +472,9 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
         if (vars->data[quad->op1.var].datatype == VARTYPE_FLOAT) {
             assert(false);
         } else {
-            if (datasize != 8 && datasize != 4) {
-                if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
-                    postinsert_move(graph, &quad->dest, live_set, quad, node,
-                                    vars, arena);
-                }
+            if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
+                postinsert_move(graph, &quad->dest, live_set, quad, node,
+                                vars, arena);
             }
         }
     } else if (q == QUAD_CAST_TO_UINT16 || q == QUAD_CAST_TO_INT16) {
@@ -486,11 +482,9 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
         if (vars->data[quad->op1.var].datatype == VARTYPE_FLOAT) {
             assert(false);
         } else {
-            if (datasize == 1) {
-                if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
-                    postinsert_move(graph, &quad->dest, live_set, quad,
-                                    node, vars, arena);
-                }
+            if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
+                postinsert_move(graph, &quad->dest, live_set, quad,
+                                node, vars, arena);
             }
         }
     } else if (q == QUAD_ARRAY_TO_PTR) {
@@ -512,7 +506,11 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
             // Pass?
         }
     } else if (q == QUAD_MOVE) {
-        // Pass?
+        if (vars->data[quad->op1.var].alloc_type == ALLOC_MEM &&
+            vars->data[quad->dest].alloc_type == ALLOC_MEM) {
+            preinsert_move(graph, &quad->op1.var, live_set, quad,
+                           node, vars, arena);
+        }
     } else if (q == QUAD_LABEL || q == QUAD_JMP || q == QUAD_JMP_FALSE ||
                q == QUAD_JMP_TRUE) {
         // Pass
@@ -1264,8 +1262,8 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
                    vars[q->op1.var].kind == VAR_ARRAY_GLOBAL);
             uint32_t datasize = vars[q->dest].byte_size;
             asm_instr(ctx, OP_LEA);
-            emit_var_with_size(&vars[q->dest], PTR_SIZE, ctx);
-            emit_var_with_size(&vars[q->op1.var], datasize, ctx);
+            emit_var_with_size(&vars[q->dest], datasize, ctx);
+            emit_var_with_size(&vars[q->op1.var], PTR_SIZE, ctx);
             asm_instr_end(ctx);
             if (type == QUAD_GET_ARRAY_ADDR) {
                 asm_instr(ctx, OP_MOV);
@@ -1397,7 +1395,6 @@ static const uint8_t* str_literalname(uint64_t num, uint32_t* len, Arena* arena)
 void Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
                           FunctionTable* externs, StringLiteral* literals,
                           Arena* arena) {
-
     Object* object = Mem_alloc(sizeof(Object));
     if (object == NULL) {
         out_of_memory(NULL);
@@ -1461,8 +1458,9 @@ void Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
         if (ix + 1 < func_table->size) {
             asm_reset(&ctx);
         }
-
     }
+
+    LOG_INFO("Done generating functions");
 
     ctx.start = start;
     String out;
@@ -1476,13 +1474,13 @@ void Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
     ObjectSet_add(&set, object);
     const char** s = Mem_alloc(2 * sizeof(char*));
     s[0] = "build-gcc\\ntutils.lib";
-    s[1] = "C:\\Program Files (x86)\\Windows Kits\\10\\lib\\10.0.19041.0\\um\\x64\\kernel32.Lib";
-    Linker_run(&set, s, 0);
+    s[0] = "C:\\Program Files (x86)\\Windows Kits\\10\\lib\\10.0.19041.0\\um\\x64\\kernel32.Lib";
+    Linker_run(&set, s, 1);
 }
 
 
 bool Backend_arg_is_ptr(AllocInfo info) {
-    return !(info.size == 1 || info.size == 2 ||
+    return !(info.size == 0 || info.size == 1 || info.size == 2 ||
              info.size == 4 || info.size == 8);
 }
 

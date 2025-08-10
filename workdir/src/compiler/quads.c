@@ -508,6 +508,7 @@ var_id quads_cast(Parser* parser, Expression* expr, QuadList* quads,
         return dest;
     }
     q->op1.var = expr->cast.e->var;
+    assert(q->op1.var != VAR_ID_INVALID);
     return dest;
 }
 
@@ -822,6 +823,7 @@ loop:
             case EXPRESSION_STRING:
                 q = QuadList_addquad(quads, QUAD_ARRAY_TO_PTR, dest);
                 q->op1.var = e->string.str.var;
+                assert(q->op1.var != VAR_ID_INVALID);
                 break;
             default:
                 assert("Unkown expression" && false);
@@ -1187,11 +1189,14 @@ void quads_statements(Parser* parser, QuadList* quads, Statement** statements,
                                             quads, LABEL_ID_INVALID, 
                                             0, VAR_ID_INVALID, true);
                 type_id arr_type = lhs->array_index.array->type;
-                var_id arr = quads_expression(parser, 
+                var_id arr = quads_expression(parser,
                                  lhs->array_index.array, quads, 
                                  LABEL_ID_INVALID, 0, VAR_ID_INVALID, true);
+                type_id elem_type = parser->type_table.data[arr_type].parent;
+                type_id elem_ptr = type_ptr_of(&parser->type_table, elem_type);
+
                 var_id a = QuadList_addvar(quads, NAME_ID_INVALID, 
-                                           arr_type, parser);
+                                           elem_ptr, parser);
                 rhs->var = a; // Shoud be lhs ??? Probably does not matter
                 Quad* q = QuadList_addquad(quads, QUAD_CALC_ARRAY_ADDR, a);
                 q->scale = quad_scale(parser, rhs_type);

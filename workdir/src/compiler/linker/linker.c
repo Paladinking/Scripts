@@ -613,7 +613,7 @@ void combine_sections(Object* obj) {
             obj->sections[match].type = SECTION_INVALID;
 
             uint32_t offset;
-            if (obj->sections[match].align > dest.sections[i].align) {
+            if (obj->sections[match].align > dest.sections[sec].align) {
                 dest.sections[sec].align = obj->sections[match].align;
             }
             if (dest.sections[sec].type == SECTION_BSS) {
@@ -807,7 +807,11 @@ void Linker_run(ObjectSet* objects, const ochar_t** argv, uint32_t argc) {
     }
 
     Library* libs = Mem_alloc(argc * sizeof(Library));
+    if (libs == NULL) {
+        out_of_memory(NULL);
+    }
 
+    LOG_INFO("Reading libraries");
     String filebuf;
     for (uint32_t ix = 0; ix < argc; ++ix) {
         if (!read_text_file(&filebuf, argv[ix])) {
@@ -821,6 +825,7 @@ void Linker_run(ObjectSet* objects, const ochar_t** argv, uint32_t argc) {
         }
         String_free(&filebuf);
     }
+    LOG_INFO("Done reading libraries");
 
     SymbolQueue queue;
     SymbolQueue_create(&queue);
