@@ -6,6 +6,8 @@
 #include <glob.h>
 #include <coff.h>
 
+void serialize_op(AsmCtx* ctx, String* dest, Amd64Op* op);
+
 static enum Amd64OperandType simple_operand(enum Amd64OperandType op) {
     switch (op) {
     case OPERAND_LABEL:
@@ -170,7 +172,16 @@ static uint64_t max_op_offset(AsmCtx* ctx, Amd64Op* op, uint64_t* offset) {
         return res;
     }
 
-    fatal_error(NULL, ASM_ERROR_MISSING_ENCODING, LINE_INFO_NONE);
+    const enum LogCatagory LOG_CATAGORY = LOG_CATAGORY_ASSEMBLER;
+    String s;
+    if (String_create(&s)) {
+        String_extend(&s, "Missing encoding for ");
+        serialize_op(ctx, &s, op);
+        String_append(&s, '\n');
+        LOG_STR_CRITICAL(s.buffer, s.length);
+        String_free(&s);
+    }
+    assert("Missing asm encoding" && false);
     return 0;
 }
 
@@ -446,6 +457,7 @@ Amd64Op* create_op(AsmCtx* ctx, enum Amd64Opcode opcode) {
 
 
 void asm_ctx_create(AsmCtx* ctx, Object* object, section_ix code_section) {
+    const enum LogCatagory LOG_CATAGORY = LOG_CATAGORY_ASM_GENERATION;
     if (!Arena_create(&ctx->arena, 0xffffffff, out_of_memory, NULL)) {
         LOG_CRITICAL("Failed creating arena");
         fatal_error(NULL, PARSE_ERROR_NONE, LINE_INFO_NONE);
@@ -754,35 +766,41 @@ void serialize_operand(AsmCtx* ctx, String* dest, Amd64Operand operand) {
     }
 }
 
+void serialize_op(AsmCtx* ctx, String* dest, Amd64Op* op) {
+    if (op->opcode == OPCODE_START) {
+        const uint8_t* name = ctx->object->symbols[op->symbol].name;
+        uint32_t name_len = ctx->object->symbols[op->symbol].name_len;
+        String_format_append(dest, "%*.*s:", name_len, name_len, name);
+        return;
+    }
+    if (op->opcode == OPCODE_LABEL) {
+        String_format_append(dest, "L%u:", op->label);
+        return;
+    }
+    assert(op->opcode < OPCODE_START);
+    String_format_append(dest, "    %s", OP_NAMES[op->opcode]);
+
+    if (op->count > 0) {
+        String_append(dest, ' ');
+        serialize_operand(ctx, dest, op->operands[0]);
+        for (int i = 1; i < op->count; ++i) {
+            String_append_count(dest, ", ", 2);
+            serialize_operand(ctx, dest, op->operands[i]);
+        }
+    }
+}
+
 void asm_serialize(AsmCtx* ctx, String* dest) {
     Amd64Op* op = ctx->start;
     for (; op != ctx->end; op = op->next) {
-        if (op->opcode == OPCODE_START) {
-            const uint8_t* name = ctx->object->symbols[op->symbol].name;
-            uint32_t name_len = ctx->object->symbols[op->symbol].name_len;
-            String_format_append(dest, "%*.*s:\n", name_len, name_len, name);
-            continue;
-        }
-        if (op->opcode == OPCODE_LABEL) {
-            String_format_append(dest, "L%u:\n", op->label);
-            continue;
-        }
-        assert(op->opcode < OPCODE_START);
-        String_format_append(dest, "    %s", OP_NAMES[op->opcode]);
-
-        if (op->count > 0) {
-            String_append(dest, ' ');
-            serialize_operand(ctx, dest, op->operands[0]);
-            for (int i = 1; i < op->count; ++i) {
-                String_append_count(dest, ", ", 2);
-                serialize_operand(ctx, dest, op->operands[i]);
-            }
-        }
+        serialize_op(ctx, dest, op);
         String_append(dest, '\n');
     }
 }
 
 void asm_assemble(AsmCtx* ctx, symbol_ix symbol) {
+    const enum LogCatagory LOG_CATAGORY = LOG_CATAGORY_ASSEMBLER;
+
     ctx->start->symbol = symbol;
     uint64_t offset = 0;
     Amd64Op* op;
@@ -796,7 +814,7 @@ void asm_assemble(AsmCtx* ctx, symbol_ix symbol) {
         op->max_offset = off;
     }
 
-    LOG_WARNING("Done computing offsets");
+    LOG_INFO("Done computing offsets");
 
     AddrBuf addrs;
     AddrBuf_create(&addrs);
@@ -837,7 +855,7 @@ void asm_assemble(AsmCtx* ctx, symbol_ix symbol) {
 
     AddrBuf_free(&addrs);
 
-    LOG_WARNING("Done assembly: %llu bytes", buf->size);
+    LOG_INFO("Done assembly: %llu bytes", buf->size);
 }
 
 void asm_reset(AsmCtx* ctx) {

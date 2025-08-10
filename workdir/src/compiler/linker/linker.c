@@ -4,6 +4,8 @@
 #include <glob.h>
 #include <printf.h>
 
+const static enum LogCatagory LOG_CATAGORY = LOG_CATAGORY_LINKER;
+
 #include "pe_coff.h"
 
 Symbol* find_symbol(Object* obj, const uint8_t* sym, uint32_t sym_len);
@@ -800,7 +802,8 @@ void remap_section_relative(Object* obj) {
 }
 
 
-void Linker_run(ObjectSet* objects, const ochar_t** argv, uint32_t argc) {
+void Linker_run(ObjectSet* objects, const ochar_t** argv, uint32_t argc,
+                bool serialize_obj) {
     if (objects->object_count == 0) {
         LOG_ERROR("No linker input");
         return;
@@ -849,6 +852,8 @@ void Linker_run(ObjectSet* objects, const ochar_t** argv, uint32_t argc) {
         }
     }
 
+    bool missing_symbol = false;
+
     while (SymbolQueue_size(&queue) > 0) {
         StrWithLength sym = SymbolQueue_get(&queue);
 
@@ -868,27 +873,22 @@ void Linker_run(ObjectSet* objects, const ochar_t** argv, uint32_t argc) {
             }
         }
         if (!found) {
-            LOG_ERROR("Missing symbol '%*.*s'", sym.len, sym.len, sym.str);
-            return;
+            missing_symbol = true;
+            LOG_USER_ERROR("Missing symbol '%*.*s'", sym.len, sym.len, sym.str);
         }
+    }
+
+    if (missing_symbol) {
+        return;
     }
 
     objects->object_count = 1;
 
-    String s;
-    if (String_create(&s)) {
-        Object_serialize(dest, &s);
-        outputUtf8(s.buffer, s.length);
-    }
-
     for (uint32_t i = 0; i < argc; ++i) {
         remap_section_relative(libs[i].dest);
-        _printf("%s:\n", argv[i]);
-        String_clear(&s);
-        Object_serialize(libs[i].dest, &s);
-        outputUtf8(s.buffer, s.length);
+        LOG_INFO("Reading library '%s'", argv[i]);
 
-        _printf("Merging %s (%u sections)\n", argv[i], libs[i].dest->section_count);
+        LOG_INFO("Merging %s (%u sections)", argv[i], libs[i].dest->section_count);
         merge_objects(dest, libs[i].dest);
         Mem_free(libs[i].dest);
         libs[i].dest = NULL;
@@ -937,10 +937,16 @@ void Linker_run(ObjectSet* objects, const ochar_t** argv, uint32_t argc) {
     Symbol* entry = find_symbol(dest, (const uint8_t*)"main", 4);
     assert(entry != NULL);
 
+    String s;
+    if (serialize_obj && String_create(&s)) {
+        Object_serialize(dest, &s);
+        outputUtf8(s.buffer, s.length);
+    }
+
     ByteBuffer data;
     Buffer_create(&data);
     PeExectutable_create(dest, &data, entry - dest->symbols);
 
     write_file("out.exe", data.data, data.size);
-    LOG_INFO("Created 'out.exe'");
+    LOG_USER_INFO("Created 'out.exe'");
 }

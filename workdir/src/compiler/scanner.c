@@ -1,6 +1,8 @@
 #include "language/scan.h"
 #include "tokenizer.h"
 
+const static enum LogCatagory LOG_CATAGORY = LOG_CATAGORY_SCANNER;
+
 struct Tokenizer {
     Parser* parser;
     Token last_token;

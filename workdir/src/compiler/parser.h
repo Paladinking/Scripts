@@ -3,7 +3,7 @@
 #include "tables.h"
 #include "dynamic_string.h"
 
-bool Parser_create(Parser* parser);
+void Parser_create(Parser* parser);
 
 void scan_program(Parser* parser, String* indata);
 

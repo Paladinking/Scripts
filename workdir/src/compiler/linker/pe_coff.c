@@ -271,6 +271,8 @@ void Coff64Image_free(Coff64Image* img) {
 
 const uint8_t* pe_section_name(const SectionTableEntry* section, const uint8_t* buf, 
                                uint64_t str_table, uint64_t size, uint32_t* len) {
+    const enum LogCatagory LOG_CATAGORY = LOG_CATAGORY_OBJECT_PARSER;
+
     const uint8_t* name;
     uint32_t name_len = 0;
     *len = 0;
@@ -305,6 +307,8 @@ const uint8_t* pe_section_name(const SectionTableEntry* section, const uint8_t* 
 }
 
 Object* PeObject_read(const uint8_t* buf, uint64_t size) {
+    const enum LogCatagory LOG_CATAGORY = LOG_CATAGORY_OBJECT_PARSER;
+
     const CoffHeader* header = (const CoffHeader*)buf;
     if (header->machine != 0x8664) {
         LOG_WARNING("Invalid machine type");
@@ -611,6 +615,8 @@ uint8_t* idata_name(char c) {
 
 Object* parse_short_import(const ImportHeader* header, const uint8_t* buf,
                            const uint8_t* ext_name, uint32_t ext_len) {
+    const enum LogCatagory LOG_CATAGORY = LOG_CATAGORY_OBJECT_PARSER;
+
     const uint8_t* sym = buf;
     uint32_t sym_len = 0;
 
@@ -685,6 +691,8 @@ Object* parse_short_import(const ImportHeader* header, const uint8_t* buf,
 }
 
 bool PeLibrary_read(ObjectSet* dest, const uint8_t* buf, uint64_t size) {
+    const enum LogCatagory LOG_CATAGORY = LOG_CATAGORY_OBJECT_PARSER;
+
     if (size < 8 || memcmp(buf, "!<arch>\n", 8) != 0) {
         return false;
     }
@@ -793,6 +801,8 @@ bool PeLibrary_read(ObjectSet* dest, const uint8_t* buf, uint64_t size) {
 void rewrite_idata(Object* obj, section_ix section, uint32_t* iat_offset,
                    uint32_t* iat_size, uint32_t* id_offset, uint32_t* id_size,
                    section_ix* import_section) {
+    const enum LogCatagory LOG_CATAGORY = LOG_CATAGORY_OBJECT_WRITER;
+
     Section* s = obj->sections + section;
     if (s->align < 16) {
         s->align = 16;
@@ -948,6 +958,7 @@ void rewrite_bss(Object* obj, section_ix* data,
 
 
 void PeExectutable_create(Object* obj, ByteBuffer* dest, symbol_ix entrypoint) {
+    const enum LogCatagory LOG_CATAGORY = LOG_CATAGORY_OBJECT_WRITER;
 
     uint32_t iat_offset = 0, iat_size = 0, id_offset = 0, id_size = 0;
     section_ix import_section = SECTION_IX_NONE;
@@ -964,11 +975,7 @@ void PeExectutable_create(Object* obj, ByteBuffer* dest, symbol_ix entrypoint) {
     uint32_t uninitialized_size;
     rewrite_bss(obj, &data, &uninitialized_size);
 
-    String s;
-    String_create(&s);
-    Object_serialize(obj, &s);
-    outputUtf8(s.buffer, s.length);
-    oprintf("Import address table: %u, %u, Import directories: %u, %u\n",
+    LOG_INFO("Import address table: %u, %u, Import directories: %u, %u\n",
             iat_offset, iat_size, id_offset, id_size);
 
     Coff64Image img;
@@ -1089,7 +1096,7 @@ void PeExectutable_create(Object* obj, ByteBuffer* dest, symbol_ix entrypoint) {
 
     Symbol* entry = &obj->symbols[entrypoint];
     uint32_t entry_rva = rvas[entry->section] + entry->offset;
-    oprintf("Entry: %u\n", entry_rva);
+    LOG_INFO("Entry: %u\n", entry_rva);
 
     Coff64Image_set_entrypoint(&img, entry_rva);
 

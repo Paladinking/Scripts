@@ -3,6 +3,8 @@
 #include <printf.h>
 #include "format.h"
 
+#define LOG_CATAGORY LOG_CATAGORY_REGISTER_ALLOCATION
+
 const uint8_t GEN_CALL_REGS[4] = {RCX, RDX, R8, R9};
 const bool GEN_VOLATILE_REGS[GEN_REG_COUNT] = {
     true, true, true, false, false, false, false, false,
@@ -527,6 +529,9 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
         assert(false && "Not implemented");
     }
 }
+
+#undef LOG_CATAGORY
+#define LOG_CATAGORY LOG_CATAGORY_ASM_GENERATION
 
 bool is_same(VarData* vars, var_id a, var_id b) {
     if (a == b) {
@@ -1392,9 +1397,9 @@ static const uint8_t* str_literalname(uint64_t num, uint32_t* len, Arena* arena)
     return str;
 }
 
-void Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
-                          FunctionTable* externs, StringLiteral* literals,
-                          Arena* arena) {
+Object* Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
+                             FunctionTable* externs, StringLiteral* literals,
+                             Arena* arena, bool serialize) {
     Object* object = Mem_alloc(sizeof(Object));
     if (object == NULL) {
         out_of_memory(NULL);
@@ -1464,18 +1469,12 @@ void Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
 
     ctx.start = start;
     String out;
-    if (String_create(&out)) {
+    if (serialize && String_create(&out)) {
         asm_serialize(&ctx, &out);
         outputUtf8(out.buffer, out.length);
     }
 
-    ObjectSet set;
-    ObjectSet_create(&set);
-    ObjectSet_add(&set, object);
-    const char** s = Mem_alloc(2 * sizeof(char*));
-    s[0] = "build-gcc\\ntutils.lib";
-    s[0] = "C:\\Program Files (x86)\\Windows Kits\\10\\lib\\10.0.19041.0\\um\\x64\\kernel32.Lib";
-    Linker_run(&set, s, 1);
+    return object;
 }
 
 

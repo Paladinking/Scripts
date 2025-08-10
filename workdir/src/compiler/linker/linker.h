@@ -164,6 +164,7 @@ bool Object_has_section(Object* obj, enum SectionType type);
 
 void Object_serialize(Object* obj, String* s);
 
-void Linker_run(ObjectSet* objects, const ochar_t** argv, uint32_t argc);
+void Linker_run(ObjectSet* objects, const ochar_t** argv, uint32_t argc,
+                bool serialize_obj);
 
 #endif
