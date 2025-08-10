@@ -580,6 +580,7 @@ Expression* OnString(void* ctx, uint64_t start, uint64_t end, StrWithLength s) {
         parser->last_str = &e->string.str;
     } else {
         parser->last_str->next = &e->string.str;
+        parser->last_str = &e->string.str;
     }
 
     return e;

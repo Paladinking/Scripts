@@ -35,14 +35,6 @@ fn test(uint64 x) -> uint64 {
 }
 
 
-
-
-
-
-
-
-
-
 fn take_z(Z z) -> uint32 {
     return z.a + z.b + z.c;
 }

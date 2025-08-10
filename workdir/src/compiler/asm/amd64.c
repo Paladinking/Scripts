@@ -123,6 +123,14 @@ static uint64_t max_op_offset(AsmCtx* ctx, Amd64Op* op, uint64_t* offset) {
                 ++oper_ix;
                 break;
             case REG_REG:
+                if (op->operands[oper_ix].type == OPERAND_REG8) {
+                    uint8_t reg = op->operands[oper_ix].reg;
+                    if (!rex && (reg == RSP || reg == RBP ||
+                                 reg == RSI || reg == RDI)) {
+                        rex = 0x40;
+                        ++size;
+                    }
+                }
                 if (op->operands[oper_ix].reg >= R8) {
                     if (!rex) {
                         rex = 0x40;
@@ -134,6 +142,14 @@ static uint64_t max_op_offset(AsmCtx* ctx, Amd64Op* op, uint64_t* offset) {
                 break;
             case RM_REG:
             case PLUS_REG:
+                if (op->operands[oper_ix].type == OPERAND_REG8) {
+                    uint8_t reg = op->operands[oper_ix].reg;
+                    if (!rex && (reg == RSP || reg == RBP ||
+                                 reg == RSI || reg == RDI)) {
+                        rex = 0x40;
+                        ++size;
+                    }
+                }
                 if (op->operands[oper_ix].reg >= R8) {
                     if (!rex) {
                         rex = 0x40;
@@ -499,6 +515,9 @@ void asm_mem_var(AsmCtx* ctx, uint8_t size, uint8_t reg, uint8_t scale,
         assert(size == 8);
         op->operands[op->count].type = OPERAND_MEM64;
     }
+
+    assert(op->count == 0 || op->operands[op->count - 1].type != OPERAND_MEM64);
+
     op->operands[op->count].reg = reg;
     op->operands[op->count].scale = scale;
     op->operands[op->count].scale_reg = scale_reg;
@@ -590,7 +609,9 @@ const char* OP_NAMES[] = {
     "cmovg", "cmova", "cmovge", "cmovae",
     "cmove", "cmovz", "cmovne", "cmovnz",
     "movsxd", "movsx", "movzx",
-    "setz"
+    "setg", "seta", "setle", "setbe",
+    "setge", "setae", "setl", "setb",
+    "setne", "setnz", "sete", "setz"
 };
 
 
