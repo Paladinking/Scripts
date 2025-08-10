@@ -226,4 +226,6 @@ typedef struct FunctionDef {
     VarList vars;
 } FunctionDef;
 
+Expression* get_subexpression(Expression* e, uint64_t ix);
+
 #endif

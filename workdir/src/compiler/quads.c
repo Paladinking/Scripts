@@ -195,40 +195,6 @@ VarData* QuadList_getvar(QuadList* quads, var_id id) {
     return &quads->vars.data[id];
 }
 
-Expression* get_subexpr(Expression* e, uint64_t ix) {
-    switch (e->kind) {
-    case EXPRESSION_BINOP:
-        if (ix == 0) {
-            return e->binop.lhs;
-        } else if (ix == 1) {
-            return e->binop.rhs;
-        }
-        return NULL;
-    case EXPRESSION_CALL:
-        if (ix == 0) {
-            return e->call.function;
-        } else if (ix <= e->call.arg_count) {
-            return e->call.args[ix - 1].e;
-        }
-        return NULL;
-    case EXPRESSION_ARRAY_INDEX:
-        if (ix == 0) {
-            return e->array_index.array;
-        } else if (ix == 1) {
-            return e->array_index.index;
-        }
-        return NULL;
-    case EXPRESSION_UNOP:
-        return ix == 0 ? e->unop.expr : NULL;
-    case EXPRESSION_CAST:
-        return ix == 0 ? e->unop.expr : NULL;
-    case EXPRESSION_ACCESS_MEMBER:
-        return ix == 0 ? e->member_access.structexpr : NULL;
-    default:
-        return NULL;
-    }
-}
-
 var_id quads_unop(Parser* parser, Expression* expr, QuadList* quads,
                   var_id dest) {
     var_id v = expr->unop.expr->var;
@@ -751,7 +717,7 @@ var_id quads_expression(Parser* parser, Expression* expr, QuadList* quads,
     while (1) {
 loop:
         RESERVE(stack, stack_size + 1, stack_cap);
-        Expression* subexpr = get_subexpr(e, 0);
+        Expression* subexpr = get_subexpression(e, 0);
         if (subexpr != NULL) {
             stack[stack_size] = (struct Node){e, 1, jmp_label, jmp_quad, 
                                               needs_var, dest, 
@@ -859,7 +825,7 @@ loop:
 
         while (stack_size > 0) {
             Expression* top = stack[stack_size - 1].e;
-            Expression* subexpr = get_subexpr(top, stack[stack_size - 1].ix);
+            Expression* subexpr = get_subexpression(top, stack[stack_size - 1].ix);
             jmp_quad = stack[stack_size - 1].jmp_quad;
             jmp_label = stack[stack_size - 1].jmp_label;
             if (subexpr != NULL) {
@@ -1038,9 +1004,75 @@ void quads_assign_access_member(Parser* parser, Expression* lhs,
     q->op2 = rval;
 }
 
-void quads_return_ptr(Parser* parser, QuadList* quads, Expression* val,
-                      var_id retvar) {
+void quads_assign(Parser* parser, QuadList* quads, Statement* s) {
+    Expression* lhs = s->assignment.lhs;
+    Expression* rhs = s->assignment.rhs;
+    if (s->assignment.ptr_copy) {
+        quads_assign_ptr_copy(parser, lhs, rhs, quads);
+    } else if (lhs->kind == EXPRESSION_VARIABLE) {
+        if (!parser->name_table.data[lhs->variable.ix].has_var) {
+            QuadList_addvar(quads, lhs->variable.ix, lhs->type, parser);
+        }
+        var_id v = parser->name_table.data[lhs->variable.ix].variable;
+        lhs->var = v;
+        quads_expression(parser, rhs, quads, LABEL_ID_INVALID, 0, v, true);
+    } else if (lhs->kind == EXPRESSION_ARRAY_INDEX) {
+        assert(!lhs->array_index.get_addr);
+        type_id rhs_type = rhs->type;
+        var_id rval = quads_expression(parser, rhs, quads,
+                                       LABEL_ID_INVALID, 0,
+                                       VAR_ID_INVALID, true);
+        var_id ix = quads_expression(parser, lhs->array_index.index, 
+                                     quads, LABEL_ID_INVALID, 
+                                     0, VAR_ID_INVALID, true);
+        type_id arr_type = lhs->array_index.array->type;
+        var_id arr = quads_expression(parser,
+                         lhs->array_index.array, quads, 
+                         LABEL_ID_INVALID, 0, VAR_ID_INVALID, true);
+        type_id elem_type = parser->type_table.data[arr_type].parent;
+        type_id elem_ptr = type_ptr_of(&parser->type_table, elem_type);
+
+        var_id a = QuadList_addvar(quads, NAME_ID_INVALID, 
+                                   elem_ptr, parser);
+        lhs->var = a;
+        Quad* q = QuadList_addquad(quads, QUAD_CALC_ARRAY_ADDR, a);
+        q->scale = quad_scale(parser, rhs_type);
+        q->op1.var = arr;
+        q->op2 = ix;
+        q = QuadList_addquad(quads, QUAD_SET_ADDR, VAR_ID_INVALID);
+        q->op1.var = a;
+        q->op2 = rval;
+    } else if (lhs->kind == EXPRESSION_UNOP && lhs->unop.op == UNOP_DEREF) {
+        var_id rval = quads_expression(parser, rhs, quads, LABEL_ID_INVALID, 0,
+                                       VAR_ID_INVALID, true);
+        var_id ptr = quads_expression(parser, lhs->unop.expr, quads,
+                                      LABEL_ID_INVALID, 0, VAR_ID_INVALID, true);
+        Quad* q = QuadList_addquad(quads, QUAD_SET_ADDR, VAR_ID_INVALID);
+        q->op1.var = ptr;
+        q->op2 = rval;
+    } else if (lhs->kind == EXPRESSION_ACCESS_MEMBER) {
+        quads_assign_access_member(parser, lhs, rhs, quads);
+    } else {
+        assert("Illegal assigment" && false);
+    }
+}
+
+void quads_return(Parser* parser, QuadList* quads, 
+                  Statement* s, var_id retvar) {
+    Expression* val = s->return_.return_value;
+    if (!s->return_.ptr_return) {
+        var_id v = quads_expression(parser, val, quads,
+                LABEL_ID_INVALID, 0, VAR_ID_INVALID, true);
+        Quad* q = QuadList_addquad(quads, QUAD_RETURN, VAR_ID_INVALID);
+        q->op1.var = v;
+        return;
+    }
+
+    // ptr_returns means we return ptr to value, actual value in <retvar>
+    // For x64 this is done with structs that cannot be passed in registers.
     if (val->kind == EXPRESSION_CALL) {
+        // If the call was not ptr_return, it would be wrapper with UNOP_ADDROF2
+        // Also, chained return types without casts must be exactly the same
         assert(val->call.ptr_return);
         assert(val->call.get_addr);
         var_id v = quads_expression(parser, val, quads, LABEL_ID_INVALID, 0, 
@@ -1168,77 +1200,14 @@ void quads_statements(Parser* parser, QuadList* quads, Statement** statements,
         }
 
         if (s->type == STATEMENT_ASSIGN) {
-            Expression* lhs = s->assignment.lhs;
-            Expression* rhs = s->assignment.rhs;
-            if (s->assignment.ptr_copy) {
-                quads_assign_ptr_copy(parser, lhs, rhs, quads);
-            } else if (lhs->kind == EXPRESSION_VARIABLE) {
-                if (!parser->name_table.data[lhs->variable.ix].has_var) {
-                    QuadList_addvar(quads, lhs->variable.ix, lhs->type, parser);
-                }
-                var_id v = parser->name_table.data[lhs->variable.ix].variable;
-                lhs->var = v;
-                quads_expression(parser, rhs, quads, LABEL_ID_INVALID, 
-                                 0, v, true);
-            } else if (lhs->kind == EXPRESSION_ARRAY_INDEX) {
-                assert(!lhs->array_index.get_addr);
-                type_id rhs_type = rhs->type;
-                var_id rval = quads_expression(parser, rhs, quads,
-                                            LABEL_ID_INVALID, 0,
-                                            VAR_ID_INVALID, true);
-                type_id ix_type = lhs->array_index.index->type;
-                var_id i = quads_expression(parser, lhs->array_index.index, 
-                                            quads, LABEL_ID_INVALID, 
-                                            0, VAR_ID_INVALID, true);
-                type_id arr_type = lhs->array_index.array->type;
-                var_id arr = quads_expression(parser,
-                                 lhs->array_index.array, quads, 
-                                 LABEL_ID_INVALID, 0, VAR_ID_INVALID, true);
-                type_id elem_type = parser->type_table.data[arr_type].parent;
-                type_id elem_ptr = type_ptr_of(&parser->type_table, elem_type);
-
-                var_id a = QuadList_addvar(quads, NAME_ID_INVALID, 
-                                           elem_ptr, parser);
-                rhs->var = a; // Shoud be lhs ??? Probably does not matter
-                Quad* q = QuadList_addquad(quads, QUAD_CALC_ARRAY_ADDR, a);
-                q->scale = quad_scale(parser, rhs_type);
-                q->op1.var = arr;
-                q->op2 = i;
-                q = QuadList_addquad(quads, QUAD_SET_ADDR, VAR_ID_INVALID);
-                q->op1.var = a;
-                q->op2 = rval;
-            } else if (lhs->kind == EXPRESSION_UNOP && lhs->unop.op == UNOP_DEREF) {
-                type_id rhs_type = rhs->type;
-                var_id rval = quads_expression(parser, rhs, quads, LABEL_ID_INVALID, 0,
-                                               VAR_ID_INVALID, true);
-                type_id ptr_t = lhs->unop.expr->type;
-                var_id ptr = quads_expression(parser, lhs->unop.expr, quads,
-                                              LABEL_ID_INVALID, 0, VAR_ID_INVALID, true);
-                Quad* q = QuadList_addquad(quads, QUAD_SET_ADDR, VAR_ID_INVALID);
-                q->op1.var = ptr;
-                q->op2 = rval;
-            } else if (lhs->kind == EXPRESSION_ACCESS_MEMBER) {
-                quads_assign_access_member(parser, lhs, rhs, quads);
-            } else {
-                assert("Illegal assigment" && false);
-            }
+            quads_assign(parser, quads, s);
             continue;
         } else if (s->type == STATEMENT_EXPRESSION) {
             quads_expression(parser, s->expression, quads, LABEL_ID_INVALID,
                              0, VAR_ID_INVALID, false);
             continue;
         } else if (s->type == STATEMENT_RETURN) {
-            if (s->return_.ptr_return) {
-                assert(retvar != VAR_ID_INVALID);
-                quads_return_ptr(parser, quads, s->return_.return_value, 
-                                 retvar);
-            } else {
-                Expression* ret = s->return_.return_value;
-                var_id v = quads_expression(parser, ret, quads,
-                        LABEL_ID_INVALID, 0, VAR_ID_INVALID, true);
-                Quad* q = QuadList_addquad(quads, QUAD_RETURN, VAR_ID_INVALID);
-                q->op1.var = v;
-            }
+            quads_return(parser, quads, s, retvar);
             continue;
         }
     }
@@ -1461,8 +1430,6 @@ void Quad_GenerateQuads(Parser* parser, Quads* quads, Arena* arena) {
         QuadList_add_string(&list, parser, literal);
         literal = literal->next;
     }
-    // TODO: add other global variables
-
     uint64_t global_count = list.vars.size;
 
     for (func_id ix = 0; ix < parser->function_table.size; ++ix) {
@@ -1501,13 +1468,6 @@ void Quad_GenerateQuads(Parser* parser, Quads* quads, Arena* arena) {
 
         def->quad_end = list.tail;
         def->end_label = end_label;
-
-        // Mark all created temporary variables as a part of this function
-        /*for (var_id v = start; v < list.vars.size; ++v) {
-            if (list.vars.data[v].kind == VAR_TEMP) {
-                list.vars.data[v].function = ix;
-            }
-        }*/
 
         // Move all variables to function, duplicate global vars
         def->vars = list.vars;
