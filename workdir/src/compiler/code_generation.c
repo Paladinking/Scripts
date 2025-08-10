@@ -11,6 +11,8 @@
 #pragma intrinsic(memset)
 #endif
 
+const static enum LogCatagory LOG_CATAGORY = LOG_CATAGORY_REGISTER_ALLOCATION;
+
 // max: highest variable value + 1
 VarSet VarSet_create(var_id max) {
     uint64_t len = max / 64;
@@ -417,8 +419,8 @@ bool can_allocate(ConflictGraph* graph, uint64_t to_alloc, var_id* stack) {
 }
 
 
-void Generate_function(Quads* quads, Quad* start, Quad* end,
-                       uint64_t* label_map, VarList* vars, Arena* arena) {
+void allocate_registers(Quads* quads, Quad* start, Quad* end,
+                        uint64_t* label_map, VarList* vars, Arena* arena) {
     FlowNode* nodes = Mem_alloc(8 * sizeof(FlowNode));
     if (nodes == NULL) {
         out_of_memory(NULL);
@@ -593,8 +595,9 @@ void Generate_function(Quads* quads, Quad* start, Quad* end,
     Mem_free(stack);
 }
 
-void Generate_code(Quads* quads, FunctionTable* functions, FunctionTable* externs,
-                   NameTable* name_table, StringLiteral* literals, Arena* arena) {
+Object* Generate_code(Quads* quads, FunctionTable* functions, FunctionTable* externs,
+                      NameTable* name_table, StringLiteral* literals, Arena* arena,
+                      bool serialze_asm) {
     uint64_t* label_map = Mem_alloc(quads->label_count * sizeof(uint64_t));
     if (label_map == NULL) {
         out_of_memory(NULL);
@@ -609,9 +612,10 @@ void Generate_code(Quads* quads, FunctionTable* functions, FunctionTable* extern
         var_id var_start = 0;
         var_id var_end = functions->data[ix]->vars.size;
         
-        Generate_function(quads, start, end, label_map,
+        allocate_registers(quads, start, end, label_map,
                           &functions->data[ix]->vars, arena);
     }
-    Backend_generate_asm(name_table, functions, externs, literals, arena);
     Mem_free(label_map);
+    return Backend_generate_asm(name_table, functions, externs, literals, 
+                                arena, serialze_asm);
 }

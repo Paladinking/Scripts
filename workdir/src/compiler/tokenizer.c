@@ -1,6 +1,9 @@
 #include "tokenizer.h"
 #include "tables.h"
 
+const static enum LogCatagory LOG_CATAGORY = LOG_CATAGORY_TOKENIZER;
+
+
 // Set parser input to indata
 void parser_set_input(Parser* parser, String* indata) {
     parser->indata = (const uint8_t*)indata->buffer;

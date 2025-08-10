@@ -3,6 +3,8 @@
 #include "log.h"
 #include <mem.h>
 
+const static enum LogCatagory LOG_CATAGORY = LOG_CATAGORY_TABLES;
+
 
 // Allocate new type id. Does not initialize
 type_id create_type_id(TypeTable* type_table) {

@@ -2,6 +2,7 @@
 #define CODE_GENERATION_H_00
 #include "tables.h"
 #include "quads.h"
+#include "linker/linker.h"
 
 typedef struct ConflictGraph {
     uint64_t reg_count;
@@ -45,8 +46,9 @@ typedef struct FlowNode {
 var_id create_temp_var(ConflictGraph* graph, VarList* vars, FlowNode* node,
                        VarSet* live, var_id base);
 
-void Generate_code(Quads* quads, FunctionTable* functions, FunctionTable* externs,
-                   NameTable* name_table, StringLiteral* literals, Arena* arena);
+Object* Generate_code(Quads* quads, FunctionTable* functions, FunctionTable* externs,
+                      NameTable* name_table, StringLiteral* literals, Arena* arena,
+                      bool serialze_asm);
 
 bool Backend_arg_is_ptr(AllocInfo info);
 

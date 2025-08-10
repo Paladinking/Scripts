@@ -3,6 +3,8 @@
 
 const LineInfo LINE_INFO_NONE = {-1, -1};
 
+const static enum LogCatagory LOG_CATAGORY = LOG_CATAGORY_PARSER;
+
 void parser_add_keyword(Parser* parser, const char* keyword, name_id id) {
     StrWithLength s = {(const uint8_t*)keyword, strlen(keyword)};
     name_id n = name_insert(&parser->name_table, s, TYPE_ID_INVALID,
@@ -30,16 +32,16 @@ void parser_add_builtin(Parser* parser, type_id id, uint32_t size, uint32_t alig
     def->builtin.name = n;
 }
 
-bool Parser_create(Parser* parser) {
+void Parser_create(Parser* parser) {
     LOG_DEBUG("Creating parser");
     if (!Arena_create(&parser->arena, 0x7fffffff, out_of_memory,
                       parser)) {
-        return false;
+        out_of_memory(NULL);
     }
     FunctionDef** function_data = Mem_alloc(16 * sizeof(FunctionDef*));
     if (function_data == NULL) {
         Arena_free(&parser->arena);
-        return false;
+        out_of_memory(NULL);
     }
     parser->function_table.data = function_data;
     parser->function_table.size = 0;
@@ -49,7 +51,7 @@ bool Parser_create(Parser* parser) {
     if (extern_data == NULL) {
         Arena_free(&parser->arena);
         Mem_free(function_data);
-        return false;
+        out_of_memory(NULL);
     }
     parser->externs.data = extern_data;
     parser->externs.size = 0;
@@ -61,7 +63,7 @@ bool Parser_create(Parser* parser) {
         Arena_free(&parser->arena);
         Mem_free(function_data);
         Mem_free(extern_data);
-        return false;
+        out_of_memory(NULL);
     }
 
     parser->type_table.capacity = TYPE_ID_BUILTIN_COUNT + 16;
@@ -73,7 +75,7 @@ bool Parser_create(Parser* parser) {
         Mem_free(function_data);
         Mem_free(extern_data);
         Mem_free(type_data);
-        return false;
+        out_of_memory(NULL);
     }
     parser->name_table.capacity = 16;
     parser->name_table.size = 0;
@@ -90,7 +92,7 @@ bool Parser_create(Parser* parser) {
         Mem_free(extern_data);
         Mem_free(type_data);
         Mem_free(name_data);
-        return false;
+        out_of_memory(NULL);
     }
     parser->name_table.scope_count = 1;
     parser->name_table.scope_capacity = 8;
@@ -131,8 +133,6 @@ bool Parser_create(Parser* parser) {
     parser_add_builtin(parser, TYPE_ID_NULL, 8, 8, "<Null Type>");
 
     parser->name_table.scope_stack[0] = parser->name_table.size - 1;
-
-    return true;
 }
 
 #define PARSER(ctx) (((struct Tokenizer*)ctx)->parser)

@@ -3,6 +3,8 @@
 #include "mem.h"
 #include "code_generation.h"
 
+const static enum LogCatagory LOG_CATAGORY = LOG_CATAGORY_QUADS_GENERATION;
+
 enum VarDatatype quad_datatype(Parser* parser, type_id type) {
     if (parser->type_table.data[type].kind == TYPE_ARRAY) {
         return VARTYPE_ARRAY;

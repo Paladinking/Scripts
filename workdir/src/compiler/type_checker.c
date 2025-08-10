@@ -3,6 +3,8 @@
 #include "ast.h"
 #include <mem.h>
 
+const static enum LogCatagory LOG_CATAGORY = LOG_CATAGORY_TYPE_CHECKER;
+
 static inline type_id require_number(Parser* parser, Expression* e) {
     if (e->type < TYPE_ID_NUMBER_COUNT) {
         return e->type;
@@ -79,7 +81,8 @@ void addr_to(Parser* parser, Expression* e) {
     e->type = typecheck_unop(parser, e);
 }
 
-type_id merge_numbers(Parser* parser, type_id a, type_id b, Expression* expr_a, Expression* expr_b) {
+type_id merge_numbers(Parser* parser, type_id a, type_id b, Expression* expr_a, 
+                      Expression* expr_b) {
     if (a == b) {
         return a;
     }
