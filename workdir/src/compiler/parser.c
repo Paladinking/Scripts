@@ -860,3 +860,37 @@ void parse_program(Parser* parser, String *indata) {
     parse(&t);
 }
 
+
+Expression* get_subexpression(Expression* e, uint64_t ix) {
+    switch (e->kind) {
+    case EXPRESSION_BINOP:
+        if (ix == 0) {
+            return e->binop.lhs;
+        } else if (ix == 1) {
+            return e->binop.rhs;
+        }
+        return NULL;
+    case EXPRESSION_CALL:
+        if (ix == 0) {
+            return e->call.function;
+        } else if (ix <= e->call.arg_count) {
+            return e->call.args[ix - 1].e;
+        }
+        return NULL;
+    case EXPRESSION_ARRAY_INDEX:
+        if (ix == 0) {
+            return e->array_index.array;
+        } else if (ix == 1) {
+            return e->array_index.index;
+        }
+        return NULL;
+    case EXPRESSION_UNOP:
+        return ix == 0 ? e->unop.expr : NULL;
+    case EXPRESSION_CAST:
+        return ix == 0 ? e->unop.expr : NULL;
+    case EXPRESSION_ACCESS_MEMBER:
+        return ix == 0 ? e->member_access.structexpr : NULL;
+    default:
+        return NULL;
+    }
+}

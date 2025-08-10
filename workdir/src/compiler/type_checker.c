@@ -424,7 +424,6 @@ type_id typecheck_access_member(Parser* parser, Expression* e) {
 }
 
 type_id typecheck_expression(Parser* parser, Expression* e) {
-
     struct Node {
         Expression* e;
         uint64_t ix;
