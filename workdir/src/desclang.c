@@ -864,11 +864,14 @@ void output_reduce_table(Graph* graph, Rule* rules, uint32_t rule_count,
                          uint32_t* map_ix, uint32_t mapping_count,
                          HANDLE h) {
     uint32_t state_count = graph->count;
-    const char* size = "int32_t";
+    const char* size = "uint32_t";
+    uint32_t notfound = UINT32_MAX;
     if (state_count < 255) {
         size = "uint8_t";
+        notfound = UINT8_MAX;
     } else if (state_count < 65535) {
         size = "uint16_t";
+        notfound = UINT16_MAX;
     }
     _printf_h(h, "const static %s reduce_table[%lu] = {\n", 
             size, state_count * mapping_count);
@@ -900,7 +903,7 @@ void output_reduce_table(Graph* graph, Rule* rules, uint32_t rule_count,
                 }
             }
             if (!found) {
-                _printf_h(h, "-1", size);
+                _printf_h(h, "%lu", notfound);
             }
             if (map_ix[i] + 1 < mapping_count) {
                 _printf_h(h, ", ");
@@ -1054,7 +1057,7 @@ void output_syntax_error(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE 
             }
             ++counts[ix];
             if (rules[e->token].type == RULE_LITERAL) {
-                _printf_h(h, "{ TOKEN_LITERAL, .literal = \"%s\" }", rules[e->token].name);
+                _printf_h(h, "{ TOKEN_LITERAL, \"%s\" }", rules[e->token].name);
             } else {
                 _printf_h(h, "{ TOKEN_");
                 if (e->token == rule_count - 1) {
@@ -1064,7 +1067,7 @@ void output_syntax_error(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE 
                         _printf_h(h, "%c", upper(*c));
                     }
                 }
-                _printf_h(h, "}");
+                _printf_h(h, " }");
             }
         }
         for (uint32_t row_ix = 0; row_ix < n->rows.count; ++row_ix) {
@@ -1085,7 +1088,7 @@ void output_syntax_error(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE 
                 }
                 ++counts[ix];
                 if (rules[r].type == RULE_LITERAL) {
-                    _printf_h(h, "{ TOKEN_LITERAL, .literal = \"%s\" }", rules[r].name);
+                    _printf_h(h, "{ TOKEN_LITERAL, \"%s\" }", rules[r].name);
                 } else {
                     _printf_h(h, "{ TOKEN_");
                     if (r == rule_count - 1) {
@@ -1095,7 +1098,7 @@ void output_syntax_error(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE 
                             _printf_h(h, "%c", upper(*c));
                         }
                     }
-                    _printf_h(h, "}");
+                    _printf_h(h, " }");
                 }
             }
         }
@@ -1180,7 +1183,7 @@ void output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
 
     _printf_h(h, "static void push_state(struct Stack* stack, struct StackEntry n) {\n");
     _printf_h(h, "    if (stack->size == stack->cap) {\n");
-    _printf_h(h, "        struct StackEntry* p = Mem_realloc(stack->b,\n");
+    _printf_h(h, "        struct StackEntry* p = (struct StackEntry*)Mem_realloc(stack->b,\n");
     _printf_h(h, "                           2 * stack->cap * sizeof(struct StackEntry));\n");
     _printf_h(h, "        if (p == NULL) {\n");
     _printf_h(h, "            // TODO\n");
@@ -1194,7 +1197,7 @@ void output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
 
     _printf_h(h, "bool parse(void* ctx) {\n");
     _printf_h(h, "    struct Stack stack;\n");
-    _printf_h(h, "    stack.b = Mem_alloc(16 * sizeof(struct StackEntry));\n");
+    _printf_h(h, "    stack.b = (struct StackEntry*)Mem_alloc(16 * sizeof(struct StackEntry));\n");
     _printf_h(h, "    stack.size = 1;\n");
     _printf_h(h, "    stack.b[0].state = 0;\n");
     _printf_h(h, "    stack.b[0].start = 0;\n");
