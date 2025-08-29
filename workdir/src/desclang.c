@@ -664,8 +664,31 @@ char upper(char a) {
     return a;
 }
 
+void output_include_guard(const ochar_t* name, HANDLE h) {
+    if (name[0] >= oL('0') && name[0] <= oL('9')) {
+        oprintf_h(h, "_");
+    }
+    for (uint32_t ix = 0; name[ix] != oL('\0'); ++ix) {
+        ochar_t c = otoupper(name[ix]);
+        if (c == oL('.') || c == oL('-') || c == oL(' ')) {
+            c = oL('_');
+        }
+        if (c == oL('_') || (c >= oL('a') && c <= oL('z')) ||
+            (c >= oL('A') && c <= oL('Z')) || (c >= oL('0') && c <= oL('9'))) {
+            oprintf_h(h, "%c", c);
+        }
+    }
+}
+
 void output_header(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
-                   String* includes) {
+                   String* includes, const ochar_t* name) {
+    if (name != NULL) {
+        oprintf_h(h, "#ifndef ");
+        output_include_guard(name, h);
+        oprintf_h(h, "\n#define ");
+        output_include_guard(name, h);
+        oprintf_h(h, "\n");
+    }
     _printf_h(h, "#include <stdint.h>\n");
     _printf_h(h, "#include <stdbool.h>\n");
 
@@ -733,6 +756,9 @@ void output_header(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
             _printf_h(h, ", %s", rules[rules[ix].data[j]].ctype);
         }
         _printf_h(h, ");\n");
+    }
+    if (name != NULL) {
+        _printf_h(h, "#endif\n");
     }
 }
 
@@ -1143,7 +1169,7 @@ void output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
     _printf_h(h, "#include \"mem.h\"\n\n");
 
     if (header == NULL) {
-        output_header(graph, rules, rule_count, h, includes);
+        output_header(graph, rules, rule_count, h, includes, NULL);
     }
 
     uint32_t mapping_count = 0;
@@ -1949,8 +1975,6 @@ int generate(ochar_t** argv, int argc) {
                 Graph_free(g);
                 goto fail;
             }
-            output_header(g, rules, rule_count, out, &includes);
-
             // Find filename component
             ochar_t* o = ostrrchr(header.str, '/');
 #ifdef WIN32
@@ -1962,6 +1986,8 @@ int generate(ochar_t** argv, int argc) {
             if (o != NULL) {
                 header.str = o + 1;
             }
+
+            output_header(g, rules, rule_count, out, &includes, header.str);
         }
 
         if (flags[1].count == 0) {
