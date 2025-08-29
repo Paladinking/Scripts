@@ -30,11 +30,12 @@ g_context: Optional['Context'] = None
 
 class Package:
     def __init__(self, compile_flags: str, link_flags: str, dlls: List[str],
-                 sources: List[str]) -> None:
+                 sources: List[str], path: pathlib.Path) -> None:
         self.compile_flags = compile_flags
         self.link_flags = link_flags
         self.dlls = dlls
         self.sources = sources
+        self.path = path
 
 
 class Context:
@@ -158,6 +159,61 @@ class BackendBase:
     @property
     def clang(self) -> bool:
         return False
+    @property
+    def ecmascript(self) -> bool:
+        return False
+    def embed_files(self, files: List[str]) -> Optional[str]:
+        return None
+
+
+class EmCC(BackendBase):
+    name = "emcc"
+    @property
+    def ecmascript(self) -> bool:
+        return True
+    def handle_obj_line(self, obj: Obj, line: str) -> bool:
+        return False
+
+    def compile_obj(self, obj: Obj) -> str:
+        return f"emcc -c -o {obj.product} {obj.cmp_flags} {obj.source}"
+
+    def compile_obj_ninja(self) -> str:
+        return "    deps = gcc\n    depfile = $out.d\n" + \
+               "    command = emcc.bat -MMD -MF $out.d -c $in -o $out $cl_flags"
+
+    def link_exe_ninja(self) -> str:
+        return "    command = emcc.bat -o $out $in $link_flags"
+
+    def link_dll_ninja(self) -> str:
+        raise RuntimeError("Link dll not supported for emcc")
+
+    def find_headers(self, obj: Obj) -> List[str]:
+        raise RuntimeError("find_headers not supported for emcc")
+
+    def link_exe(self, exe: Exe) -> str:
+        row = " ".join([f"{obj.product}" for obj in exe.objs] + [f"{cmd.product}" for cmd in exe.cmds])
+        return f"emcc.bat -o {exe.product} {exe.link_flags} {row}"
+
+    def link_dll(self, exe: Exe) -> str:
+        raise RuntimeError("Not supported for emcc")
+
+    def include(self, directory: str) -> str:
+        return f"-I{directory}"
+
+    def libpath(self, directory: str) -> str:
+        return f"-L{directory}"
+
+    def define(self, key: str, val: Optional[str]) -> str:
+        if val:
+            return f"-D{key}={val}"
+        return f"-D{key}"
+
+    def import_lib_cmd(self, out: str, dll: str, symbols: List[str]) -> Cmd:
+        raise RuntimeError("Not supported for emcc")
+
+    def embed_files(self, files: List[str]) -> Optional[str]:
+        paths = [pathlib.Path(s).absolute().relative_to(WORKDIR) for s in files]
+        return ' '.join([f'--embed-file="{p}"@"/{pathlib.PurePosixPath(p)}"' for p in paths])
 
 class ZigCC(BackendBase):
     name = "zigcc"
@@ -549,7 +605,7 @@ def CopyToBin(*src: str) -> List[Cmd]:
 def ImportLib(lib: str, dll: str, symbols: List[str]) -> Cmd:
     return BACKEND.import_lib_cmd(lib, dll, symbols)
 
-Backend = Union[Msvc, Mingw, ZigCC]
+Backend = Union[Msvc, Mingw, ZigCC, EmCC]
 BACKEND: Backend
 ACTIVE_BACKEND: str
 
@@ -709,8 +765,9 @@ def ninjafile(dest: TextIO = sys.stdout) -> None:
         print(f"link_flags = {LINKFLAGS}", file=dest)
         print("rule link_exe", file=dest)
         print(BACKEND.link_exe_ninja(), file=dest)
-        print("rule link_dll", file=dest)
-        print(BACKEND.link_dll_ninja(), file=dest)
+        if any(True for a in EXECUTABLES.values() if a.dll):
+            print("rule link_dll", file=dest)
+            print(BACKEND.link_dll_ninja(), file=dest)
 
     if use_copyto:
         print(f"rule copyto", file=dest)
@@ -819,7 +876,7 @@ def compile_commands(dest: TextIO = sys.stdout) -> None:
     import json
     print(json.dumps(res, indent=4), file=dest)
 
-all_backends: Dict[str, Type['Backend']] = {"msvc": Msvc, "mingw": Mingw, 'zigcc': ZigCC}
+all_backends: Dict[str, Type['Backend']] = {"msvc": Msvc, "mingw": Mingw, 'zigcc': ZigCC, 'emcc': EmCC}
 active_backends: Dict[str, 'Backend'] = {}
 
 args = None
@@ -886,6 +943,8 @@ def set_backend(name: str) -> None:
     TARGET_GROUPS["all"] = []
     BACKEND = backend
     ACTIVE_BACKEND = name
+
+    os.chdir(WORKDIR)
 
     run = True
     if get_args().deffile:
@@ -1127,6 +1186,40 @@ def _box2d_hook(path: pathlib.Path, pkg: Dict[str, Any]) -> None:
         raise RuntimeError("Failed building box2d")
     shutil.rmtree(src_path)
 
+def _sdl3_emsdk_hook(path: pathlib.Path, pkg: Dict[str, Any]) -> None:
+    if pkg['name'] != 'SDL3':
+        sdl3_path = find_package('SDL3').path / 'lib' / 'cmake' / 'SDL3'
+        depargs: List[str] = [f'-DSDL3_DIR={sdl3_path.absolute()}']
+    else:
+        depargs = []
+    src_path = path.with_name(path.name + "-src")
+
+    if src_path.exists():
+        shutil.rmtree(src_path)
+
+    shutil.move(path, src_path)
+    if pkg['name'] == 'SDL3':
+        cmake_src_path = src_path / 'SDL-release-3.2.16'
+    else:
+        cmake_src_path = src_path / 'SDL_image-release-3.2.4'
+    build_dir = src_path / 'build'
+    cmake = find_cmake()
+    emcmake = shutil.which('emcmake.bat')
+    if emcmake is None:
+        raise RuntimeError("Could not find emcmake.bat")
+
+    res = subprocess.run([emcmake, 'cmake', '-B', str(build_dir), '-S', str(cmake_src_path), '-G', 'Ninja',
+                          '-DCMAKE_BUILD_TYPE=Release', f'-DCMAKE_INSTALL_PREFIX={path}', *depargs])
+    if res.returncode != 0:
+        raise RuntimeError(f"Failed building {path}")
+    res = subprocess.run([cmake, '--build', str(build_dir)])
+    if res.returncode != 0:
+        raise RuntimeError(f"Failed building {path}")
+    res = subprocess.run([cmake, '--install', str(build_dir)])
+    if res.returncode != 0:
+        raise RuntimeError(f"Failed building {path}")
+    shutil.rmtree(src_path)
+
 
 KNOWN_PACKAGES = {
     "box2d": {
@@ -1183,6 +1276,15 @@ KNOWN_PACKAGES = {
             "libpath": ["SDL3-3.2.16/x86_64-w64-mingw32/lib"],
             "libname": ["-lSDL3"],
             "dll": ["SDL3-3.2.16/x86_64-w64-mingw32/bin/SDL3.dll"]
+        },
+        "emcc": {
+            "url": "https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.2.16.zip",
+            "include": ["include"],
+            "libpath": ["lib"],
+            "libname": ["-lSDL3"],
+            "dll": [],
+            "hook": _sdl3_emsdk_hook,
+            "name": 'SDL3'
         }
     },
     "SDL3_image": {
@@ -1199,6 +1301,15 @@ KNOWN_PACKAGES = {
             "libpath": ["SDL3_image-3.2.4/x86_64-w64-mingw32/lib"],
             "libname": ["-lSDL3_image"],
             "dll": ["SDL3_image-3.2.4/x86_64-w64-mingw32/bin/SDL3_image.dll"]
+        },
+        "emcc": {
+            "url": "https://github.com/libsdl-org/SDL_image/archive/refs/tags/release-3.2.4.zip",
+            "include": ['include'],
+            'libpath': ['lib'],
+            'libname': ['-lSDL3_image'],
+            'dll': [],
+            "hook": _sdl3_emsdk_hook,
+            "name": 'SDL3_image'
         }
     },
     "SDL3_ttf": {
@@ -1216,6 +1327,17 @@ KNOWN_PACKAGES = {
             "libpath": ["SDL3_ttf-3.2.2/x86_64-w64-mingw32/lib"],
             "libname": ["-lSDL3_ttf"],
             "dll": ["SDL3_ttf-3.2.2/x86_64-w64-mingw32/bin/SDL3_ttf.dll"]
+        }
+    },
+    "Photon": {
+        "msvc": {
+            "include": ['Common-cpp/inc', 'LoadBalancing-cpp/inc', 'Photon-cpp/inc',
+                        '.'],
+            "libpath": ['Common-cpp/lib', 'LoadBalancing-cpp/lib', 'Photon-cpp/lib'],
+            "libname": ['Common-cpp_vc14_release_windows_md_x64.lib',
+                        'LoadBalancing-cpp_vc14_release_windows_md_x64.lib',
+                        'Photon-cpp_vc14_release_windows_md_x64.lib'],
+            'dll': []
         }
     }
 }
@@ -1235,6 +1357,8 @@ def find_package(package: str) -> Package:
     pkg = KNOWN_PACKAGES[package][BACKEND.name]
     pkg_path = libdir / (package + f"-{BACKEND.name}")
     if not pkg_path.exists():
+        if not 'url' in pkg:
+            raise RuntimeError(f"{package} requires manual install")
         from urllib.request import urlretrieve
         print(f"Downloading {pkg['url']}")
         path, msg = urlretrieve(pkg['url'], filename=(libdir / package).with_suffix(".zip"))
@@ -1261,4 +1385,4 @@ def find_package(package: str) -> Package:
     else:
         sources = []
     dlls = [str(pkg_path / d) for d in dll]
-    return Package(i_flags, link_flags, dlls, sources)
+    return Package(i_flags, link_flags, dlls, sources, pkg_path)
