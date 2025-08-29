@@ -721,6 +721,9 @@ void output_header(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
         if (rules[ix].type != RULE_ATOM) {
             continue;
         }
+        if (strcmp(rules[ix].ctype, "void") == 0) {
+            continue;
+        }
         _printf_h(h, "        %s %s;\n", rules[ix].ctype, rules[ix].name);
     }
     _printf_h(h, "    };\n");
@@ -751,6 +754,9 @@ void output_header(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
                 rules[ix].ctype, rules[ix].redhook);
         for (uint32_t j = 0; j < rules[ix].count; ++j) {
             if (rules[rules[ix].data[j]].type == RULE_LITERAL) {
+                continue;
+            }
+            if (strcmp(rules[rules[ix].data[j]].ctype, "void") == 0) {
                 continue;
             }
             _printf_h(h, ", %s", rules[rules[ix].data[j]].ctype);
@@ -796,7 +802,11 @@ void output_reduce(rule_id r, Rule* rules, uint32_t* map_ix,
         while (rules[id].next != RULE_ID_NONE) {
             id = rules[id].next;
         }
-        _printf_h(h, "%sn.m%lu = ", i, id);
+        if (strcmp(rules[id].ctype, "void") != 0) {
+            _printf_h(h, "%sn.m%lu = ", i, id);
+        } else {
+            _printf_h(h, "%s", i);
+        }
         if (rules[r].redhook[0] == '$') {
             const char* hook = rules[r].redhook + 1;
             while (is_space(*hook)) {
@@ -823,15 +833,19 @@ void output_reduce(rule_id r, Rule* rules, uint32_t* map_ix,
                     uint32_t count = 0;
                     for (uint32_t i2 = 0; i2 < rules[r].count; ++i2) {
                         if (rules[rules[r].data[i2]].type != RULE_LITERAL) {
-                            if (count < ix) {
-                                ++count;
-                                continue;
-                            }
                             rule_id id = rules[r].data[i2];
                             if (rules[id].type == RULE_MAPPING) {
                                 while (rules[id].next != RULE_ID_NONE) {
                                     id = rules[id].next;
                                 }
+                            }
+                            if (strcmp(rules[id].ctype, "void") == 0) {
+                                continue;
+                            }
+
+                            if (count < ix) {
+                                ++count;
+                                continue;
                             }
                             uint32_t s_ix = rules[r].count - i2;
                             _printf_h(h, "stack.b[stack.size - %lu].m%lu",
@@ -856,6 +870,9 @@ void output_reduce(rule_id r, Rule* rules, uint32_t* map_ix,
                     while (rules[id].next != RULE_ID_NONE) {
                         id = rules[id].next;
                     }
+                }
+                if (strcmp(rules[id].ctype, "void") == 0) {
+                    continue;
                 }
                 uint32_t s_ix = rules[r].count - i2;
                 _printf_h(h, ", stack.b[stack.size - %lu].m%lu",
@@ -1193,6 +1210,9 @@ void output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
              rules[ix].next != RULE_ID_NONE)) {
             continue;
         }
+        if (strcmp(rules[ix].ctype, "void") == 0) {
+            continue;
+        }
         _printf_h(h, "        %s m%lu;\n", rules[ix].ctype, ix);
     }
     _printf_h(h, "    };\n");
@@ -1303,7 +1323,9 @@ void output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
             }
             _printf_h(h, ":\n");
             uint32_t new_state = n->edges[j].dest->ix;
-            _printf_h(h, "                n.m%lu = t.%s;\n", id, rules[id].name);
+            if (strcmp(rules[id].ctype, "void") != 0) {
+                _printf_h(h, "                n.m%lu = t.%s;\n", id, rules[id].name);
+            }
             output_shift(&n->edges[j], h, 4);
             _printf_h(h, "                break;\n");
         }
@@ -1971,7 +1993,7 @@ int generate(ochar_t** argv, int argc) {
         }
         if (rules[ix].type != RULE_LITERAL) {
             if (rules[ix].ctype == NULL) {
-                rules[ix].ctype = "int64_t";
+                rules[ix].ctype = "void";
             }
         }
     }
