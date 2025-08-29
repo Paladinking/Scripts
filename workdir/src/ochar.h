@@ -15,6 +15,7 @@
     #define ostrchr wcschr
     #define ostrrchr wcsrchr
     #define ostrncmp wcsncmp
+    #define otoupper towupper
 #else
     typedef char ochar_t;
     #define oL(s) s
@@ -24,6 +25,7 @@
     #define ostrchr strchr
     #define ostrrchr strrchr
     #define ostrncmp strncmp
+    #define otoupper toupper
 #endif
 
 

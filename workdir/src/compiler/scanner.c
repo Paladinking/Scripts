@@ -59,7 +59,8 @@ void scanner_consume_token(void* ctx, uint64_t* start, uint64_t* end) {
         // The scanner considers builtin names as literals
         if (name != NAME_ID_INVALID && name < NAME_ID_BUILTIN_COUNT) {
             t->last_token.literal = (const char*) ident;
-            t->last_token.id = TOKEN_LITERAL;
+            uint64_t ix = 0;
+            t->last_token = scanner_literal_token((const char*)ident, len, &ix);
         } else {
             t->last_token.id = TOKEN_IDENTIFIER;
             t->last_token.identifier.str = ident;
@@ -67,19 +68,13 @@ void scanner_consume_token(void* ctx, uint64_t* start, uint64_t* end) {
         }
         return;
     }
-    if (p->pos + 1 < p->input_size && p->indata[p->pos] == '-' &&
-        p->indata[p->pos + 1] == '>') {
-        p->pos += 2;
-    } else {
-        p->pos += 1;
-    }
+    t->last_token = scanner_literal_token((const char*)p->indata,
+                                          p->input_size, &p->pos);
     t->end = p->pos;
-    t->last_token.id = TOKEN_LITERAL;
-    t->last_token.literal = (const char*)p->indata + t->start;
 }
 
 FunctionDef* OnScanFunction(void* ctx, uint64_t start, uint64_t end, StrWithLength name, 
-                        uint64_t arg_count, int64_t ret, int64_t statements) {
+                        uint64_t arg_count) {
     struct Tokenizer *t = ctx;
     Parser* parser = t->parser;
     uint64_t len = end - start;
@@ -108,8 +103,7 @@ FunctionDef* OnScanFunction(void* ctx, uint64_t start, uint64_t end, StrWithLeng
     return func;
 }
 
-type_id OnScanStruct(void* ctx, uint64_t start, uint64_t end, StrWithLength name, 
-                     int64_t statements) {
+type_id OnScanStruct(void* ctx, uint64_t start, uint64_t end, StrWithLength name) {
     struct Tokenizer *t = ctx;
     Parser* p = t->parser;
     type_id struct_type = type_struct_create(&p->type_table, &p->arena);
@@ -132,8 +126,8 @@ type_id OnScanStruct(void* ctx, uint64_t start, uint64_t end, StrWithLength name
 
 
 FunctionDef* OnScanExtern(void* ctx, uint64_t start, uint64_t end, StrWithLength name,
-                          uint64_t arg_count, int64_t ret) {
-    return OnScanFunction(ctx, start, end, name, arg_count, ret, 0);
+                          uint64_t arg_count) {
+    return OnScanFunction(ctx, start, end, name, arg_count);
 }
 
 void scan_program(Parser* parser, String* indata) {

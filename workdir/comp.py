@@ -49,7 +49,7 @@ if not backend().msvc:
 
 def main():
     ntsymbols = ["memcpy", "strlen", "memmove", "_wsplitpath_s", "wcslen",
-                 "_wmakepath_s", "strchr", "_stricmp", "towlower",
+                 "_wmakepath_s", "strchr", "_stricmp", "towlower", "towupper",
                  "_wcsicmp", "_snwprintf_s", "_snprintf_s", "_vscwprintf", 
                  "_vsnprintf", "_vsnwprintf", "_vscprintf", "memset", 
                  "wcscmp", "strcmp", "_fltused", "wcschr", "wcsrchr", 
@@ -184,7 +184,8 @@ def main():
         scan_defs: List[Union[str, Tuple[str, str]]] = \
                                 [("parse", "scanner_parse"), ("parser_error", "scanner_error"),
                                  ("peek_token", "scanner_peek_token"),
-                                 ("consume_token", "scanner_consume_token")]
+                                 ("consume_token", "scanner_consume_token"),
+                                 ("literal_token", "scanner_literal_token")]
         scan_o = Object("scan.obj", scan_c.product, depends=[scan_h.product],
                         defines=scan_defs, includes=["src/compiler"])
         parse_o = Object("parse.obj", parse_c.product, depends=[parse_h.product],
