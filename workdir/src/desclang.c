@@ -1312,11 +1312,19 @@ void output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
             if (row->ix < rules[row->rule].count) {
                 continue;
             }
+            bool has_reduce = false;
+            bool has_accept = false;
             for (uint32_t k = 0; k < row->lookahead.size; ++k) {
                 rule_id id = row->lookahead.tokens[k];
                 if (id == RULE_ID_ERROR || rules[id].type != RULE_ATOM) {
                     continue;
                 }
+                bool accept = id == rule_count - 1 && n->accept;
+                if (accept) {
+                    has_accept = true;
+                    continue;
+                }
+                has_reduce = true;
                 _printf_h(h, "            case TOKEN_");
                 if (id == rule_count - 1) {
                     _printf_h(h, "END");
@@ -1326,12 +1334,16 @@ void output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
                     }
                 }
                 _printf_h(h, ":\n");
-                bool accept = id == rule_count - 1 && n->accept;
+            }
+            if (has_reduce) {
                 output_reduce(row->rule, rules, MAP_IX, mapping_count, 
-                              accept, h, 4);
-                if (!accept) {
-                    _printf_h(h, "                break;\n");
-                }
+                              false, h, 4);
+                _printf_h(h, "                break;\n");
+            }
+            if (has_accept) {
+                _printf_h(h, "            case TOKEN_END:\n");
+                output_reduce(row->rule, rules, MAP_IX, mapping_count,
+                              true, h, 4);
             }
         }
         _printf_h(h, "            default:\n");
