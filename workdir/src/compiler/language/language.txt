@@ -3,17 +3,6 @@ include: "ast.h";
 atoms: kwFn, kwStruct, kwIf, kwWhile, kwElse, kwReturn, kwTrue, kwFalse, kwExtern,
        kwNull, typeid, identifier, integer, real, string;
 
-type: kwFn = name_id;
-type: kwStruct = name_id;
-type: kwIf = name_id;
-type: kwWhile = name_id;
-type: kwElse = name_id;
-type: kwReturn = name_id;
-type: kwTrue = name_id;
-type: kwFalse = name_id;
-type: kwExtern = name_id;
-type: kwNull = name_id;
-
 type: typeid = type_id;
 type: identifier = StrWithLength;
 type: integer = uint64_t;
@@ -40,7 +29,6 @@ type: ?ASSIGN = Expression*;
 type: STATEMENT = Statement*;
 type: IF = Statement*;
 type: ?ELSE = Statement*;
-type: ELSE = void*;
 
 type: STATEMENTS = Statements;
 type: STATEMENT_LIST = StatementList*;
@@ -118,7 +106,7 @@ COND = '(' + EXPRESSION + ')' : OnCond;
 ELSE = kwElse: OnElseHead;
 
 ?ELSE = '' :$ NULL |
-        kwElse + IF :$ $1 |
+        kwElse + IF :$ $0 |
         ELSE + STATEMENTS : OnElse;
 
 IF = kwIf + COND + STATEMENTS + ?ELSE : OnIf;

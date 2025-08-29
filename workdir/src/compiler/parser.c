@@ -203,12 +203,11 @@ Expression* OnCond(void* ctx, uint64_t start, uint64_t end, Expression* c) {
     return c;
 }
 
-void* OnElseHead(void* ctx, uint64_t start, uint64_t end, name_id kw) {
+void OnElseHead(void* ctx, uint64_t start, uint64_t end) {
     name_scope_begin(&PARSER(ctx)->name_table);
-    return NULL;
 }
 
-name_id OnFnHead(void* ctx, uint64_t start, uint64_t end, name_id kw, StrWithLength s) {
+name_id OnFnHead(void* ctx, uint64_t start, uint64_t end, StrWithLength s) {
     Parser* p = PARSER(ctx);
     name_id name = name_find(&p->name_table, s);
     LineInfo l  = {start, end};
@@ -224,7 +223,7 @@ name_id OnFnHead(void* ctx, uint64_t start, uint64_t end, name_id kw, StrWithLen
     return name;
 }
 
-Statement* OnWhile(void* ctx, uint64_t start, uint64_t end, name_id kw,
+Statement* OnWhile(void* ctx, uint64_t start, uint64_t end,
                    Expression* cond, Statements statements) {
     Statement* s = create_stmt(PARSER(ctx), STATEMENT_WHILE, start, end);
     s->while_.statements = statements.statements;
@@ -233,7 +232,7 @@ Statement* OnWhile(void* ctx, uint64_t start, uint64_t end, name_id kw,
     return s;
 }
 
-Statement* OnIf(void* ctx, uint64_t start, uint64_t end, name_id kw,
+Statement* OnIf(void* ctx, uint64_t start, uint64_t end,
                 Expression* cond, Statements statements, Statement* else_) {
     Statement* s = create_stmt(PARSER(ctx), STATEMENT_IF, start, end);
     s->if_.condition = cond;
@@ -243,7 +242,7 @@ Statement* OnIf(void* ctx, uint64_t start, uint64_t end, name_id kw,
     return s;
 }
 
-Statement* OnElse(void* ctx, uint64_t start, uint64_t end, void* kw, Statements statements) {
+Statement* OnElse(void* ctx, uint64_t start, uint64_t end, Statements statements) {
     Statement* s = create_stmt(PARSER(ctx), STATEMENT_IF, start, end);
     s->if_.condition = NULL;
     s->if_.else_branch = NULL;
@@ -271,7 +270,7 @@ Statement* OnAssign(void* ctx, uint64_t start, uint64_t end, Expression* lhs, Ex
     return s;
 }
 
-Statement* OnReturn(void* ctx, uint64_t start, uint64_t end, name_id kw, Expression* e) {
+Statement* OnReturn(void* ctx, uint64_t start, uint64_t end, Expression* e) {
     Statement* s = create_stmt(PARSER(ctx), STATEMENT_RETURN, start, end);
     s->return_.return_value = e;
     s->return_.ptr_return = false;
@@ -418,7 +417,7 @@ void add_func(Parser* p, ArgList* args, func_id id, FunctionDef* f,
 }
 
 
-FunctionDef* OnExternFunction(void* ctx, uint64_t start, uint64_t end, name_id kwExtr,
+FunctionDef* OnExternFunction(void* ctx, uint64_t start, uint64_t end,
                               name_id fn_name, ArgList* arglist,
                               type_id ret_type) {
     Parser* p = PARSER(ctx);
@@ -456,7 +455,7 @@ type_id OnPtrType(void* ctx, uint64_t start, uint64_t end, type_id type,
     return OnType(ctx, start, end, type, sizes);
 }
 
-type_id OnStruct(void* ctx, uint64_t start, uint64_t end, name_id kwStruct,
+type_id OnStruct(void* ctx, uint64_t start, uint64_t end,
                  type_id type, FieldList* fields) {
     Parser* p = PARSER(ctx);
     uint64_t field_count = 0;
@@ -533,19 +532,19 @@ ArraySizes* OnArrayDecl(void* ctx, uint64_t start, uint64_t end, ArraySizes* siz
     return s;
 }
 
-Expression* OnNull(void* ctx, uint64_t start, uint64_t end, name_id name) {
+Expression* OnNull(void* ctx, uint64_t start, uint64_t end) {
     Expression* e = create_expr(PARSER(ctx), EXPRESSION_LITERAL_NULL, start, end);
     e->literal.uint = 0;
     return e;
 }
 
-Expression* OnTrue(void* ctx, uint64_t start, uint64_t end, name_id name) {
+Expression* OnTrue(void* ctx, uint64_t start, uint64_t end) {
     Expression* e = create_expr(PARSER(ctx), EXPRESSION_LITERAL_BOOL, start, end);
     e->literal.uint = 1;
     return e;
 }
 
-Expression* OnFalse(void* ctx, uint64_t start, uint64_t end, name_id name) {
+Expression* OnFalse(void* ctx, uint64_t start, uint64_t end) {
     Expression* e = create_expr(PARSER(ctx), EXPRESSION_LITERAL_BOOL, start, end);
     e->literal.uint = 0;
     return e;
@@ -726,23 +725,6 @@ Expression* OnUnop2(void* ctx, uint64_t start, uint64_t end,
 
 }
 
-
-bool is_pair(uint8_t c1, uint8_t c2) {
-    if (c1 == '=' || c1 == '!') {
-        return c2 == '=';
-    }
-    if (c1 == '<' || c1 == '>') {
-        return c2 == c1 || c2 == '=';
-    }
-    if (c1 == '|' || c1 == '&') {
-        return c2 == c1;
-    }
-    if (c1 == '-') {
-        return c2 == '>';
-    }
-    return false;
-}
-
 Token peek_token(void *ctx, uint64_t *start, uint64_t *end) {
     struct Tokenizer* t = ctx;
     *start = t->start;
@@ -793,7 +775,6 @@ void consume_token(void* ctx, uint64_t* start, uint64_t* end) {
                 TOKEN_KWNULL
             };
             t->last_token.id = map[name];
-            t->last_token.kwFn = name;
         } else if (p->name_table.data[name].kind == NAME_TYPE) {
             t->last_token.id = TOKEN_TYPEID;
             t->last_token.typeid = p->name_table.data[name].type;
@@ -839,13 +820,9 @@ void consume_token(void* ctx, uint64_t* start, uint64_t* end) {
         t->end = p->pos;
         return;
     }
-    ++p->pos;
-    if (p->pos < p->input_size && is_pair(c, p->indata[p->pos])) {
-        ++p->pos;
-    }
+    t->last_token = literal_token((const char*) p->indata,
+                                  p->input_size, &p->pos);
     t->end = p->pos;
-    t->last_token.id = TOKEN_LITERAL;
-    t->last_token.literal = (const char*)p->indata + t->start;
 }
 
 void parse_program(Parser* parser, String *indata) {
