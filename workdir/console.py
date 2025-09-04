@@ -87,7 +87,7 @@ if sys.platform == 'win32':
 
             self._lines = ['']
 
-            self._restore_pos = restore_pos
+            self._do_restore_pos = restore_pos
 
         def readline(self, limit: int = -1, /) -> str:
             line_count = len(self._lines)
@@ -137,20 +137,25 @@ if sys.platform == 'win32':
                     if pos > 0:
                         pos -= 1
                         line = line[:pos] + line[pos + 1:]
-                        if len(self._lines) != line_len:
-                            self.clear()
                 else:
                     s = s.decode(errors="replace")
                     line = line[:pos] + s + line[pos:]
                     pos += 1
 
+
+                new_line_len = len(self._lines)
+
                 self._lines = self._lines[:line_count]
                 self._lines[line_count - 1] = self._lines[line_count - 1][:line_len]
-                self.write(line[:pos])
 
-                self._restore_pos = True
-                self.write(line[pos:])
-                self._restore_pos = False
+                self._add_data(line[:pos])
+                restore = self._restore_pos()
+                self._add_data(line[pos:])
+                out = self._output()
+                if new_line_len > len(self._lines):
+                    out += f"\x1B[{self._y + len(self._lines)};{self._x}H" + " " * self._w
+                out += restore
+                self._term.write(out)
 
                 if s == '\x03':
                     return ''
@@ -176,7 +181,7 @@ if sys.platform == 'win32':
                 s += f"\x1B[{y};{x}H"
             self._term.write(s)
 
-        def write(self, s: str) -> int:
+        def _add_data(self, s: str) -> None:
             lines = s.split('\n')
             ix = 0
 
@@ -193,22 +198,32 @@ if sys.platform == 'win32':
                 ix += 1
             
             self._lines.extend(lines)
-
             if len(self._lines) > self._h:
                 self._lines = self._lines[len(self._lines) - self._h:]
 
+        def _output(self) -> str:
             s = f"\x1B[{self._y};{self._x}H" + " " * self._w + f"\x1B[{self._y};{self._x}H"
             for ix, line in enumerate(self._lines[:-1]):
                 to_pos = f"\x1B[{self._y + ix + 1};{self._x}H"
                 s += line + to_pos + " " * self._w + to_pos
-            s += lines[-1]
+            s += self._lines[-1]
 
-            if self._restore_pos:
+            return s
+
+        def _restore_pos(self) -> str:
+            y = self._y + len(self._lines) - 1
+            x = self._x + len(self._lines[-1])
+            return f"\x1B[{y};{x}H"
+
+        def write(self, s: str) -> int:
+            self._add_data(s)
+
+            out = self._output()
+            if self._do_restore_pos:
                 x, y = self._term.get_pos()
                 if x >= 0 and y >= 0:
-                    s += f"\x1B[{y};{x}H"
-
-            self._term.write(s)
+                    out += f"\x1B[{y};{x}H"
+            self._term.write(self._output())
 
             return len(s)
 
