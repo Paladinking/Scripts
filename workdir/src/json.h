@@ -116,4 +116,8 @@ bool json_parse_object(const char* str, JsonObject* obj, String_noinit* errormsg
 
 bool json_parse_type(const char* str, JsonType* val, String_noinit* errormsg);
 
+bool json_object_to_string(const JsonObject* obj, String* res);
+
+bool json_type_to_string(const JsonType* v, String* res);
+
 #endif
