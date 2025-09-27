@@ -994,6 +994,193 @@ bool json_parse_type(const char* str, JsonType* type, String_noinit* errormsg) {
 }
 
 
+bool double_to_string(double d, String* dest) {
+    if (d == 0.0) {
+        return String_append_count(dest, "0.0", 3);
+    }
+    bool negative = d < 0;
+    if (d < 0) {
+        d = -d;
+    }
+    int64_t exponent = 0;
+    if (d < 0.000001) {
+        while (d < 1.0) {
+            d *= 10.0;
+            --exponent;
+        }
+    } else if (d > 1000000) {
+        while (d > 10.0) {
+            d /= 10.0;
+            ++exponent;
+        }
+    }
+    uint64_t whole_part = (uint64_t)d;
+    d = d - whole_part;
+    uint64_t leading_zeroes = 0;
+    uint64_t frac_part = 0;
+    while (d > 0.000000000001 && d < 0.1) {
+        ++leading_zeroes;
+        d *= 10;
+    }
+    if (d >= 0.1) {
+        for (uint64_t j = 0; j < 12; ++j) {
+            d = d * 10;
+            uint64_t i = (uint64_t) d;
+            frac_part = frac_part * 10 + i;
+            d = d - i;
+        }
+        if (d > 0.5) {
+            frac_part += 1;
+        }
+        while (frac_part % 10 == 0) {
+            frac_part = frac_part / 10;
+        }
+    }
+    if (negative) {
+        if (!String_append(dest, '-')) {
+            return false;
+        }
+    }
+    if (!String_format_append(dest, "%llu.", whole_part)) {
+        return false;
+    }
+    for (uint64_t i = 0; i < leading_zeroes; ++i) {
+        if (!String_append(dest, '0')) {
+            return false;
+        }
+    }
+    if (!String_format_append(dest, "%llu", frac_part)) {
+        return false;
+    }
+    if (exponent != 0) {
+        return String_format_append(dest, "e%lld", exponent);
+    }
+    return true;
+}
+
+bool write_json_string(const char* in, uint64_t len, String* out) {
+    if (!String_append(out, '"')) {
+        return false;
+    }
+
+    for (uint32_t i = 0; i < len;) {
+        uint8_t c = (uint8_t)in[i];
+        if (c >= 0x20 && c < 0x7F) {
+            if (c == '\\' || c == '"') {
+                if (!String_append(out, '\\')) {
+                    return false;
+                }
+            }
+            if (!String_append(out, (char)c)) {
+                return false;
+            }
+        } else if (c == '\r') {
+            if (!String_append_count(out, "\\r", 2)) {
+                return false;
+            }
+        } else if (c == '\n') {
+            if (!String_append_count(out, "\\n", 2)) {
+                return false;
+            }
+        } else if (c == '\t') {
+            if (!String_append_count(out, "\\t", 2)) {
+                return false;
+            }
+        } else if (c == '\b') {
+            if (!String_append_count(out, "\\b", 2)) {
+                return false;
+            }
+        } else if (c == '\f') {
+            if (!String_append_count(out, "\\f", 2)) {
+                return false;
+            }
+        } else {
+            if (!String_append(out, (char)c)) {
+                return false;
+            }
+        }
+        ++i;
+    }
+
+    return String_append(out, '"');
+}
+
+bool json_object_to_string(const JsonObject* obj, String* res) {
+    JsonType t;
+    t.type = JSON_OBJECT;
+    t.object = *obj;
+    return json_type_to_string(&t, res);
+}
+
+bool json_type_to_string(const JsonType* v, String* res) {
+    char fmtbuf[64];
+    switch (v->type) {
+    case JSON_OBJECT:
+        if (!String_append(res, '{')) {
+            return false;
+        }
+        {
+            LinkedHashMapIterator it;
+            LinkedHashMapIter_Begin(&it, (LinkedHashMap*)&v->object.data);
+            LinkedHashElement* el;
+            uint32_t count = 0;
+            while ((el = LinkedHashMapIter_Next(&it)) != NULL) {
+                if (count > 0) {
+                    if (!String_append(res, ',')) {
+                        return false;
+                    }
+                }
+                ++count;
+                if (!write_json_string(el->key, strlen(el->key), res)) {
+                    return false;
+                }
+                if (!String_append(res, ':')) {
+                    return false;
+                }
+                if (!json_type_to_string(el->value, res)) {
+                    return false;
+                }
+            }
+        }
+        if (!String_append(res, '}')) {
+            return false;
+        }
+        return true;
+    case JSON_LIST:
+        if (!String_append(res, '[')) {
+            return false;
+        }
+        for (uint32_t i = 0; i< v->list.size; ++i) {
+            if (i > 0) {
+                if (!String_append(res, ',')) {
+                    return false;
+                }
+            }
+            if (!json_type_to_string(&v->list.data[i], res)) {
+                return false;
+            }
+        }
+        if (!String_append(res, ']')) {
+            return false;
+        }
+        return true;
+    case JSON_INTEGER:
+        return String_format_append(res, "%llu", v->integer);
+    case JSON_DOUBLE:
+        return double_to_string(v->dbl, res);
+    case JSON_BOOL:
+        if (v->b) {
+            return String_append_count(res, "true", 4);
+        } else {
+            return String_append_count(res, "false", 5);
+        }
+    case JSON_STRING:
+        return write_json_string(v->string.buffer, v->string.length, res);
+    case JSON_NULL:
+        return String_append_count(res, "null", 4);
+    }
+}
+
 #ifdef JSON_TESTS
 #include <stdio.h>
 #include <assert.h>
