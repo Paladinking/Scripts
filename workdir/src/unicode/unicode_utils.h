@@ -11,6 +11,8 @@ uint32_t unicode_case_fold_utf8(const uint8_t* in, uint32_t len, uint8_t* out);
 
 uint32_t unicode_case_fold_utf8_rev(const uint8_t* in, uint32_t len, uint8_t* out);
 
+uint_fast8_t utf8_to_utf32(const uint8_t* utf8, uint64_t len, uint32_t* utf32);
+
 extern const uint8_t utf8_len_table[256];
 
 extern const uint8_t utf8_valid_table[128];
