@@ -95,6 +95,10 @@ def main():
                "src/unicode/unicode_width.c",
                link_flags=DLLFLAGS, dll=True)
 
+    Executable("json_rpc.exe", "src/json_rpc_server.c", "src/json.c", lhashmap, *arg_src, 
+               "src/unicode/tables.c", "src/printf.c", ntdll, defines=['JSON_RPC_TESTS'],
+               namespace="json_rpc")
+
     glob_fast = Object("glob_xmm.obj", "src/glob.c", defines=["NEXTLINE_FAST"])
     Executable("file-match.exe", "src/file-match.c", glob_fast, "src/regex.c",
                *unicode, *arg_src, ntdll, "src/mutex.c")
@@ -213,6 +217,10 @@ def main():
         Executable("compiler.exe", "src/compiler/compiler.c", *comp_src,
                    scan_o, parse_o, scanner_o, parser_o,
                    extra_link_flags=link)
+
+        Executable("lsp.exe", "src/compiler/lsp.c", "src/dynamic_string.c", "src/compiler/log.c",
+                   "src/args.c", "src/printf.c",
+                   ntdll, extra_link_flags=link)
     
     build(__file__)
 
