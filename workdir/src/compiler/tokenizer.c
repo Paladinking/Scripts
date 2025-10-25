@@ -12,12 +12,31 @@ void parser_set_input(Parser* parser, String* indata) {
 }
 
 // Skip all space characters at current pos
+// Also skip comments
 void parser_skip_spaces(Parser* parser) {
+    bool line_comment = false;
     do {
         if (parser->pos >= parser->input_size) {
             return;
         }
         uint8_t c = parser->indata[parser->pos];
+        if (line_comment) {
+            if (c == '\n' || c== '\r') {
+                line_comment = false;
+            } else {
+                ++parser->pos;
+                continue;
+            }
+        }
+
+        if (c == '/') {
+            if (parser->pos + 1 < parser->input_size &&
+                parser->indata[parser->pos + 1] == '/') {
+                line_comment = true;
+                parser->pos += 2;
+                continue;
+            }
+        }
         if (c != ' ' && c != '\t' && c != '\n' && c != '\r' &&
             c != '\f' && c != '\v') {
             return;
