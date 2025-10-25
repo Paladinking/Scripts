@@ -506,10 +506,9 @@ void allocate_registers(Quads* quads, Quad* start, Quad* end,
 
     for (var_id id = 0; id < vars->size; ++id) {
         if (vars->data[id].kind == VAR_FUNCTION ||
-            vars->data[id].kind == VAR_ARRAY ||
             vars->data[id].kind == VAR_GLOBAL ||
-            vars->data[id].datatype == VARTYPE_STRUCT ||
-            vars->data[id].kind == VAR_ARRAY_GLOBAL) {
+            vars->data[id].datatype == VARTYPE_ARRAY ||
+            vars->data[id].datatype == VARTYPE_STRUCT) {
             vars->data[id].alloc_type = ALLOC_MEM;
         }
     }

@@ -119,21 +119,17 @@ typedef struct NameTable {
     name_id* scope_stack; // id of first name not to be freed on scope end
 } NameTable;
 
-// TODO: remove VAR_ARRAY and VAR_ARRAY_GLOBAL, replace with checking datatype
 enum VarKind {
     VAR_FUNCTION, // Function reference, not allocated
     VAR_TEMP, // Unnamed variable, function allocated
     VAR_LOCAL, // Named local variable, function allocated
     VAR_GLOBAL, // Global variable, globaly allocated
-    VAR_CALLARG, // Argument to function, function allocated
-    VAR_ARRAY, // Local array, function allocated (mem only)
-    VAR_ARRAY_GLOBAL // Global array, globaly allocated
+    VAR_CALLARG // Argument to function, function allocated
 };
 
 // Returns if this variable is function allocated
 static inline bool var_local(enum VarKind kind) {
-    return kind == VAR_TEMP || kind == VAR_LOCAL || kind == VAR_CALLARG ||
-           kind == VAR_ARRAY;
+    return kind == VAR_TEMP || kind == VAR_LOCAL || kind == VAR_CALLARG;
 }
 
 typedef uint32_t symbol_ix;
