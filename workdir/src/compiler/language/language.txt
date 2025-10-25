@@ -1,6 +1,6 @@
 include: "ast.h";
 
-atoms: kwFn, kwStruct, kwIf, kwWhile, kwElse, kwReturn, kwTrue, kwFalse, kwExtern,
+atoms: kwFn, kwStruct, kwUnion, kwIf, kwWhile, kwElse, kwReturn, kwTrue, kwFalse, kwExtern,
        kwNull, typeid, identifier, integer, real, string;
 
 type: typeid = type_id;
@@ -34,6 +34,7 @@ type: STATEMENTS = Statements;
 type: STATEMENT_LIST = StatementList*;
 
 type: STRUCT = type_id;
+type: UNION = type_id;
 type: FIELDS = FieldList*;
 
 type: FUNCTION = FunctionDef*;
@@ -51,7 +52,8 @@ type: ARRAYDECL = ArraySizes*;
 
 PROGRAM = '' |
           PROGRAM + FUNCTION |
-          PROGRAM + STRUCT;
+          PROGRAM + STRUCT |
+          PROGRAM + UNION;
 
 FN_HEAD = kwFn + identifier : OnFnHead;
 
@@ -69,6 +71,7 @@ TYPE = typeid + ARRAYDECL : OnType |
             '->' + TYPE :$ $0;
 
 STRUCT = kwStruct + typeid + '{' + FIELDS + '}' :  OnStruct;
+UNION = kwUnion + typeid + '{' + FIELDS + '}': OnUnion;
 
 FIELDS = '' :$ NULL |
         FIELDS + TYPE + identifier + ';' : OnField;

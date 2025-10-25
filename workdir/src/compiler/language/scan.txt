@@ -8,12 +8,14 @@ atoms: identifier, statements;
 type: identifier = StrWithLength;
 type: FUNCTION = FunctionDef*;
 type: STRUCT = type_id;
+type: UNION = type_id;
 type: ARG_LIST = uint64_t;
 type: ?ARG_LIST = uint64_t;
 
 PROGRAM = '' |
           PROGRAM + FUNCTION |
-          PROGRAM + STRUCT;
+          PROGRAM + STRUCT |
+          PROGRAM + UNION;
 
 PROGRAM = PROGRAM + error + FUNCTION;
 
@@ -38,3 +40,4 @@ ARG = identifier + PTRDECL + identifier;
 PTRDECL = '' | PTRDECL + '*';
 
 STRUCT = 'struct' + identifier + statements : OnScanStruct;
+UNION = 'union' + identifier + statements : OnScanUnion;
