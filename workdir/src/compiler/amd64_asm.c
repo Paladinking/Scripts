@@ -26,14 +26,12 @@ uint64_t Backend_get_regs() {
 
 
 void require_not_xmm(ConflictGraph* graph, var_id var) {
-    LOG_DEBUG("Require not xmm %u", var);
     for (var_id i = XMM0; i < XMM0 + XMM_COUNT; ++i) {
         ConflictGraph_add_edge(graph, i, var + graph->reg_count);
     }
 }
 
 void require_xmm(ConflictGraph* graph, var_id var) {
-    LOG_DEBUG("Require xmm %u", var);
     for (var_id i = 0; i < GEN_REG_COUNT; ++i) {
         ConflictGraph_add_edge(graph, i, var + graph->reg_count);
     }
@@ -62,7 +60,6 @@ void Backend_inital_contraints(ConflictGraph* graph, VarList* vars) {
 
 // Require <var> uses <reg>
 void require_gen_reg(ConflictGraph* graph, uint64_t reg, var_id var) {
-    LOG_DEBUG("require_gen_reg %u", var);
     for (uint64_t ix = 0; ix < graph->reg_count; ++ix) {
         if (reg != ix) {
             ConflictGraph_add_edge(graph, var + graph->reg_count, ix);
@@ -72,7 +69,6 @@ void require_gen_reg(ConflictGraph* graph, uint64_t reg, var_id var) {
 
 // Require <var> uses memory
 void require_mem(ConflictGraph* graph, var_id var) {
-    LOG_WARNING("require mem %u", var);
     for (uint64_t ix = 0; ix < graph->reg_count; ++ix) {
         ConflictGraph_add_edge(graph, var + graph->reg_count, ix);
     }
@@ -1595,10 +1591,20 @@ void quad_to_asm(Quad* q, AsmCtx* ctx, NameTable* name_table, VarData* vars,
         assert(vars[q->op1.var].alloc_type == ALLOC_REG);
         assert(vars[q->op2].alloc_type == ALLOC_REG);
         uint32_t datasize = vars[q->op2].byte_size;
-        asm_instr(ctx, OP_MOV);
 
-        asm_mem_var(ctx, datasize, vars[q->op1.var].reg, 0, RAX, 0);
-        emit_var(&vars[q->op2], ctx);
+        if (vars[q->op2].datatype == VARTYPE_FLOAT) {
+            if (datasize == 4) {
+                asm_instr(ctx, OP_MOVSS);
+            } else {
+                asm_instr(ctx, OP_MOVSD);
+            }
+            asm_mem_var(ctx, datasize, vars[q->op1.var].reg, 0, RAX, 0);
+            emit_xmm_var(&vars[q->op2], ctx);
+        } else {
+            asm_instr(ctx, OP_MOV);
+            asm_mem_var(ctx, datasize, vars[q->op1.var].reg, 0, RAX, 0);
+            emit_var(&vars[q->op2], ctx);
+        }
         asm_instr_end(ctx);
         break;
     }
@@ -1614,8 +1620,17 @@ void quad_to_asm(Quad* q, AsmCtx* ctx, NameTable* name_table, VarData* vars,
         assert(vars[q->dest].alloc_type == ALLOC_REG);
         assert(vars[q->op1.var].alloc_type == ALLOC_REG);
         uint32_t datasize = vars[q->dest].byte_size;
-        asm_instr(ctx, OP_MOV);
-        asm_genreg_var(ctx, datasize, vars[q->dest].reg);
+        if (vars[q->dest].datatype == VARTYPE_FLOAT) {
+            if (datasize == 4) {
+                asm_instr(ctx, OP_MOVSS);
+            } else {
+                asm_instr(ctx, OP_MOVSD);
+            }
+            asm_xmmreg_var(ctx, datasize, vars[q->dest].reg);
+        } else {
+            asm_instr(ctx, OP_MOV);
+            asm_genreg_var(ctx, datasize, vars[q->dest].reg);
+        }
         asm_mem_var(ctx, datasize, vars[q->op1.var].reg, 0, RAX, 0);
         asm_instr_end(ctx);
         break;
