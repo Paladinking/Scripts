@@ -2,17 +2,17 @@
 #include "mem.h"
 
 
-BOOL create_envvar(const wchar_t* name, WString_noinit* res) {
-    if (!WString_create_capacity(res, 50)) {
+bool create_envvar(const ochar_t* name, OString_noinit* res) {
+    if (!OString_create_capacity(res, 50)) {
         return false;
     }
     return get_envvar(name, 0, res);
 }
 
-BOOL get_envvar(LPCWSTR name, DWORD hint, WString *res) {
-    BOOL free = FALSE;
+static bool get_envvar_wide(const wchar_t* name, uint32_t hint, WString *res) {
+    bool free = false;
     if (res->buffer == NULL) {
-        free = TRUE;
+        free = true;
         if (!WString_create_capacity(res, res->capacity + hint)) {
             return FALSE;
         }
@@ -56,9 +56,54 @@ BOOL get_envvar(LPCWSTR name, DWORD hint, WString *res) {
     return TRUE;
 }
 
-WString *read_envvar(LPCWSTR name, EnvBuffer *env) {
+#ifndef NARROW_OCHAR
+bool get_envvar(const ochar_t* name, uint32_t hint, OString* res) {
+    return get_envvar_wide(name, hint, res);
+}
+#else
+bool get_envvar(const ochar_t* name, uint32_t hint, OString* res) {
+    WString buf;
+    if (!WString_create_capacity(&buf, res->capacity + hint)) {
+        return false;
+    }
+    WString namebuf;
+    if (!WString_create(&namebuf)) {
+        WString_free(&buf);
+        return false;
+    }
+    if (!WString_from_utf8_str(&namebuf, name)) {
+        WString_free(&buf);
+        WString_free(&namebuf);
+        return false;
+    }
+    if (!get_envvar_wide(namebuf.buffer, 0, &buf)) {
+        WString_free(&buf);
+        WString_free(&namebuf);
+        return false;
+    }
+    WString_free(&namebuf);
+    bool free = false;
+    if (res->buffer == NULL) {
+        free = true;
+        if (!String_create_capacity(res, buf.capacity)) {
+            WString_free(&buf);
+            return false;
+        }
+    }
+    if (!String_from_utf16_bytes(res, buf.buffer, buf.length)) {
+        WString_free(&buf);
+        if (free) {
+            String_free(res);
+        }
+        return false;
+    }
+    return true;
+}
+#endif
+
+OString *read_envvar(const ochar_t* name, EnvBuffer *env) {
     for (DWORD i = 0; i < env->size; ++i) {
-        if (_wcsicmp(name, env->vars[i].name) == 0) {
+        if (ostricmp(name, env->vars[i].name) == 0) {
             return &(env->vars[i].val);
         }
     }
@@ -76,8 +121,8 @@ WString *read_envvar(LPCWSTR name, EnvBuffer *env) {
     env->vars[env->size].val.capacity = 100;
     env->vars[env->size].val.length = 0;
     if (get_envvar(name, 0, &(env->vars[env->size].val))) {
-        DWORD len = (wcslen(name) + 1) * sizeof(WCHAR);
-        LPWSTR new_name = Mem_alloc(len);
+        DWORD len = (ostrlen(name) + 1) * sizeof(ochar_t);
+        ochar_t* new_name = Mem_alloc(len);
         if (new_name == NULL) {
             return NULL;
         }
@@ -92,7 +137,7 @@ WString *read_envvar(LPCWSTR name, EnvBuffer *env) {
 
 void free_env(EnvBuffer *env) {
     for (DWORD i = 0; i < env->size; ++i) {
-        WString_free(&env->vars[i].val);
+        OString_free(&env->vars[i].val);
         Mem_free((LPWSTR)env->vars[i].name);
     }
     Mem_free(env->vars);
@@ -154,35 +199,35 @@ LPWSTR contains(LPWSTR path, LPCWSTR dir) {
     }
 }
 
-PathStatus validate(LPWSTR path) {
+PathStatus validate(ochar_t* path) {
     int index = 0;
     BOOL needs_quotes = FALSE;
     BOOL has_quotes = FALSE;
-    while (path[index] != L'\0') {
-        if (path[index] == L';') {
+    while (path[index] != oL('\0')) {
+        if (path[index] == oL(';')) {
             needs_quotes = TRUE;
         }
-        if (path[index] < L' ') {
+        if (path[index] < oL(' ')) {
             return PATH_INVALID;
         }
         for (int j = 0; j < 5; ++j) {
-            if (path[index] == L"?|<>*"[j]) {
+            if (path[index] == oL("?|<>*")[j]) {
                 return PATH_INVALID;
             }
         }
-        if (path[index] == L'/') {
-            path[index] = L'\\';
+        if (path[index] == oL('/')) {
+            path[index] = oL('\\');
         }
 
-        if (path[index] == L'\\' &&
-            (path[index + 1] == L'\\' || path[index + 1] == L'/')) {
+        if (path[index] == oL('\\') &&
+            (path[index + 1] == oL('\\') || path[index + 1] == oL('/'))) {
             return PATH_INVALID;
         }
-        if (path[index] == L':' &&
+        if (path[index] == oL(':') &&
             ((has_quotes && index != 2) || (!has_quotes && index != 1))) {
             return PATH_INVALID;
-        } else if (path[index] == L'"') {
-            if (index != 0 && path[index + 1] != L'\0') {
+        } else if (path[index] == oL('"')) {
+            if (index != 0 && path[index + 1] != oL('\0')) {
                 return PATH_INVALID;
             }
             if (index == 0) {
@@ -196,53 +241,53 @@ PathStatus validate(LPWSTR path) {
     if (index == 0 || has_quotes && index <= 2) {
         return PATH_INVALID;
     }
-    if (has_quotes && path[index - 1] != L'"') {
+    if (has_quotes && path[index - 1] != oL('"')) {
         return PATH_INVALID;
     }
-    if (index >= 2 && path[1] == L':') {
-        if (!((path[0] >= L'a' && path[0] <= L'z') ||
-              (path[0] >= L'A' && path[0] <= L'Z'))) {
+    if (index >= 2 && path[1] == oL(':')) {
+        if (!((path[0] >= L'a' && path[0] <= oL('z')) ||
+              (path[0] >= L'A' && path[0] <= oL('Z')))) {
             return PATH_INVALID;
         }
-        if (path[2] != L'\\') {
+        if (path[2] != oL('\\')) {
             return PATH_INVALID;
         }
     }
-    if (path[index - 1] == L'\\') {
-        path[index - 1] = L'\0';
-    } else if (has_quotes && path[index - 2] == L'\\') {
-        path[index - 2] = L'"';
-        path[index - 1] = L'\0';
+    if (path[index - 1] == oL('\\')) {
+        path[index - 1] = oL('\0');
+    } else if (has_quotes && path[index - 2] == oL('\\')) {
+        path[index - 2] = oL('"');
+        path[index - 1] = oL('\0');
     }
     return needs_quotes && !has_quotes ? PATH_NEEDS_QUOTES : PATH_VALID;
 }
 
 bool PathIterator_begin(PathIterator* it, PathBuffer* path) {
     it->path = path;
-    it->buf = Mem_alloc(256 * sizeof(wchar_t));
+    it->buf = Mem_alloc(256 * sizeof(ochar_t));
     it->capacity = 256;
     it->ix = 0;
     return it->buf != NULL;
 }
 
-wchar_t* PathIterator_next(PathIterator* it, uint32_t* size) {
+ochar_t* PathIterator_next(PathIterator* it, uint32_t* size) {
     if (it->buf == NULL) {
         return NULL;
     }
 
-    wchar_t endc = L';';
-    if (it->path->buffer[it->ix] == L'\0') {
+    ochar_t endc = oL(';');
+    if (it->path->buffer[it->ix] == oL('\0')) {
         Mem_free(it->buf);
         it->buf = NULL;
         return NULL;
     }
-    if (it->path->buffer[it->ix] == L'"') {
-        endc = L'"';
+    if (it->path->buffer[it->ix] == oL('"')) {
+        endc = oL('"');
         ++(it->ix);
     }
     uint32_t begin = it->ix;
     while (1) {
-        if (it->path->buffer[it->ix] == L'\0' ||
+        if (it->path->buffer[it->ix] == oL('\0') ||
             it->path->buffer[it->ix] == endc) {
             break;
         }
@@ -252,16 +297,16 @@ wchar_t* PathIterator_next(PathIterator* it, uint32_t* size) {
     if (*size >= it->capacity) {
         it->capacity = *size + 1;
         Mem_free(it->buf);
-        it->buf = Mem_alloc(it->capacity * sizeof(wchar_t));
+        it->buf = Mem_alloc(it->capacity * sizeof(ochar_t));
         if (it->buf == NULL) {
             return NULL;
         }
     }
-    memcpy(it->buf, it->path->buffer + begin, (*size) * sizeof(wchar_t));
-    it->buf[*size] = L'\0';
+    memcpy(it->buf, it->path->buffer + begin, (*size) * sizeof(ochar_t));
+    it->buf[*size] = oL('\0');
 
-    while (it->path->buffer[it->ix] != L';') {
-        if (it->path->buffer[it->ix] == L'\0') {
+    while (it->path->buffer[it->ix] != oL(';')) {
+        if (it->path->buffer[it->ix] == oL('\0')) {
             break;
         }
         ++(it->ix);
@@ -278,9 +323,10 @@ void PathIterator_abort(PathIterator* it) {
     }
 }
 
+#ifndef NARROW_OCHAR
 OpStatus path_prune(PathBuffer *path) {
     PathBuffer res;
-    WString_create_capacity(&res, path->capacity);
+    OString_create_capacity(&res, path->capacity);
 
     OpStatus final_status = OP_NO_CHANGE;
 
@@ -292,18 +338,18 @@ OpStatus path_prune(PathBuffer *path) {
         PathStatus path_status = validate(buf);
         if (path_status != PATH_INVALID) {
             if (res.length == 0) {
-                if (!WString_append_count(&res, buf, size)) {
+                if (!OString_append_count(&res, buf, size)) {
                     PathIterator_abort(&it);
                     return OP_OUT_OF_MEMORY;
                 }
-                if (!WString_append(&res, L';')) {
+                if (!OString_append(&res, oL(';'))) {
                     PathIterator_abort(&it);
                     return OP_OUT_OF_MEMORY;
                 }
             } else {
                 OpStatus status = path_add(buf, &res, FALSE, FALSE);
                 if (status > OP_NO_CHANGE) {
-                    WString_free(&res);
+                    OString_free(&res);
                     PathIterator_abort(&it);
                     return status;
                 }
@@ -537,3 +583,5 @@ int SetProcessEnvironmentVariable(LPCWSTR var, LPCWSTR val, DWORD processId) {
     CloseHandle(hProcess);
     return 0;
 }
+
+#endif

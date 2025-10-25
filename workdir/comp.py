@@ -211,7 +211,7 @@ def main():
                     "src/compiler/code_generation.c", "src/compiler/amd64_asm.c",
                     "src/compiler/log.c", "src/compiler/type_checker.c",
                     "src/compiler/tables.c", "src/printf.c",
-                    "src/dynamic_string.c", "src/args.c",
+                    "src/dynamic_string.c", "src/args.c", "src/path_utils.c",
                     "src/glob.c", "src/arena.c", ntdll]
 
         Executable("compiler.exe", "src/compiler/compiler.c", *comp_src,

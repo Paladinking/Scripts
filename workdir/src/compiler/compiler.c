@@ -5,6 +5,7 @@
 #include "quads.h"
 #include "code_generation.h"
 #include "log.h"
+#include <path_utils.h>
 #include <glob.h>
 #include <printf.h>
 
@@ -121,10 +122,43 @@ int compiler(char** argv, int argc) {
     ObjectSet_create(&objects);
     ObjectSet_add(&objects, object);
 
-    const char* linker_args[2];
-    linker_args[0] = "C:\\Program Files (x86)\\Windows Kits\\10\\lib\\10.0.19041.0\\um\\x64\\kernel32.Lib";
+    String kernel32Path;
+    String_create(&kernel32Path);
 
-    Linker_run(&objects, linker_args, 1, show_object);
+    String path;
+    if (create_envvar("LIB", &path)) {
+        PathIterator it;
+        PathIterator_begin(&it, &path);
+        ochar_t* p;
+        uint32_t size;
+        while ((p = PathIterator_next(&it, &size)) != NULL) {
+            String_append_count(&kernel32Path, p, size);
+#ifdef _WIN32
+            if (p[size - 1] != '\\' && p[size - 1] != '/') {
+                String_append(&kernel32Path, '\\');
+            }
+#else
+            if (p[size - 1] != '/') {
+                String_append(&kernel32Path, '/');
+            }
+#endif
+            String_extend(&kernel32Path, "kernel32.lib");
+            if (is_file(kernel32Path.buffer)) {
+                oprintf("Found kernel32.lib at %s\n", kernel32Path.buffer);
+                break;
+            }
+            String_clear(&kernel32Path);
+        }
+    }
+
+    const char* linker_args[2];
+    uint32_t arg_count = 0;
+    if (kernel32Path.length > 0) {
+        linker_args[0] = kernel32Path.buffer;
+        ++arg_count;
+    }
+
+    Linker_run(&objects, linker_args, arg_count, show_object);
 
     return 0;
 }

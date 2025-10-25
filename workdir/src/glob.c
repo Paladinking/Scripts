@@ -194,8 +194,22 @@ bool get_workdir(WString* str) {
     return true;
 }
 
-bool is_file(const wchar_t* str) {
+bool is_file(const ochar_t* str) {
+#ifdef NARROW_OCHAR
+    WString name;
+    if (!WString_create_capacity(&name, 256)) {
+        return false;
+    }
+    if (!WString_from_utf8_str(&name, str)) {
+        WString_free(&name);
+        return false;
+    }
+    bool res = GetFileAttributesW(name.buffer) != INVALID_FILE_ATTRIBUTES;
+    WString_free(&name);
+    return res;
+#else
     return GetFileAttributesW(str) != INVALID_FILE_ATTRIBUTES;
+#endif
 }
 
 bool is_directory(const wchar_t *str) {
