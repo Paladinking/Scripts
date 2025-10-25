@@ -741,6 +741,49 @@ bool TypeChecker_run(Parser* parser) {
     return parser->first_error == NULL;
 }
 
+bool resolve_union(Parser* parser, TypeDef* struc) {
+    uint32_t size = 0;
+    uint32_t align = 1;
+
+    for (uint32_t i = 0; i < struc->struct_.field_count; ++i) {
+        StructMember* m = &struc->struct_.fields[i];
+
+        TypeData* m_type = &parser->type_table.data[m->type];
+        if ((m_type->kind == TYPE_NORMAL || m_type->kind == TYPE_ARRAY) &&
+            m_type->type_def->kind == TYPEDEF_STRUCT) {
+            if (m_type->type_def->struct_.byte_alignment == 0) {
+                // member is struct that has not yet been resolved
+                return false;
+            }
+        }
+        AllocInfo i = type_allocation(&parser->type_table, m->type);
+        if (i.size > size) {
+            size = i.size;
+        }
+        if (i.alignment > align) {
+            align = i.alignment;
+        }
+        m->offset = 0;
+    }
+    struc->struct_.byte_alignment = align;
+    struc->struct_.byte_size = ALIGNED_TO(size, align);
+
+    uint32_t name_len = parser->name_table.data[struc->struct_.name].name_len;
+    const uint8_t* name = parser->name_table.data[struc->struct_.name].name;
+    LOG_INFO("Resolved union %*.*s (Size %u, alignment %u)",
+             name_len, name_len, name, struc->struct_.byte_size, align);
+
+    for (uint32_t i = 0; i < struc->struct_.field_count; ++i) {
+        LOG_INFO("  Member %*.*s: offset %u",
+                 struc->struct_.fields[i].name.len,
+                 struc->struct_.fields[i].name.len,
+                 struc->struct_.fields[i].name.str,
+                 struc->struct_.fields[i].offset);
+    }
+
+    return true;
+
+}
 
 bool resolve_struct(Parser* parser, TypeDef* struc) {
     uint32_t offset = 0;
@@ -784,6 +827,14 @@ bool resolve_struct(Parser* parser, TypeDef* struc) {
     return true;
 }
 
+bool resolve_struct_or_union(Parser* parser, TypeDef* def) {
+    if (def->struct_.type == STRUCTTYPE_STRUCT) {
+        return resolve_struct(parser, def);
+    } else {
+        return resolve_union(parser, def);
+    }
+}
+
 
 bool TypeChecker_resolve_structs(Parser* parser) {
     // Not realy a queue... just a list
@@ -802,7 +853,7 @@ bool TypeChecker_resolve_structs(Parser* parser) {
         if (def->kind != TYPEDEF_STRUCT) {
             continue;
         }
-        if (!resolve_struct(parser, def)) {
+        if (!resolve_struct_or_union(parser, def)) {
             //NOLINTNEXTLINE 
             RESERVE32(queue, queue_size + 1, queue_cap);
             queue[queue_size++] = def;
@@ -814,7 +865,7 @@ bool TypeChecker_resolve_structs(Parser* parser) {
         uint32_t ix = 0;
         for (uint32_t ix = 0; ix < queue_size;) {
             TypeDef* def = queue[ix];
-            if (resolve_struct(parser, def)) {
+            if (resolve_struct_or_union(parser, def)) {
                 queue[ix] = queue[queue_size - 1];
                 --queue_size;
             } else {

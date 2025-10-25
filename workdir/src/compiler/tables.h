@@ -51,15 +51,16 @@ typedef uint64_t name_id;
 #define NAME_ID_INVALID ((name_id) -1)
 #define NAME_ID_FN 0
 #define NAME_ID_STRUCT 1
-#define NAME_ID_IF 2
-#define NAME_ID_WHILE 3
-#define NAME_ID_ELSE 4
-#define NAME_ID_RETURN 5
-#define NAME_ID_TRUE 6
-#define NAME_ID_FALSE 7
-#define NAME_ID_EXTERN 8
-#define NAME_ID_NULL 9
-#define NAME_ID_BUILTIN_COUNT 10
+#define NAME_ID_UNION 2
+#define NAME_ID_IF 3
+#define NAME_ID_WHILE 4
+#define NAME_ID_ELSE 5
+#define NAME_ID_RETURN 6
+#define NAME_ID_TRUE 7
+#define NAME_ID_FALSE 8
+#define NAME_ID_EXTERN 9
+#define NAME_ID_NULL 10
+#define NAME_ID_BUILTIN_COUNT 11
 
 // Index into hash table
 typedef uint32_t hash_id;
@@ -186,9 +187,14 @@ typedef struct StructMember {
     LineInfo line;
 } StructMember;
 
+enum StructType {
+    STRUCTTYPE_STRUCT, STRUCTTYPE_UNION
+};
+
 typedef struct StructDef {
     name_id name;
     uint32_t field_count;
+    enum StructType type;
     StructMember* fields;
     LineInfo line;
     uint32_t byte_size;

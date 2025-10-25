@@ -103,13 +103,14 @@ FunctionDef* OnScanFunction(void* ctx, uint64_t start, uint64_t end, StrWithLeng
     return func;
 }
 
-type_id OnScanStruct(void* ctx, uint64_t start, uint64_t end, StrWithLength name) {
-    struct Tokenizer *t = ctx;
+type_id scan_struct(struct Tokenizer* t, uint64_t start, uint64_t end, StrWithLength name,
+                    enum StructType type) {
     Parser* p = t->parser;
     type_id struct_type = type_struct_create(&p->type_table, &p->arena);
     TypeDef* def = p->type_table.data[struct_type].type_def;
     def->struct_.line.start = start;
     def->struct_.line.end = end;
+    def->struct_.type = type;
     
     name_id id = name_type_insert(&p->name_table, name, struct_type, 
                                   def, &p->arena);
@@ -122,6 +123,15 @@ type_id OnScanStruct(void* ctx, uint64_t start, uint64_t end, StrWithLength name
     }
 
     return struct_type;
+}
+
+
+type_id OnScanUnion(void* ctx, uint64_t start, uint64_t end, StrWithLength name) {
+    return scan_struct(ctx, start, end, name, STRUCTTYPE_UNION);
+}
+
+type_id OnScanStruct(void* ctx, uint64_t start, uint64_t end, StrWithLength name) {
+    return scan_struct(ctx, start, end, name, STRUCTTYPE_STRUCT);
 }
 
 

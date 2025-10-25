@@ -109,6 +109,7 @@ void Parser_create(Parser* parser) {
 
     parser_add_keyword(parser, "fn", NAME_ID_FN);
     parser_add_keyword(parser, "struct", NAME_ID_STRUCT);
+    parser_add_keyword(parser, "union", NAME_ID_UNION);
     parser_add_keyword(parser, "if", NAME_ID_IF);
     parser_add_keyword(parser, "while", NAME_ID_WHILE);
     parser_add_keyword(parser, "else", NAME_ID_ELSE);
@@ -455,9 +456,9 @@ type_id OnPtrType(void* ctx, uint64_t start, uint64_t end, type_id type,
     return OnType(ctx, start, end, type, sizes);
 }
 
-type_id OnStruct(void* ctx, uint64_t start, uint64_t end,
-                 type_id type, FieldList* fields) {
-    Parser* p = PARSER(ctx);
+
+type_id handle_struct(Parser* p, uint64_t start, uint64_t end,
+                type_id type, FieldList * fields) {
     uint64_t field_count = 0;
     FieldList* f = fields;
     while (f != NULL) {
@@ -478,13 +479,23 @@ type_id OnStruct(void* ctx, uint64_t start, uint64_t end,
     assert(type != TYPE_ID_INVALID);
     TypeDef* def = p->type_table.data[type].type_def;
     def->struct_.line.start = start;
-    def->struct_.line.end = start;
+    def->struct_.line.end = end;
     def->struct_.fields = members;
     def->struct_.field_count = field_count;
     // Cannot initialize byte_size and byte_alignment yet
     // in case this struct contains another struct defined later
 
     return type;
+}
+
+type_id OnUnion(void *ctx, uint64_t start, uint64_t end,
+                type_id type, FieldList * fields) {
+    return handle_struct(PARSER(ctx), start, end, type, fields);
+}
+
+type_id OnStruct(void* ctx, uint64_t start, uint64_t end,
+                 type_id type, FieldList* fields) {
+    return handle_struct(PARSER(ctx), start, end, type, fields);
 }
 
 FieldList* OnField(void* ctx, uint64_t start, uint64_t end, FieldList* fields, 
@@ -770,7 +781,8 @@ void consume_token(void* ctx, uint64_t* start, uint64_t* end) {
             t->last_token.identifier.len = len;
         } else if (name < NAME_ID_BUILTIN_COUNT) {
             static enum TokenType map[] = {
-                TOKEN_KWFN, TOKEN_KWSTRUCT, TOKEN_KWIF, TOKEN_KWWHILE, TOKEN_KWELSE,
+                TOKEN_KWFN, TOKEN_KWSTRUCT, TOKEN_KWUNION,
+                TOKEN_KWIF, TOKEN_KWWHILE, TOKEN_KWELSE,
                 TOKEN_KWRETURN, TOKEN_KWTRUE, TOKEN_KWFALSE, TOKEN_KWEXTERN,
                 TOKEN_KWNULL
             };
