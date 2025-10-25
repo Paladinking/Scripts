@@ -126,7 +126,7 @@ int compiler(char** argv, int argc) {
     String_create(&kernel32Path);
 
     String path;
-    if (create_envvar("LIB", &path)) {
+    if (create_envvar("LIB", &path) && kernel32Path.buffer != NULL) {
         PathIterator it;
         PathIterator_begin(&it, &path);
         ochar_t* p;
@@ -149,6 +149,7 @@ int compiler(char** argv, int argc) {
             }
             String_clear(&kernel32Path);
         }
+        String_free(&path);
     }
 
     const char* linker_args[2];
@@ -159,6 +160,7 @@ int compiler(char** argv, int argc) {
     }
 
     Linker_run(&objects, linker_args, arg_count, show_object);
+    String_free(&kernel32Path);
 
     return 0;
 }
