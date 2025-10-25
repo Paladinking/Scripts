@@ -21,6 +21,8 @@ static enum Amd64OperandType simple_operand(enum Amd64OperandType op) {
         return OPERAND_MEM32;
     case OPERAND_GLOBAL_MEM64:
         return OPERAND_MEM64;
+    case OPERAND_GLOBAL_MEM128:
+        return OPERAND_MEM128;
     default:
         return op;
     }
@@ -77,7 +79,8 @@ static uint64_t max_op_offset(AsmCtx* ctx, Amd64Op* op, uint64_t* offset) {
                 if (op->operands[oper_ix].type == OPERAND_GLOBAL_MEM8 ||
                     op->operands[oper_ix].type == OPERAND_GLOBAL_MEM16 ||
                     op->operands[oper_ix].type == OPERAND_GLOBAL_MEM32 ||
-                    op->operands[oper_ix].type == OPERAND_GLOBAL_MEM64) {
+                    op->operands[oper_ix].type == OPERAND_GLOBAL_MEM64 ||
+                    op->operands[oper_ix].type == OPERAND_GLOBAL_MEM128) {
                     // Need 32-bit offset
                     size += 4;
                 } else {
@@ -255,7 +258,8 @@ static uint64_t assemble_op(AsmCtx* ctx, Amd64Op* op, uint64_t* offset, AddrBuf*
         case OPERAND_GLOBAL_MEM8:
         case OPERAND_GLOBAL_MEM16:
         case OPERAND_GLOBAL_MEM32:
-        case OPERAND_GLOBAL_MEM64: {
+        case OPERAND_GLOBAL_MEM64:
+        case OPERAND_GLOBAL_MEM128: {
             operands[ix].type = simple_operand(op->operands[ix].type);
             operands[ix].offset = op->operands[ix].offset;
             operands[ix].reg = 255;
@@ -485,7 +489,8 @@ void asm_instr(AsmCtx* ctx, enum Amd64Opcode opcode) {
     op->opcode = opcode;
 }
 
-void asm_reg_var(AsmCtx* ctx, uint8_t size, uint8_t reg) {
+void asm_genreg_var(AsmCtx* ctx, uint8_t size, uint8_t reg) {
+    assert(reg >= RAX && reg < RAX + GEN_REG_COUNT);
     Amd64Op* op = ctx->end;
     if (size == 1) {
         op->operands[op->count].type = OPERAND_REG8;
@@ -498,6 +503,13 @@ void asm_reg_var(AsmCtx* ctx, uint8_t size, uint8_t reg) {
         op->operands[op->count].type = OPERAND_REG64;
     }
     op->operands[op->count++].reg = reg;
+}
+
+void asm_xmmreg_var(AsmCtx *ctx, uint8_t size, uint8_t reg) {
+    assert(reg >= XMM0 && reg < XMM0 + XMM_COUNT);
+    Amd64Op* op = ctx->end;
+    op->operands[op->count].type = OPERAND_REGXMM;
+    op->operands[op->count++].reg = reg - XMM0;
 }
 
 void asm_label_var(AsmCtx* ctx, uint64_t ix) {
@@ -523,9 +535,11 @@ void asm_mem_var(AsmCtx* ctx, uint8_t size, uint8_t reg, uint8_t scale,
         op->operands[op->count].type = OPERAND_MEM16;
     } else if (size == 4) {
         op->operands[op->count].type = OPERAND_MEM32;
-    } else {
-        assert(size == 8);
+    } else if (size == 8) {
         op->operands[op->count].type = OPERAND_MEM64;
+    } else {
+        assert(size == 16);
+        op->operands[op->count].type = OPERAND_MEM128;
     }
 
     assert(op->count == 0 || op->operands[op->count - 1].type != OPERAND_MEM64);
@@ -545,9 +559,11 @@ void asm_global_mem_var(AsmCtx* ctx, uint8_t size, symbol_ix symbol,
         op->operands[op->count].type = OPERAND_GLOBAL_MEM16;
     } else if (size == 4) {
         op->operands[op->count].type = OPERAND_GLOBAL_MEM32;
-    } else {
-        assert(size == 8);
+    } else if (size == 8) {
         op->operands[op->count].type = OPERAND_GLOBAL_MEM64;
+    } else {
+        assert(size == 16);
+        op->operands[op->count].type = OPERAND_GLOBAL_MEM128;
     }
     // Sanity check, not actually needed
     assert(offset < 65535 && offset + 65535 > 0);
@@ -623,9 +639,21 @@ const char* OP_NAMES[] = {
     "movsxd", "movsx", "movzx",
     "setg", "seta", "setle", "setbe",
     "setge", "setae", "setl", "setb",
-    "setne", "setnz", "sete", "setz"
+    "setne", "setnz", "sete", "setz",
+    "movss", "movsd", "cvtss2si",
+    "cvtsd2si", "cvtsi2ss", "cvtsi2sd",
+    "cvtss2sd", "cvtsd2ss", "xorps",
+    "addss", "addsd", "subss", "subsd",
+    "mulss", "mulsd", "divss", "divsd",
+    "movdqa", "cvttss2si", "cvttsd2si"
 };
 
+const char* XMM_REG_NAMES[] = {
+    "xmm0", "xmm1", "xmm2", "xmm3",
+    "xmm4", "xmm5", "xmm6", "xmm7",
+    "xmm8", "xmm9", "xmm10", "xmm11",
+    "xmm12", "xmm13", "xmm14", "xmm15"
+};
 
 const char* QWORD_REG_NAMES[] = {
     "rax", "rcx", "rdx", "rbx", "rsp",
@@ -674,14 +702,17 @@ void serialize_operand(AsmCtx* ctx, String* dest, Amd64Operand operand) {
     case OPERAND_MEM16:
     case OPERAND_MEM32:
     case OPERAND_MEM64:
+    case OPERAND_MEM128:
         if (operand.type == OPERAND_MEM8) {
             String_extend(dest, "BYTE [");
         } else if (operand.type == OPERAND_MEM16) {
             String_extend(dest, "WORD [");
         } else if (operand.type == OPERAND_MEM32) {
             String_extend(dest, "DWORD [");
-        } else {
+        } else if (operand.type == OPERAND_MEM64) {
             String_extend(dest, "QWORD [");
+        } else {
+            String_extend(dest, "XMMWORD [");
         }
         String_extend(dest, regname(operand.reg, 8));
         if (operand.scale != 0) {
@@ -704,6 +735,9 @@ void serialize_operand(AsmCtx* ctx, String* dest, Amd64Operand operand) {
         return;
     case OPERAND_REG64:
         String_extend(dest, regname(operand.reg, 8));
+        return;
+    case OPERAND_REGXMM:
+        String_extend(dest, XMM_REG_NAMES[operand.reg]);
         return;
     case OPERAND_LABEL:
         String_format_append(dest, "L%lu", operand.label);
@@ -736,6 +770,12 @@ void serialize_operand(AsmCtx* ctx, String* dest, Amd64Operand operand) {
         const uint8_t* n = ctx->object->symbols[operand.symbol].name;
         uint32_t l = ctx->object->symbols[operand.symbol].name_len;
         String_format_append(dest, "QWORD [%*.*s]", l, l, n);
+        return;
+    }
+    case OPERAND_GLOBAL_MEM128: {
+        const uint8_t* n = ctx->object->symbols[operand.symbol].name;
+        uint32_t l = ctx->object->symbols[operand.symbol].name_len;
+        String_format_append(dest, "XMMWORD [%*.*s]", l, l, n);
         return;
     }
     case OPERAND_IMM8: {

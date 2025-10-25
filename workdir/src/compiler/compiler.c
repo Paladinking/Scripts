@@ -36,8 +36,8 @@ int compiler(char** argv, int argc) {
         if (s != NULL) {
             _printf_e("%s\n", s);
             Mem_free(s);
-            return 1;
         }
+        return 1;
     }
     Log_Init(flags[0].count > 0);
 

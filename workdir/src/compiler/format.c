@@ -3,7 +3,9 @@
 
 const static char* quadnames[] = {
     "QDIV", "QMUL", "QMOD", "QSUB", "QADD",
-    "QRSHIFT", "QLSHIFT", "QNEGATE", "QCMP_EQ",
+    "QRSHIFT", "QLSHIFT", "QNEGATE",
+    "QFDIV", "QFMUL", "QFADD", "QFSUB",
+    "QFNEGATE", "QCMP_EQ",
     "QCMP_NEQ", "QCMP_G", "QCMP_L", "QCMP_GE",
     "QCMP_LE", "QJMP", "QJMP_FALSE", "QJMP_TRUE",
     "QLABEL", "QBOOL_AND", "QBOOL_OR", "QBOOL_NOT",
@@ -16,7 +18,8 @@ const static char* quadnames[] = {
     "QCAST_TO_BOOL", "QARRAY_TO_PTR", "QPUT_ARG", 
     "QCALL", "QCALL_PTR", "QRETURN", "QGET_RET", "QGET_ARG",
     "QMOVE", "QGET_ARRAY_ADDR", "QCALC_ARRAY_ADDR",
-    "QSET_ADDR", "QCREATE", "QADDROF", "QDEREF", "QSTRUCT_ADDR"
+    "QSET_ADDR", "QCREATE", "QFCREATE", "QADDROF", 
+    "QDEREF", "QSTRUCT_ADDR"
 };
 
 void fmt_quad(const Quad* quad, String* dest) {
@@ -33,6 +36,10 @@ void fmt_quad(const Quad* quad, String* dest) {
     case QUAD_MOD:
     case QUAD_SUB:
     case QUAD_ADD:
+    case QUAD_FADD:
+    case QUAD_FSUB:
+    case QUAD_FDIV:
+    case QUAD_FMUL:
     case QUAD_RSHIFT:
     case QUAD_LSHIFT:
     case QUAD_CMP_EQ:
@@ -77,9 +84,11 @@ void fmt_quad(const Quad* quad, String* dest) {
         String_format_append(dest, "<%llu> <%llu>", quad->op1.var, quad->op2);
         break;
     case QUAD_CREATE:
+    case QUAD_FCREATE:
         String_format_append(dest, "[] -> <%llu>", quad->dest);
         break;
     case QUAD_NEGATE:
+    case QUAD_FNEGATE:
     case QUAD_BOOL_NOT:
     case QUAD_BIT_NOT:
     case QUAD_CAST_TO_FLOAT64:

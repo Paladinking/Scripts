@@ -29,6 +29,12 @@ enum QuadType {
     QUAD_LSHIFT, // <op1>, <op2> -> <dest>
     QUAD_NEGATE, // <op1>, x -> <dest>
 
+    QUAD_FDIV, // <op1>, <op2> -> <dest>
+    QUAD_FMUL, // <op1>, <op2> -> <dest>
+    QUAD_FADD, // <op1>, <op2> -> <dest>
+    QUAD_FSUB, // <op1>, <op2> -> <dest>
+    QUAD_FNEGATE, // <op1>, x -> <dest>
+
     QUAD_CMP_EQ, // <op1>, <op2> -> <bool>
     QUAD_CMP_NEQ, // <op1>, <op2> -> <bool>
     QUAD_CMP_G, // <op1>, <op2> -> <bool>
@@ -77,6 +83,7 @@ enum QuadType {
     QUAD_SET_ADDR, // <ptr>, <data> -> x
 
     QUAD_CREATE, // [val], x -> <dest>
+    QUAD_FCREATE, // [val], x -> <dest>
 
     QUAD_ADDROF, // <val>, x -> <dest>
     QUAD_DEREF, // <ptr>, x -> <dest>
@@ -84,7 +91,7 @@ enum QuadType {
     QUAD_STRUCT_ADDR, // [offset], <val> -> <ptr>
 };
 
-#define QUAD_COUNT 51
+#define QUAD_COUNT 57
 
 typedef struct Quad {
     enum QuadType type;

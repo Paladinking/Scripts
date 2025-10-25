@@ -311,14 +311,23 @@ FlowNode FlowNode_Create(Quad* start, Quad* end, var_id var_end) {
 
 var_id create_temp_var(ConflictGraph* graph, VarList* vars, FlowNode* node,
                        VarSet* live, var_id base) {
+    return create_typed_temp_var(graph, vars, node, live,
+                                 vars->data[base].byte_size, 
+                                 vars->data[base].alignment,
+                                 vars->data[base].datatype);
+}
+
+var_id create_typed_temp_var(ConflictGraph* graph, VarList* vars, FlowNode* node,
+                             VarSet* live, uint32_t byte_size, uint32_t align,
+                             enum VarDatatype datatype) {
     RESERVE(vars->data, vars->size + 1, vars->cap);
     var_id id = vars->size;
     vars->size += 1;
-    vars->data[id].datatype = vars->data[base].datatype;
+    vars->data[id].datatype = datatype;
     vars->data[id].alloc_type = ALLOC_NONE;
     vars->data[id].name = NAME_ID_INVALID;
-    vars->data[id].byte_size = vars->data[base].byte_size;
-    vars->data[id].alignment = vars->data[base].alignment;
+    vars->data[id].byte_size = byte_size;
+    vars->data[id].alignment = align;
     vars->data[id].reads = 1;
     vars->data[id].writes = 1;
     vars->data[id].kind = VAR_TEMP;
@@ -366,7 +375,7 @@ void create_live_in_out(FlowNode* nodes, uint64_t node_count, VarSet* work) {
 
 void create_conflict_graph(ConflictGraph* graph, FlowNode* nodes, uint64_t node_count,
                            Quads* quads, VarList* vars, VarSet* live, Arena* arena) {
-    Backend_inital_contraints(graph, vars->size);
+    Backend_inital_contraints(graph, vars);
 
     VarSet_clearall(live);
 
@@ -402,6 +411,7 @@ bool can_allocate(ConflictGraph* graph, uint64_t to_alloc, var_id* stack) {
         }
         uint64_t reg = ConflictGraph_pick_register(graph, v - graph->reg_count);
         if (reg == VAR_ID_INVALID) {
+            LOG_DEBUG("Failed to pick register for var %llu", v - graph->reg_count);
             break;
         }
         LOG_DEBUG("Tried picking register %llu for var %llu", reg, v - graph->reg_count);
@@ -577,7 +587,6 @@ void allocate_registers(Quads* quads, Quad* start, Quad* end,
             // spill it
             assert(vars->data[max_var].alloc_type == ALLOC_NONE);
             vars->data[max_var].alloc_type = ALLOC_MEM;
-            LOG_INFO("Spill %llu", max_var);
             continue;
         }
         break;
@@ -611,7 +620,8 @@ Object* Generate_code(Quads* quads, FunctionTable* functions, FunctionTable* ext
         end->next_quad = NULL;
         var_id var_start = 0;
         var_id var_end = functions->data[ix]->vars.size;
-        
+        const char* name = name_table->data[functions->data[ix]->name].name;
+        uint32_t name_len = name_table->data[functions->data[ix]->name].name_len;
         allocate_registers(quads, start, end, label_map,
                           &functions->data[ix]->vars, arena);
     }

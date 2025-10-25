@@ -137,6 +137,24 @@ class OperandRegOrMem64:
     def mem(self) -> str:
         return OPERAND_MEM64
 
+class OperandXmmOrMem32:
+    def reg(self) -> str:
+        return OPERAND_REGXMM
+    def mem(self) -> str:
+        return OPERAND_MEM32
+
+class OperandXmmOrMem64:
+    def reg(self) -> str:
+        return OPERAND_REGXMM
+    def mem(self) -> str:
+        return OPERAND_MEM64
+
+class OperandXmmOrMem128:
+    def reg(self) -> str:
+        return OPERAND_REGXMM
+    def mem(self) -> str:
+        return OPERAND_MEM128
+
 class OperandRegCls:
     def with_size(self, size: int) -> str:
         if size == 1:
@@ -193,10 +211,12 @@ class OperandImm64Cls:
 
 OperandImm64 = OperandImm64Cls()
 
+OPERAND_REGXMM = "OPERAND_REGXMM"
 OPERAND_MEM8 = "OPERAND_MEM8"
 OPERAND_MEM16 = "OPERAND_MEM16"
 OPERAND_MEM32 = "OPERAND_MEM32"
 OPERAND_MEM64 = "OPERAND_MEM64"
+OPERAND_MEM128 = "OPERAND_MEM128"
 OPERAND_REG8 = "OPERAND_REG8"
 OPERAND_REG16 = "OPERAND_REG16"
 OPERAND_REG32 = "OPERAND_REG32"
@@ -208,7 +228,7 @@ OPERAND_IMM64 = "OPERAND_IMM64"
 
 Operand = Union[str, OperandRegOrMemCls, OperandRegCls, OperandMemCls, OperandImm32Cls,
                 OperandImm64Cls, OperandRegOrMem8, OperandRegOrMem16, OperandRegOrMem32, 
-                OperandRegOrMem64]
+                OperandRegOrMem64, OperandXmmOrMem32, OperandXmmOrMem64, OperandXmmOrMem128]
 
 def split_size(ops: Tuple[Operand, ...], mems: Tuple[Mnemonic, ...],
                include_byte: bool=True) -> List[Tuple[Tuple[Operand, ...],
@@ -465,6 +485,105 @@ def main() -> None:
         setcc = split_encoding((OperandRegOrMem8(),), 
                                (Opcode2(o), ModRmOpcode(0), RmMemAndReg()))
         output(name, setcc)
+
+    movss = split_encoding((OPERAND_REGXMM, OperandXmmOrMem32()),
+                           (Prefix(0xF3), Opcode2(0x10), ModRm(0), RegReg(), RmMemAndReg()))
+    movss += split_encoding((OperandXmmOrMem32(), OPERAND_REGXMM),
+                            (Prefix(0xF3), Opcode2(0x11), ModRm(0), RmMemAndReg(), RegReg()))
+    output('MOVSS', movss)
+
+    movsd = split_encoding((OPERAND_REGXMM, OperandXmmOrMem64()),
+                           (Prefix(0xF2), Opcode2(0x10), ModRm(0), RegReg(), RmMemAndReg()))
+    movsd += split_encoding((OperandXmmOrMem64(), OPERAND_REGXMM),
+                            (Prefix(0xF2), Opcode2(0x11), ModRm(0), RmMemAndReg(), RegReg()))
+    output('MOVSD', movsd)
+
+    cvtss2si = split_encoding((OPERAND_REG32, OperandXmmOrMem32()),
+                              (Prefix(0xF3), Opcode2(0x2D), ModRm(0), RegReg(), RmMemAndReg()))
+    cvtss2si += split_encoding((OPERAND_REG64, OPERAND_REGXMM),
+                               (Prefix(0xF3), Rex(0x48), Opcode2(0x2D), ModRm(0), 
+                                RegReg(), RmReg()))
+    output('CVTSS2SI', cvtss2si)
+
+    cvtsd2si = split_encoding((OPERAND_REG32, OperandXmmOrMem64()),
+                              (Prefix(0xF2), Opcode2(0x2D), ModRm(0), RegReg(), RmMemAndReg()))
+    cvtsd2si += split_encoding((OPERAND_REG64, OperandXmmOrMem64()),
+                              (Prefix(0xF2), Rex(0x48), Opcode2(0x2D), ModRm(0), 
+                               RegReg(), RmMemAndReg()))
+    output('CVTSD2SI', cvtsd2si)
+
+    cvtsi2ss = split_encoding((OPERAND_REGXMM, OperandRegOrMem32()),
+                              (Prefix(0xF3), Opcode2(0x2A), ModRm(0), RegReg(), RmMemAndReg()))
+    cvtsi2ss += split_encoding((OPERAND_REGXMM, OperandRegOrMem64()),
+                              (Prefix(0xF3), Rex(0x48), Opcode2(0x2A), ModRm(0), 
+                               RegReg(), RmMemAndReg()))
+    output('CVTSI2SS', cvtsi2ss)
+
+
+    cvtsi2sd = split_encoding((OPERAND_REGXMM, OperandRegOrMem32()),
+                              (Prefix(0xF2), Opcode2(0x2A), ModRm(0), RegReg(), RmMemAndReg()))
+    cvtsi2sd += split_encoding((OPERAND_REGXMM, OperandRegOrMem64()),
+                              (Prefix(0xF2), Rex(0x48), Opcode2(0x2A), ModRm(0), 
+                               RegReg(), RmMemAndReg()))
+    output('CVTSI2SD', cvtsi2sd)
+
+    cvtss2sd = split_encoding((OPERAND_REGXMM, OperandXmmOrMem32()),
+                              (Prefix(0xF3), Opcode2(0x5A), ModRm(0), RegReg(), RmMemAndReg()))
+    output('CVTSS2SD', cvtss2sd)
+
+    cvtsd2ss = split_encoding((OPERAND_REGXMM, OperandXmmOrMem64()),
+                              (Prefix(0xF2), Opcode2(0x5A), ModRm(0), RegReg(), RmMemAndReg()))
+    output('CVTSD2SS', cvtsd2ss)
+
+    xorps = split_encoding((OPERAND_REGXMM, OperandXmmOrMem128()),
+                           (Prefix(0x66), Opcode2(0x57), ModRm(0), RegReg(), RmMemAndReg()))
+    output('XORPS', xorps)
+
+
+    adss = split_encoding((OPERAND_REGXMM, OperandXmmOrMem32()),
+                          (Prefix(0xF3), Opcode2(0x58), ModRm(0), RegReg(), RmMemAndReg()))
+    output('ADSS', adss)
+    adsd = split_encoding((OPERAND_REGXMM, OperandXmmOrMem64()),
+                          (Prefix(0xF2), Opcode2(0x58), ModRm(0), RegReg(), RmMemAndReg()))
+    output('ADSD', adsd)
+    subss = split_encoding((OPERAND_REGXMM, OperandXmmOrMem32()),
+                          (Prefix(0xF3), Opcode2(0x5C), ModRm(0), RegReg(), RmMemAndReg()))
+    output('SUBSS', subss)
+    subsd = split_encoding((OPERAND_REGXMM, OperandXmmOrMem64()),
+                          (Prefix(0xF2), Opcode2(0x5C), ModRm(0), RegReg(), RmMemAndReg()))
+    output('SUBSD', subsd)
+    mulss = split_encoding((OPERAND_REGXMM, OperandXmmOrMem32()),
+                          (Prefix(0xF3), Opcode2(0x59), ModRm(0), RegReg(), RmMemAndReg()))
+    output('MULSS', mulss)
+    mulsd = split_encoding((OPERAND_REGXMM, OperandXmmOrMem64()),
+                          (Prefix(0xF2), Opcode2(0x59), ModRm(0), RegReg(), RmMemAndReg()))
+    output('MULSD', mulsd)
+    divss = split_encoding((OPERAND_REGXMM, OperandXmmOrMem32()),
+                          (Prefix(0xF3), Opcode2(0x5E), ModRm(0), RegReg(), RmMemAndReg()))
+    output('DIVSS', divss)
+    divsd = split_encoding((OPERAND_REGXMM, OperandXmmOrMem64()),
+                          (Prefix(0xF2), Opcode2(0x5E), ModRm(0), RegReg(), RmMemAndReg()))
+    output('DIVSD', divsd)
+
+    movdqa = split_encoding((OPERAND_REGXMM, OperandXmmOrMem128()),
+                            (Prefix(0x66), Opcode2(0x6F), ModRm(0), RegReg(), RmMemAndReg()))
+    movdqa += split_encoding((OperandXmmOrMem128(), OPERAND_REGXMM), 
+                             (Prefix(0x66), Opcode2(0x7F), ModRm(0), RmMemAndReg(), RegReg()))
+    output('MOVDQA', movdqa)
+
+    cvttss2si = split_encoding((OPERAND_REG32, OperandXmmOrMem32()),
+                              (Prefix(0xF3), Opcode2(0x2C), ModRm(0), RegReg(), RmMemAndReg()))
+    cvttss2si += split_encoding((OPERAND_REG64, OPERAND_REGXMM),
+                               (Prefix(0xF3), Rex(0x48), Opcode2(0x2C), ModRm(0), 
+                                RegReg(), RmReg()))
+    output('CVTTSS2SI', cvttss2si)
+
+    cvttsd2si = split_encoding((OPERAND_REG32, OperandXmmOrMem64()),
+                              (Prefix(0xF2), Opcode2(0x2C), ModRm(0), RegReg(), RmMemAndReg()))
+    cvttsd2si += split_encoding((OPERAND_REG64, OperandXmmOrMem64()),
+                              (Prefix(0xF2), Rex(0x48), Opcode2(0x2C), ModRm(0), 
+                               RegReg(), RmMemAndReg()))
+    output('CVTTSD2SI', cvttsd2si)
 
     s = '\n\n'.join([val for name, val, count in encodings])
     parts = [f'    {{{count}, {name}_ENCODING}}{"," if ix + 1 < len(encodings) else ""} //{ix}' 

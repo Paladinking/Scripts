@@ -223,7 +223,11 @@ var_id quads_unop(Parser* parser, Expression* expr, QuadList* quads,
         quad = QUAD_BOOL_NOT;
         break;
     case UNOP_NEGATIVE:
-        quad = QUAD_NEGATE;
+        if (expr->type == TYPE_ID_FLOAT32 || expr->type == TYPE_ID_FLOAT64) {
+            quad = QUAD_FNEGATE;
+        } else {
+            quad = QUAD_NEGATE;
+        }
         break;
     case UNOP_PAREN:
     case UNOP_POSITIVE:
@@ -275,10 +279,18 @@ var_id quads_binop(Parser* parser, Expression* expr, QuadList* quads,
 
     switch (expr->binop.op) {
     case BINOP_DIV:
-        quad = QUAD_DIV;
+        if (ltype == TYPE_ID_FLOAT32 || ltype == TYPE_ID_FLOAT64) {
+            quad = QUAD_FDIV;
+        } else {
+            quad = QUAD_DIV;
+        }
         break;
     case BINOP_MUL:
-        quad = QUAD_MUL;
+        if (ltype == TYPE_ID_FLOAT32 || ltype == TYPE_ID_FLOAT64) {
+            quad = QUAD_FMUL;
+        } else {
+            quad = QUAD_MUL;
+        }
         break;
     case BINOP_MOD:
         quad = QUAD_MOD;
@@ -353,6 +365,8 @@ var_id quads_binop(Parser* parser, Expression* expr, QuadList* quads,
             } else {
                 quad = QUAD_SUB;
             }
+        } else if (ltype == TYPE_ID_FLOAT32 || ltype == TYPE_ID_FLOAT64) {
+            quad = QUAD_FSUB;
         } else {
             quad = QUAD_SUB;
         }
@@ -389,8 +403,12 @@ var_id quads_binop(Parser* parser, Expression* expr, QuadList* quads,
                 }
                 rhs = tmp;
             }
+            quad = QUAD_ADD;
+        } else if (ltype == TYPE_ID_FLOAT32 || ltype == TYPE_ID_FLOAT64) {
+            quad = QUAD_FADD;
+        } else {
+            quad = QUAD_ADD;
         }
-        quad = QUAD_ADD;
         break;
     case BINOP_BIT_LSHIFT:
         quad = QUAD_LSHIFT;
@@ -785,7 +803,7 @@ loop:
                 q->op1.uint64 = e->literal.uint;
                 break;
             case EXPRESSION_LITERAL_FLOAT:
-                q = QuadList_addquad(quads, QUAD_CREATE, dest);
+                q = QuadList_addquad(quads, QUAD_FCREATE, dest);
                 q->op1.float64 = e->literal.float64;
                 break;
             case EXPRESSION_STRING:
@@ -1221,6 +1239,10 @@ void Quad_update_live(const Quad* q, VarSet* live) {
     case QUAD_MOD:
     case QUAD_SUB:
     case QUAD_ADD:
+    case QUAD_FADD:
+    case QUAD_FSUB:
+    case QUAD_FMUL:
+    case QUAD_FDIV:
     case QUAD_RSHIFT:
     case QUAD_LSHIFT:
     case QUAD_CMP_EQ:
@@ -1263,9 +1285,11 @@ void Quad_update_live(const Quad* q, VarSet* live) {
         VarSet_set(live, q->op2);
         break;
     case QUAD_CREATE:
+    case QUAD_FCREATE:
         VarSet_clear(live, q->dest);
         break;
     case QUAD_NEGATE:
+    case QUAD_FNEGATE:
     case QUAD_BOOL_NOT:
     case QUAD_BIT_NOT:
     case QUAD_CAST_TO_FLOAT64:
@@ -1302,6 +1326,10 @@ void Quad_add_usages(const Quad* q, VarSet* use, VarSet* define, VarList* vars) 
     case QUAD_MOD:
     case QUAD_SUB:
     case QUAD_ADD:
+    case QUAD_FADD:
+    case QUAD_FSUB:
+    case QUAD_FDIV:
+    case QUAD_FMUL:
     case QUAD_RSHIFT:
     case QUAD_LSHIFT:
     case QUAD_CMP_EQ:
@@ -1364,10 +1392,12 @@ void Quad_add_usages(const Quad* q, VarSet* use, VarSet* define, VarList* vars) 
         }
         break;
     case QUAD_CREATE:
+    case QUAD_FCREATE:
         ++vars->data[q->dest].writes;
         VarSet_set(define, q->dest);
         break;
     case QUAD_NEGATE:
+    case QUAD_FNEGATE:
     case QUAD_BOOL_NOT:
     case QUAD_BIT_NOT:
     case QUAD_CAST_TO_FLOAT64:

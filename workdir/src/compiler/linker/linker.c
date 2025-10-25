@@ -375,7 +375,7 @@ symbol_ix Object_declare_var(Object* object, section_ix section,
                              const uint8_t* name, uint32_t name_len,
                              uint32_t align, bool external) {
     uint8_t* name_ptr = Mem_alloc(name_len);
-    if (name_ptr == NULL) {
+    if (name_ptr == NULL && name_len > 0) {
         out_of_memory(NULL);
     }
     memcpy(name_ptr, name, name_len);
