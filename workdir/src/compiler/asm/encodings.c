@@ -2449,6 +2449,346 @@ const Encoding SETZ_ENCODING[] = {
     }
 };
 
+const Encoding MOVSS_ENCODING[] = {
+    {
+        2, 5,
+        {{PREFIX, 0xf3}, {OPCODE2, 0x10}, {MOD_RM, 0x0}, {REG_REG}, {RM_MEM}},
+        {OPERAND_REGXMM, OPERAND_MEM32},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0xf3}, {OPCODE2, 0x10}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REGXMM, OPERAND_REGXMM},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0xf3}, {OPCODE2, 0x11}, {MOD_RM, 0x0}, {RM_MEM}, {REG_REG}},
+        {OPERAND_MEM32, OPERAND_REGXMM},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0xf3}, {OPCODE2, 0x11}, {MOD_RM, 0x0}, {RM_REG}, {REG_REG}},
+        {OPERAND_REGXMM, OPERAND_REGXMM},
+    }
+};
+
+const Encoding MOVSD_ENCODING[] = {
+    {
+        2, 5,
+        {{PREFIX, 0xf2}, {OPCODE2, 0x10}, {MOD_RM, 0x0}, {REG_REG}, {RM_MEM}},
+        {OPERAND_REGXMM, OPERAND_MEM64},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0xf2}, {OPCODE2, 0x10}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REGXMM, OPERAND_REGXMM},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0xf2}, {OPCODE2, 0x11}, {MOD_RM, 0x0}, {RM_MEM}, {REG_REG}},
+        {OPERAND_MEM64, OPERAND_REGXMM},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0xf2}, {OPCODE2, 0x11}, {MOD_RM, 0x0}, {RM_REG}, {REG_REG}},
+        {OPERAND_REGXMM, OPERAND_REGXMM},
+    }
+};
+
+const Encoding CVTSS2SI_ENCODING[] = {
+    {
+        2, 5,
+        {{PREFIX, 0xf3}, {OPCODE2, 0x2d}, {MOD_RM, 0x0}, {REG_REG}, {RM_MEM}},
+        {OPERAND_REG32, OPERAND_MEM32},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0xf3}, {OPCODE2, 0x2d}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REG32, OPERAND_REGXMM},
+    },
+    {
+        2, 6,
+        {{PREFIX, 0xf3}, {REX, 0x48}, {OPCODE2, 0x2d}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REG64, OPERAND_REGXMM},
+    }
+};
+
+const Encoding CVTSD2SI_ENCODING[] = {
+    {
+        2, 5,
+        {{PREFIX, 0xf2}, {OPCODE2, 0x2d}, {MOD_RM, 0x0}, {REG_REG}, {RM_MEM}},
+        {OPERAND_REG32, OPERAND_MEM64},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0xf2}, {OPCODE2, 0x2d}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REG32, OPERAND_REGXMM},
+    },
+    {
+        2, 6,
+        {{PREFIX, 0xf2}, {REX, 0x48}, {OPCODE2, 0x2d}, {MOD_RM, 0x0}, {REG_REG}, {RM_MEM}},
+        {OPERAND_REG64, OPERAND_MEM64},
+    },
+    {
+        2, 6,
+        {{PREFIX, 0xf2}, {REX, 0x48}, {OPCODE2, 0x2d}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REG64, OPERAND_REGXMM},
+    }
+};
+
+const Encoding CVTSI2SS_ENCODING[] = {
+    {
+        2, 5,
+        {{PREFIX, 0xf3}, {OPCODE2, 0x2a}, {MOD_RM, 0x0}, {REG_REG}, {RM_MEM}},
+        {OPERAND_REGXMM, OPERAND_MEM32},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0xf3}, {OPCODE2, 0x2a}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REGXMM, OPERAND_REG32},
+    },
+    {
+        2, 6,
+        {{PREFIX, 0xf3}, {REX, 0x48}, {OPCODE2, 0x2a}, {MOD_RM, 0x0}, {REG_REG}, {RM_MEM}},
+        {OPERAND_REGXMM, OPERAND_MEM64},
+    },
+    {
+        2, 6,
+        {{PREFIX, 0xf3}, {REX, 0x48}, {OPCODE2, 0x2a}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REGXMM, OPERAND_REG64},
+    }
+};
+
+const Encoding CVTSI2SD_ENCODING[] = {
+    {
+        2, 5,
+        {{PREFIX, 0xf2}, {OPCODE2, 0x2a}, {MOD_RM, 0x0}, {REG_REG}, {RM_MEM}},
+        {OPERAND_REGXMM, OPERAND_MEM32},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0xf2}, {OPCODE2, 0x2a}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REGXMM, OPERAND_REG32},
+    },
+    {
+        2, 6,
+        {{PREFIX, 0xf2}, {REX, 0x48}, {OPCODE2, 0x2a}, {MOD_RM, 0x0}, {REG_REG}, {RM_MEM}},
+        {OPERAND_REGXMM, OPERAND_MEM64},
+    },
+    {
+        2, 6,
+        {{PREFIX, 0xf2}, {REX, 0x48}, {OPCODE2, 0x2a}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REGXMM, OPERAND_REG64},
+    }
+};
+
+const Encoding CVTSS2SD_ENCODING[] = {
+    {
+        2, 5,
+        {{PREFIX, 0xf3}, {OPCODE2, 0x5a}, {MOD_RM, 0x0}, {REG_REG}, {RM_MEM}},
+        {OPERAND_REGXMM, OPERAND_MEM32},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0xf3}, {OPCODE2, 0x5a}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REGXMM, OPERAND_REGXMM},
+    }
+};
+
+const Encoding CVTSD2SS_ENCODING[] = {
+    {
+        2, 5,
+        {{PREFIX, 0xf2}, {OPCODE2, 0x5a}, {MOD_RM, 0x0}, {REG_REG}, {RM_MEM}},
+        {OPERAND_REGXMM, OPERAND_MEM64},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0xf2}, {OPCODE2, 0x5a}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REGXMM, OPERAND_REGXMM},
+    }
+};
+
+const Encoding XORPS_ENCODING[] = {
+    {
+        2, 5,
+        {{PREFIX, 0x66}, {OPCODE2, 0x57}, {MOD_RM, 0x0}, {REG_REG}, {RM_MEM}},
+        {OPERAND_REGXMM, OPERAND_MEM128},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0x66}, {OPCODE2, 0x57}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REGXMM, OPERAND_REGXMM},
+    }
+};
+
+const Encoding ADSS_ENCODING[] = {
+    {
+        2, 5,
+        {{PREFIX, 0xf3}, {OPCODE2, 0x58}, {MOD_RM, 0x0}, {REG_REG}, {RM_MEM}},
+        {OPERAND_REGXMM, OPERAND_MEM32},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0xf3}, {OPCODE2, 0x58}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REGXMM, OPERAND_REGXMM},
+    }
+};
+
+const Encoding ADSD_ENCODING[] = {
+    {
+        2, 5,
+        {{PREFIX, 0xf2}, {OPCODE2, 0x58}, {MOD_RM, 0x0}, {REG_REG}, {RM_MEM}},
+        {OPERAND_REGXMM, OPERAND_MEM64},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0xf2}, {OPCODE2, 0x58}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REGXMM, OPERAND_REGXMM},
+    }
+};
+
+const Encoding SUBSS_ENCODING[] = {
+    {
+        2, 5,
+        {{PREFIX, 0xf3}, {OPCODE2, 0x5c}, {MOD_RM, 0x0}, {REG_REG}, {RM_MEM}},
+        {OPERAND_REGXMM, OPERAND_MEM32},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0xf3}, {OPCODE2, 0x5c}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REGXMM, OPERAND_REGXMM},
+    }
+};
+
+const Encoding SUBSD_ENCODING[] = {
+    {
+        2, 5,
+        {{PREFIX, 0xf2}, {OPCODE2, 0x5c}, {MOD_RM, 0x0}, {REG_REG}, {RM_MEM}},
+        {OPERAND_REGXMM, OPERAND_MEM64},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0xf2}, {OPCODE2, 0x5c}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REGXMM, OPERAND_REGXMM},
+    }
+};
+
+const Encoding MULSS_ENCODING[] = {
+    {
+        2, 5,
+        {{PREFIX, 0xf3}, {OPCODE2, 0x59}, {MOD_RM, 0x0}, {REG_REG}, {RM_MEM}},
+        {OPERAND_REGXMM, OPERAND_MEM32},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0xf3}, {OPCODE2, 0x59}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REGXMM, OPERAND_REGXMM},
+    }
+};
+
+const Encoding MULSD_ENCODING[] = {
+    {
+        2, 5,
+        {{PREFIX, 0xf2}, {OPCODE2, 0x59}, {MOD_RM, 0x0}, {REG_REG}, {RM_MEM}},
+        {OPERAND_REGXMM, OPERAND_MEM64},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0xf2}, {OPCODE2, 0x59}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REGXMM, OPERAND_REGXMM},
+    }
+};
+
+const Encoding DIVSS_ENCODING[] = {
+    {
+        2, 5,
+        {{PREFIX, 0xf3}, {OPCODE2, 0x5e}, {MOD_RM, 0x0}, {REG_REG}, {RM_MEM}},
+        {OPERAND_REGXMM, OPERAND_MEM32},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0xf3}, {OPCODE2, 0x5e}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REGXMM, OPERAND_REGXMM},
+    }
+};
+
+const Encoding DIVSD_ENCODING[] = {
+    {
+        2, 5,
+        {{PREFIX, 0xf2}, {OPCODE2, 0x5e}, {MOD_RM, 0x0}, {REG_REG}, {RM_MEM}},
+        {OPERAND_REGXMM, OPERAND_MEM64},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0xf2}, {OPCODE2, 0x5e}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REGXMM, OPERAND_REGXMM},
+    }
+};
+
+const Encoding MOVDQA_ENCODING[] = {
+    {
+        2, 5,
+        {{PREFIX, 0x66}, {OPCODE2, 0x6f}, {MOD_RM, 0x0}, {REG_REG}, {RM_MEM}},
+        {OPERAND_REGXMM, OPERAND_MEM128},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0x66}, {OPCODE2, 0x6f}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REGXMM, OPERAND_REGXMM},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0x66}, {OPCODE2, 0x7f}, {MOD_RM, 0x0}, {RM_MEM}, {REG_REG}},
+        {OPERAND_MEM128, OPERAND_REGXMM},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0x66}, {OPCODE2, 0x7f}, {MOD_RM, 0x0}, {RM_REG}, {REG_REG}},
+        {OPERAND_REGXMM, OPERAND_REGXMM},
+    }
+};
+
+const Encoding CVTTSS2SI_ENCODING[] = {
+    {
+        2, 5,
+        {{PREFIX, 0xf3}, {OPCODE2, 0x2c}, {MOD_RM, 0x0}, {REG_REG}, {RM_MEM}},
+        {OPERAND_REG32, OPERAND_MEM32},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0xf3}, {OPCODE2, 0x2c}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REG32, OPERAND_REGXMM},
+    },
+    {
+        2, 6,
+        {{PREFIX, 0xf3}, {REX, 0x48}, {OPCODE2, 0x2c}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REG64, OPERAND_REGXMM},
+    }
+};
+
+const Encoding CVTTSD2SI_ENCODING[] = {
+    {
+        2, 5,
+        {{PREFIX, 0xf2}, {OPCODE2, 0x2c}, {MOD_RM, 0x0}, {REG_REG}, {RM_MEM}},
+        {OPERAND_REG32, OPERAND_MEM64},
+    },
+    {
+        2, 5,
+        {{PREFIX, 0xf2}, {OPCODE2, 0x2c}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REG32, OPERAND_REGXMM},
+    },
+    {
+        2, 6,
+        {{PREFIX, 0xf2}, {REX, 0x48}, {OPCODE2, 0x2c}, {MOD_RM, 0x0}, {REG_REG}, {RM_MEM}},
+        {OPERAND_REG64, OPERAND_MEM64},
+    },
+    {
+        2, 6,
+        {{PREFIX, 0xf2}, {REX, 0x48}, {OPCODE2, 0x2c}, {MOD_RM, 0x0}, {REG_REG}, {RM_REG}},
+        {OPERAND_REG64, OPERAND_REGXMM},
+    }
+};
+
 const Encodings ENCODINGS[] = {
     {1, NOP_ENCODING}, //0
     {21, MOV_ENCODING}, //1
@@ -2512,5 +2852,25 @@ const Encodings ENCODINGS[] = {
     {2, SETNE_ENCODING}, //59
     {2, SETNZ_ENCODING}, //60
     {2, SETE_ENCODING}, //61
-    {2, SETZ_ENCODING} //62
+    {2, SETZ_ENCODING}, //62
+    {4, MOVSS_ENCODING}, //63
+    {4, MOVSD_ENCODING}, //64
+    {3, CVTSS2SI_ENCODING}, //65
+    {4, CVTSD2SI_ENCODING}, //66
+    {4, CVTSI2SS_ENCODING}, //67
+    {4, CVTSI2SD_ENCODING}, //68
+    {2, CVTSS2SD_ENCODING}, //69
+    {2, CVTSD2SS_ENCODING}, //70
+    {2, XORPS_ENCODING}, //71
+    {2, ADSS_ENCODING}, //72
+    {2, ADSD_ENCODING}, //73
+    {2, SUBSS_ENCODING}, //74
+    {2, SUBSD_ENCODING}, //75
+    {2, MULSS_ENCODING}, //76
+    {2, MULSD_ENCODING}, //77
+    {2, DIVSS_ENCODING}, //78
+    {2, DIVSD_ENCODING}, //79
+    {4, MOVDQA_ENCODING}, //80
+    {3, CVTTSS2SI_ENCODING}, //81
+    {4, CVTTSD2SI_ENCODING} //82
 };

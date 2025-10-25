@@ -559,7 +559,7 @@ Expression* OnInt(void* ctx, uint64_t start, uint64_t end, uint64_t i) {
 
 Expression* OnReal(void* ctx, uint64_t start, uint64_t end, double r) {
     Expression* e = create_expr(PARSER(ctx), EXPRESSION_LITERAL_FLOAT, start, end);
-    e->literal.uint = r;
+    e->literal.float64 = r;
     return e;
 }
 

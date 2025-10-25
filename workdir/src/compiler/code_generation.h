@@ -46,6 +46,10 @@ typedef struct FlowNode {
 var_id create_temp_var(ConflictGraph* graph, VarList* vars, FlowNode* node,
                        VarSet* live, var_id base);
 
+var_id create_typed_temp_var(ConflictGraph* graph, VarList* vars, FlowNode* node,
+                             VarSet* live, uint32_t byte_size, uint32_t align,
+                             enum VarDatatype datatype);
+
 Object* Generate_code(Quads* quads, FunctionTable* functions, FunctionTable* externs,
                       NameTable* name_table, StringLiteral* literals, Arena* arena,
                       bool serialze_asm);

@@ -6,18 +6,40 @@
 #define LOG_CATAGORY LOG_CATAGORY_REGISTER_ALLOCATION
 
 const uint8_t GEN_CALL_REGS[4] = {RCX, RDX, R8, R9};
+const uint8_t XMM_CALL_REGS[4] = {XMM0, XMM1, XMM2, XMM3};
+
 const bool GEN_VOLATILE_REGS[GEN_REG_COUNT] = {
     true, true, true, false, false, false, false, false,
     true, true, true, true, false, false, false, false
 };
 
+const bool XMM_VOLATILE_REGS[XMM_COUNT] = {
+    true, true, true, true, true, false, false, false,
+    false, false, false, false, false, false, false, false
+};
+
 
 
 uint64_t Backend_get_regs() {
-    return GEN_REG_COUNT;
+    return GEN_REG_COUNT + XMM_COUNT;
 }
 
-void Backend_inital_contraints(ConflictGraph* graph, var_id var_count) {
+
+void require_not_xmm(ConflictGraph* graph, var_id var) {
+    LOG_DEBUG("Require not xmm %u", var);
+    for (var_id i = XMM0; i < XMM0 + XMM_COUNT; ++i) {
+        ConflictGraph_add_edge(graph, i, var + graph->reg_count);
+    }
+}
+
+void require_xmm(ConflictGraph* graph, var_id var) {
+    LOG_DEBUG("Require xmm %u", var);
+    for (var_id i = 0; i < GEN_REG_COUNT; ++i) {
+        ConflictGraph_add_edge(graph, i, var + graph->reg_count);
+    }
+}
+
+void Backend_inital_contraints(ConflictGraph* graph, VarList* vars) {  
     ConflictGraph_clear(graph);
 
     // Add edges between all registers
@@ -30,11 +52,17 @@ void Backend_inital_contraints(ConflictGraph* graph, var_id var_count) {
     for (uint64_t ix = 0; ix < graph->var_count; ++ix) {
         // Do not allow use of stack pointer
         ConflictGraph_add_edge(graph, RSP, ix + graph->reg_count);
+        if (vars->data[ix].datatype == VARTYPE_FLOAT) {
+            require_xmm(graph, ix);
+        } else {
+            require_not_xmm(graph, ix);
+        }
     }
 }
 
 // Require <var> uses <reg>
-void requre_gen_reg(ConflictGraph* graph, uint64_t reg, var_id var) {
+void require_gen_reg(ConflictGraph* graph, uint64_t reg, var_id var) {
+    LOG_DEBUG("require_gen_reg %u", var);
     for (uint64_t ix = 0; ix < graph->reg_count; ++ix) {
         if (reg != ix) {
             ConflictGraph_add_edge(graph, var + graph->reg_count, ix);
@@ -44,16 +72,78 @@ void requre_gen_reg(ConflictGraph* graph, uint64_t reg, var_id var) {
 
 // Require <var> uses memory
 void require_mem(ConflictGraph* graph, var_id var) {
+    LOG_WARNING("require mem %u", var);
     for (uint64_t ix = 0; ix < graph->reg_count; ++ix) {
         ConflictGraph_add_edge(graph, var + graph->reg_count, ix);
     }
 }
 
+void preinsert_cast(ConflictGraph* graph, var_id* var, VarSet* live_set,
+                    Quad* quad, FlowNode* node, VarList* vars, Arena* arena,
+                    enum QuadType cast) {
+    uint32_t datasize;
+    enum VarDatatype datatype;
+    switch (cast) {
+    case QUAD_CAST_TO_INT64:
+        datasize = 8;
+        datatype = VARTYPE_SINT;
+        break;
+    case QUAD_CAST_TO_UINT64:
+        datasize = 8;
+        datatype = VARTYPE_UINT;
+        break;
+    case QUAD_CAST_TO_INT32:
+        datasize = 4;
+        datatype = VARTYPE_SINT;
+        break;
+    case QUAD_CAST_TO_UINT32:
+        datasize = 4;
+        datatype = VARTYPE_UINT;
+        break;
+    case QUAD_CAST_TO_UINT16:
+        datasize = 2;
+        datatype = VARTYPE_UINT;
+        break;
+    case QUAD_CAST_TO_INT16:
+        datasize = 2;
+        datatype = VARTYPE_SINT;
+        break;
+    default:
+        assert(false);
+    }
+    var_id tmp = create_typed_temp_var(graph, vars, node, live_set, 
+                                       datasize, datasize, datatype);
+    ConflictGraph_add_edge(graph, RSP, tmp + graph->reg_count);
+    require_not_xmm(graph, tmp);
+    Quad* nq = Arena_alloc_type(arena, Quad);
+    nq->type = cast;
+    nq->op1.var = *var;
+    nq->dest = tmp;
+    nq->last_quad = quad->last_quad;
+    nq->next_quad = quad;
+    if (quad == node->start) {
+        node->start = nq;
+    }
+    if (quad->last_quad != NULL) {
+        quad->last_quad->next_quad = nq;
+    }
+    quad->last_quad = nq;
+    *var = tmp;
+    vars->data[tmp].alloc_type = ALLOC_REG;
+}
+
+// Create a temporary register variable that replaces var, and
+// insert a move from var to this variable before quad
 void preinsert_move(ConflictGraph* graph, var_id* var, VarSet* live_set,
                     Quad* quad, FlowNode* node, VarList* vars, Arena* arena) {
 
     var_id tmp = create_temp_var(graph, vars, node, live_set, *var);
     ConflictGraph_add_edge(graph, RSP, tmp + graph->reg_count);
+    if (vars->data[tmp].datatype == VARTYPE_FLOAT) {
+        require_xmm(graph, tmp);
+    } else {
+        require_not_xmm(graph, tmp);
+    }
     Quad* nq = Arena_alloc_type(arena, Quad);
     uint32_t datasize = vars->data[*var].byte_size;
     assert(datasize == 1 || datasize == 2 || datasize == 4 || datasize == 8);
@@ -74,10 +164,17 @@ void preinsert_move(ConflictGraph* graph, var_id* var, VarSet* live_set,
     LOG_DEBUG("Inserted move before quad: %llu", tmp);
 }
 
+// Create a temporary register variable that replaces dest, and
+// insert a move from this variable to dest after quad
 void postinsert_move(ConflictGraph* graph, var_id* dest, VarSet* live_set,
                      Quad* quad, FlowNode* node, VarList* vars, Arena* arena) {
     var_id tmp = create_temp_var(graph, vars, node, live_set, *dest);
     ConflictGraph_add_edge(graph, RSP, tmp + graph->reg_count);
+    if (vars->data[tmp].datatype == VARTYPE_FLOAT) {
+        require_xmm(graph, tmp);
+    } else {
+        require_not_xmm(graph, tmp);
+    }
     Quad* nq = Arena_alloc_type(arena, Quad);
     uint32_t datasize = vars->data[*dest].byte_size;
     assert(datasize == 1 || datasize == 2 || datasize == 4 || datasize == 8);
@@ -108,22 +205,22 @@ void postinsert_move(ConflictGraph* graph, var_id* dest, VarSet* live_set,
     LOG_DEBUG("Inserted move after quad: %llu", tmp);
 }
 
-void requre_gen_reg_var(ConflictGraph* graph, uint64_t reg, var_id* var, 
+void requre_reg_var(ConflictGraph* graph, uint64_t reg, var_id* var, 
                         VarSet* live_set, Quad* quad, FlowNode* node,
                         VarList* vars, Arena* arena) {
     if (vars->data[*var].alloc_type == ALLOC_MEM) {
         preinsert_move(graph, var, live_set, quad, node, vars, arena);
     }
-    requre_gen_reg(graph, reg, *var);
+    require_gen_reg(graph, reg, *var);
 }
 
-void requre_gen_reg_dest(ConflictGraph* graph, uint64_t reg, var_id* dest, 
+void requre_reg_dest(ConflictGraph* graph, uint64_t reg, var_id* dest, 
                         VarSet* live_set, Quad* quad, FlowNode* node,
                         VarList* vars, Arena* arena) {
     if (vars->data[*dest].alloc_type == ALLOC_MEM) {
         postinsert_move(graph, dest, live_set, quad, node, vars, arena);
     }
-    requre_gen_reg(graph, reg, *dest);
+    require_gen_reg(graph, reg, *dest);
 }
 
 
@@ -153,6 +250,8 @@ bool is_standard_binop(Quad* q, VarList* vars) {
 bool is_symetrical(Quad* q) {
     switch (q->type) {
     case QUAD_ADD:
+    case QUAD_FADD:
+    case QUAD_FMUL:
     case QUAD_MUL:
     case QUAD_BIT_AND:
     case QUAD_BIT_OR:
@@ -218,7 +317,7 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
             ConflictGraph_add_edge(graph, quad->dest + graph->reg_count,
                     quad->op2 + graph->reg_count);
         }
-    } else if (q == QUAD_ADD && vars->data[quad->dest].datatype != VARTYPE_FLOAT) {
+    } else if (q == QUAD_ADD) {
         assert(quad->scale != QUADSCALE_NONE);
         if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
             postinsert_move(graph, &quad->dest, live_set, quad, node, vars, arena);
@@ -254,7 +353,7 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
                                    quad->op2 + graph->reg_count);
         }
     } else if (q == QUAD_RSHIFT || q == QUAD_LSHIFT) {
-        requre_gen_reg_var(graph, RCX, &quad->op2, live_set, quad, node, 
+        requre_reg_var(graph, RCX, &quad->op2, live_set, quad, node, 
                            vars, arena);
         if (quad->dest != quad->op2) {
             ConflictGraph_add_edge(graph, quad->dest + graph->reg_count,
@@ -266,6 +365,10 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
                 ConflictGraph_add_edge(graph, v + graph->reg_count, RCX);
             }
             v = VarSet_getnext(live_set, v);
+        }
+    } else if (q == QUAD_FCREATE) {
+        if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
+            postinsert_move(graph, &quad->dest, live_set, quad, node, vars, arena);
         }
     } else if (q == QUAD_CREATE) {
         uint64_t data_size = vars->data[quad->dest].byte_size;
@@ -322,9 +425,15 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
             }
         }
     } else if (q == QUAD_GET_ARG && quad->op1.uint64 < 4) {
-        uint64_t reg = GEN_CALL_REGS[quad->op1.uint64];
-        requre_gen_reg_dest(graph, reg, &quad->dest, live_set, quad, node, 
-                            vars, arena);
+        if (vars->data[quad->dest].datatype == VARTYPE_FLOAT) {
+           uint64_t reg = XMM_CALL_REGS[quad->op1.uint64]; 
+           requre_reg_dest(graph, reg, &quad->dest, live_set, quad, node, 
+                           vars, arena);
+        } else {
+            uint64_t reg = GEN_CALL_REGS[quad->op1.uint64];
+            requre_reg_dest(graph, reg, &quad->dest, live_set, quad, node, 
+                                vars, arena);
+        }
     } else if (q == QUAD_GET_ARG) {
         if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
             postinsert_move(graph, &quad->dest, live_set, quad, node,
@@ -383,18 +492,18 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
         }
         if (q == QUAD_DIV || q == QUAD_MOD) {
             // operand 1 has to be in RAX
-            requre_gen_reg_var(graph, RAX, &quad->op1.var, live_set, quad, 
+            requre_reg_var(graph, RAX, &quad->op1.var, live_set, quad, 
                                node, vars, arena);
             // operand 2 cannot be in RDX
             ConflictGraph_add_edge(graph, quad->op2 + graph->reg_count, RDX);
         }
         if (q == QUAD_MOD) {
             // Mod result is in RDX
-            requre_gen_reg_dest(graph, RDX, &quad->dest, live_set, quad, 
+            requre_reg_dest(graph, RDX, &quad->dest, live_set, quad, 
                                node, vars, arena);
         } else {
             // MUL / DIV / IDIV result is in RAX
-            requre_gen_reg_dest(graph, RAX, &quad->dest, live_set, quad, 
+            requre_reg_dest(graph, RAX, &quad->dest, live_set, quad, 
                                node, vars, arena);
         }
     } else if (q == QUAD_MUL) {
@@ -421,27 +530,43 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
             ConflictGraph_add_edge(graph, v + graph->reg_count, R9);
             ConflictGraph_add_edge(graph, v + graph->reg_count, R10);
             ConflictGraph_add_edge(graph, v + graph->reg_count, R11);
+            ConflictGraph_add_edge(graph, v + graph->reg_count, XMM0);
+            ConflictGraph_add_edge(graph, v + graph->reg_count, XMM1);
+            ConflictGraph_add_edge(graph, v + graph->reg_count, XMM2);
+            ConflictGraph_add_edge(graph, v + graph->reg_count, XMM3);
+            ConflictGraph_add_edge(graph, v + graph->reg_count, XMM4);
+            ConflictGraph_add_edge(graph, v + graph->reg_count, XMM5);
             v = VarSet_getnext(live_set, v);
         }
     } else if (q == QUAD_PUT_ARG && quad->op1.uint64 < 4) {
         // The first four arguments are passed in registers
         var_id v = VarSet_get(live_set);
-        uint64_t reg = GEN_CALL_REGS[quad->op1.uint64];
+        uint64_t reg;
+        if (vars->data[quad->op2].datatype == VARTYPE_FLOAT) {
+            reg  = XMM_CALL_REGS[quad->op1.uint64];
+        } else {
+            reg  = GEN_CALL_REGS[quad->op1.uint64];
+        }
         while (v != VAR_ID_INVALID) {
             if (v != quad->op2) {
                 ConflictGraph_add_edge(graph, v + graph->reg_count, reg);
             }
             v = VarSet_getnext(live_set, v);
         }
-        requre_gen_reg_var(graph, reg, &quad->op2, live_set, quad, 
+        requre_reg_var(graph, reg, &quad->op2, live_set, quad, 
                            node, vars, arena);
     } else if (q == QUAD_PUT_ARG) {
         if (vars->data[quad->op2].alloc_type == ALLOC_MEM) {
             preinsert_move(graph, &quad->op2, live_set, quad, node, vars, arena);
         }
     } else if (q == QUAD_GET_RET) {
-        requre_gen_reg_dest(graph, RAX, &quad->dest, live_set, quad, 
+        if (vars->data[quad->dest].datatype == VARTYPE_FLOAT) {
+            requre_reg_dest(graph, XMM0, &quad->dest, live_set, quad,
                             node, vars, arena);
+        } else {
+            requre_reg_dest(graph, RAX, &quad->dest, live_set, quad, 
+                            node, vars, arena);
+        }
     } else if (q == QUAD_ADDROF) {
         if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
             postinsert_move(graph, &quad->dest, live_set, quad, node, vars, arena);
@@ -460,34 +585,37 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
         //requre_gen_reg_var(graph, RAX, &quad->op1.var, live_set, quad, 
         //                   node, vars, arena);
     } else if (q == QUAD_CAST_TO_UINT64 || q == QUAD_CAST_TO_INT64) {
-        uint64_t datasize = vars->data[quad->op1.var].byte_size;
-        if (vars->data[quad->op1.var].datatype == VARTYPE_FLOAT) {
-            assert(false);
-        } else {
-            if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
-                postinsert_move(graph, &quad->dest, live_set, quad,
-                                node, vars, arena);
+        if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
+            postinsert_move(graph, &quad->dest, live_set, quad,
+                            node, vars, arena);
+        }
+        if (vars->data[quad->op1.var].datatype == VARTYPE_FLOAT &&
+            vars->data[quad->op1.var].byte_size == 4) {
+            // Converting 32-bit float to 64-bit int requires a register
+            // (Not always, but the memory version operates on a 8 byte memory operand,
+            // and this is pretty much impossible to guarantee at this stage).
+            if (vars->data[quad->op1.var].alloc_type == ALLOC_MEM) {
+                preinsert_move(graph, &quad->op1.var, live_set, quad, 
+                               node, vars, arena);
             }
         }
     } else if (q == QUAD_CAST_TO_UINT32 || q == QUAD_CAST_TO_INT32) {
-        uint64_t datasize = vars->data[quad->op1.var].byte_size;
-        if (vars->data[quad->op1.var].datatype == VARTYPE_FLOAT) {
-            assert(false);
-        } else {
-            if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
-                postinsert_move(graph, &quad->dest, live_set, quad, node,
-                                vars, arena);
+        if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
+            postinsert_move(graph, &quad->dest, live_set, quad,
+                            node, vars, arena);
+        }
+        if (q == QUAD_CAST_TO_UINT32 && vars->data[quad->op1.var].datatype == VARTYPE_FLOAT &&
+            vars->data[quad->op1.var].byte_size == 4) {
+            // float to uint32 uses the 64-bit convertion, so same conditions apply
+            if (vars->data[quad->op1.var].alloc_type == ALLOC_MEM) {
+                preinsert_move(graph, &quad->op1.var, live_set, quad, 
+                               node, vars, arena);
             }
         }
     } else if (q == QUAD_CAST_TO_UINT16 || q == QUAD_CAST_TO_INT16) {
-        uint64_t datasize = vars->data[quad->op1.var].byte_size;
-        if (vars->data[quad->op1.var].datatype == VARTYPE_FLOAT) {
-            assert(false);
-        } else {
-            if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
-                postinsert_move(graph, &quad->dest, live_set, quad,
-                                node, vars, arena);
-            }
+        if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
+            postinsert_move(graph, &quad->dest, live_set, quad,
+                            node, vars, arena);
         }
     } else if (q == QUAD_ARRAY_TO_PTR) {
         assert(vars->data[quad->op1.var].kind == VAR_ARRAY ||
@@ -497,7 +625,9 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
         }
     } else if (q == QUAD_CAST_TO_UINT8 || q == QUAD_CAST_TO_INT8) {
         if (vars->data[quad->op1.var].datatype == VARTYPE_FLOAT) {
-            assert(false);
+            if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
+                postinsert_move(graph, &quad->dest, live_set, quad, node, vars, arena);
+            }
         } else {
             // Pass
         }
@@ -506,6 +636,32 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
             assert(false);
         } else {
             // Pass?
+        }
+    } else if (q == QUAD_CAST_TO_FLOAT32 || q == QUAD_CAST_TO_FLOAT64) {
+        uint32_t datasize = vars->data[quad->op1.var].byte_size;
+        enum VarDatatype datatype = vars->data[quad->op1.var].datatype;
+        bool int_type = datatype == VARTYPE_UINT || datatype == VARTYPE_SINT ||
+                        datatype == VARTYPE_BOOL;
+        if (int_type && (datasize < 4 || (datatype == VARTYPE_UINT))) {
+            preinsert_cast(graph, &quad->op1.var, live_set, quad, 
+                           node, vars, arena, datasize >= 4 ? 
+                            QUAD_CAST_TO_INT64 : QUAD_CAST_TO_INT32);
+        }
+        if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
+            postinsert_move(graph, &quad->dest, live_set, quad, node, vars, arena);
+        }
+    } else if (q == QUAD_FDIV || q == QUAD_FMUL || q == QUAD_FADD || q == QUAD_FSUB) {
+        if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
+            postinsert_move(graph, &quad->dest, live_set, quad, node, vars, arena);
+        }
+
+        if (quad->dest != quad->op2 && quad->dest != quad->op1.var) {
+            ConflictGraph_add_edge(graph, quad->dest + graph->reg_count,
+                    quad->op2 + graph->reg_count);
+        }
+    } else if (q == QUAD_FNEGATE) {
+        if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
+            postinsert_move(graph, &quad->dest, live_set, quad, node, vars, arena);
         }
     } else if (q == QUAD_MOVE) {
         if (vars->data[quad->op1.var].alloc_type == ALLOC_MEM &&
@@ -569,7 +725,7 @@ void emit_var_with_size(VarData* var, uint32_t datasize, AsmCtx* ctx) {
             assert(false);
         }
     } else if (var->alloc_type == ALLOC_REG) {
-        asm_reg_var(ctx, datasize, var->reg);
+        asm_genreg_var(ctx, datasize, var->reg);
     } else if (var->alloc_type == ALLOC_IMM) {
         // TODO: endianness?
         enum VarDatatype datatype = var->datatype;
@@ -605,6 +761,23 @@ void emit_var_with_size(VarData* var, uint32_t datasize, AsmCtx* ctx) {
     }
 }
 
+void emit_xmm_var(VarData* var, AsmCtx* ctx) {
+    uint32_t datasize = var->byte_size;
+    if (var->alloc_type == ALLOC_MEM) {
+        if (var_local(var->kind)) {
+            asm_mem_var(ctx, datasize, RSP, 0, RAX, var->memory.offset);
+        } else if (var->kind == VAR_ARRAY_GLOBAL || var->kind == VAR_GLOBAL) {
+            asm_global_mem_var(ctx, datasize, var->symbol_ix, 0);
+        } else {
+            assert(false);
+        }
+    } else if (var->alloc_type == ALLOC_REG) {
+        asm_xmmreg_var(ctx, datasize, var->reg);
+    } else {
+        assert(false);
+    }
+}
+
 void emit_var(VarData* var, AsmCtx* ctx) {
     uint32_t datasize = var->byte_size;
     emit_var_with_size(var, datasize, ctx);
@@ -614,8 +787,13 @@ void emit_op1_dest_move(Quad* quad, VarData* vars, AsmCtx* ctx) {
     VarData* op1 = &vars[quad->op1.var];
     VarData* dest = &vars[quad->dest];
 
-    asm_instr(ctx, OP_MOV);
-    emit_var(dest, ctx);
+    if (op1->datatype == VARTYPE_FLOAT) {
+        asm_instr(ctx, op1->byte_size == 4 ? OP_MOVSS : OP_MOVSD);
+        emit_xmm_var(dest, ctx);
+    } else {
+        asm_instr(ctx, OP_MOV);
+        emit_var(dest, ctx);
+    }
     if (op1->alloc_type == ALLOC_IMM) {
         uint32_t datasize = op1->byte_size;
         enum VarDatatype datatype = op1->datatype;
@@ -642,9 +820,32 @@ void emit_op1_dest_move(Quad* quad, VarData* vars, AsmCtx* ctx) {
             uint8_t d = op1->imm.boolean ? 1 : 0;
             asm_imm_var(ctx, datasize, &d);
         }
+    } else if (op1->datatype == VARTYPE_FLOAT) { 
+        emit_xmm_var(op1, ctx);
     } else {
         emit_var(op1, ctx);
     }
+    asm_instr_end(ctx);
+}
+
+void emit_xmm_binop(enum Amd64Opcode op32, enum Amd64Opcode op64,
+                    Quad* quad, VarData* vars, AsmCtx* ctx) {
+    VarData* op1 = &vars[quad->op1.var];
+    VarData* op2 = &vars[quad->op2];
+    VarData* dest = &vars[quad->dest];
+    if (!is_same(vars, quad->op1.var, quad->dest)) {
+        if (is_symetrical(quad) &&
+            is_same(vars, quad->op2, quad->dest)) {
+            VarData* tmp = op1;
+            op1 = op2;
+            op2 = tmp;
+        } else {
+            emit_op1_dest_move(quad, vars, ctx);
+        }
+    }
+    asm_instr(ctx, vars[quad->dest].byte_size == 4 ? op32 : op64);
+    emit_xmm_var(dest, ctx);
+    emit_xmm_var(op2, ctx);
     asm_instr_end(ctx);
 }
 
@@ -682,9 +883,11 @@ void emit_binop(enum Amd64Opcode op, Quad* quad, VarData* vars, AsmCtx* ctx) {
 
 
 void quad_to_asm(Quad* q, AsmCtx* ctx, NameTable* name_table, VarData* vars,
-                 uint32_t stack_size, FunctionDef* def) {
+                 uint32_t stack_size, FunctionDef* def, section_ix rdata,
+                 symbol_ix* saved_syms) {
     enum QuadType type = q->type;
     String out;
+
     switch (type) {
     case QUAD_GET_ARG: {
         uint32_t datasize = vars[q->dest].byte_size;
@@ -692,20 +895,37 @@ void quad_to_asm(Quad* q, AsmCtx* ctx, NameTable* name_table, VarData* vars,
         assert(datasize <= 8);
         if (q->op1.uint64 > 3) {
             assert(vars[q->dest].alloc_type == ALLOC_REG);
-            asm_instr(ctx, OP_MOV);
-            emit_var(&vars[q->dest], ctx);
+            if (vars[q->dest].datatype == VARTYPE_FLOAT) {
+                asm_instr(ctx, datasize == 4 ? OP_MOVSS : OP_MOVSD);
+                emit_xmm_var(&vars[q->dest], ctx);
+            } else {
+                asm_instr(ctx, OP_MOV);
+                emit_var(&vars[q->dest], ctx);
+            }
+            LOG_WARNING("GET_ARG from stack: %u, %u", stack_size, q->op1.uint64);
             asm_mem_var(ctx, datasize, RSP, 0, RAX,
                         stack_size + q->op1.uint64 * 8 + 8);
             asm_instr_end(ctx);
             break;
         }
-        uint32_t src_reg = GEN_CALL_REGS[q->op1.uint64];
+        uint32_t src_reg;
+        if (vars[q->dest].datatype == VARTYPE_FLOAT) {
+            src_reg = XMM_CALL_REGS[q->op1.uint64];
+        } else {
+            src_reg = GEN_CALL_REGS[q->op1.uint64];
+        }
 
         if (vars[q->dest].alloc_type != ALLOC_REG ||
             vars[q->dest].reg != src_reg) {
-            asm_instr(ctx, OP_MOV);
-            emit_var(&vars[q->dest], ctx);
-            asm_reg_var(ctx, datasize, src_reg);
+            if (vars[q->dest].datatype == VARTYPE_FLOAT) {
+                asm_instr(ctx, datasize == 4 ? OP_MOVSS : OP_MOVSD);
+                emit_xmm_var(&vars[q->dest], ctx);
+                asm_xmmreg_var(ctx, datasize, src_reg);
+            } else {
+                asm_instr(ctx, OP_MOV);
+                emit_var(&vars[q->dest], ctx);
+                asm_genreg_var(ctx, datasize, src_reg);
+            }
             asm_instr_end(ctx);
         }
         break;
@@ -714,18 +934,35 @@ void quad_to_asm(Quad* q, AsmCtx* ctx, NameTable* name_table, VarData* vars,
         uint32_t datasize = vars[q->op2].byte_size;
         if (q->op1.uint64 > 3) {
             assert(vars[q->op2].alloc_type == ALLOC_REG);
-            asm_instr(ctx, OP_MOV);
-            asm_mem_var(ctx, datasize, RSP, 0, RAX,
-                        q->op1.uint64 * 8);
-            emit_var(&vars[q->op2], ctx);
+            if (vars[q->op2].datatype == VARTYPE_FLOAT) {
+                asm_instr(ctx, datasize == 4 ? OP_MOVSS : OP_MOVSD);
+                asm_mem_var(ctx, datasize, RSP, 0, RAX,
+                            q->op1.uint64 * 8);
+                emit_xmm_var(&vars[q->op2], ctx);
+            } else {
+                asm_instr(ctx, OP_MOV);
+                asm_mem_var(ctx, datasize, RSP, 0, RAX,
+                            q->op1.uint64 * 8);
+                emit_var(&vars[q->op2], ctx);
+            }
             asm_instr_end(ctx);
             break;
         }
-        uint32_t reg = GEN_CALL_REGS[q->op1.uint64];
+        uint32_t reg;
+        if (vars[q->op2].datatype == VARTYPE_FLOAT) {
+            reg = XMM_CALL_REGS[q->op1.uint64];
+        } else {
+            reg = GEN_CALL_REGS[q->op1.uint64];
+        }
         if (vars[q->op2].alloc_type != ALLOC_REG ||
             vars[q->op2].reg != reg) {
-            asm_instr(ctx, OP_MOV);
-            asm_reg_var(ctx, datasize, reg);
+            if (vars[q->op2].datatype == VARTYPE_FLOAT) {
+                asm_instr(ctx, datasize == 4 ? OP_MOVSS : OP_MOVSD);
+                asm_xmmreg_var(ctx, datasize, reg);
+            } else {
+                asm_instr(ctx, OP_MOV);
+                asm_genreg_var(ctx, datasize, reg);
+            }
             emit_var(&vars[q->dest], ctx);
             asm_instr_end(ctx);
         }
@@ -737,6 +974,27 @@ void quad_to_asm(Quad* q, AsmCtx* ctx, NameTable* name_table, VarData* vars,
         }
         emit_op1_dest_move(q, vars, ctx);
         break;
+    case QUAD_FCREATE: {
+        Object* obj = ctx->object;
+        uint32_t datasize = vars[q->dest].byte_size;
+        symbol_ix sym;
+        if (datasize == 4) {
+            sym = Object_declare_var(obj, rdata, (const uint8_t*)"", 0, 4, false);
+            // TODO: This is non-compatible
+            float f32 = q->op1.float64;
+            Object_append_data(obj, rdata, (const uint8_t*)&f32, 4);
+            asm_instr(ctx, OP_MOVSS);
+        } else {
+            assert(datasize == 8);
+            sym = Object_declare_var(obj, rdata, (const uint8_t*)"", 0, 8, false);
+            Object_append_data(obj, rdata, (const uint8_t*)&q->op1.float64, 8);
+            asm_instr(ctx, OP_MOVSD);
+        }
+        asm_xmmreg_var(ctx, datasize, vars[q->dest].reg);
+        asm_global_mem_var(ctx, datasize, sym, 0);
+        asm_instr_end(ctx);
+        break;
+    }
     case QUAD_CREATE: {
         if (vars[q->dest].alloc_type == ALLOC_IMM) {
             break;
@@ -829,13 +1087,13 @@ void quad_to_asm(Quad* q, AsmCtx* ctx, NameTable* name_table, VarData* vars,
         if (vars[q->op1.var].alloc_type != ALLOC_REG ||
             vars[q->op1.var].reg != RAX) {
             asm_instr(ctx, OP_MOV);
-            asm_reg_var(ctx, datasize, RAX);
+            asm_genreg_var(ctx, datasize, RAX);
             emit_var(&vars[q->op1.var], ctx);
             asm_instr_end(ctx);
         }
         asm_instr(ctx, OP_XOR);
-        asm_reg_var(ctx, datasize, RDX);
-        asm_reg_var(ctx, datasize, RDX);
+        asm_genreg_var(ctx, datasize, RDX);
+        asm_genreg_var(ctx, datasize, RDX);
         asm_instr_end(ctx);
         if (datatype == VARTYPE_SINT) {
             asm_instr(ctx, OP_IDIV);
@@ -887,7 +1145,11 @@ void quad_to_asm(Quad* q, AsmCtx* ctx, NameTable* name_table, VarData* vars,
         break;
     }
     case QUAD_GET_RET:
-        assert_in_reg(q->dest, vars, RAX);
+        if (vars[q->dest].datatype == VARTYPE_FLOAT) {
+            assert_in_reg(q->dest, vars, XMM0);
+        } else {
+            assert_in_reg(q->dest, vars, RAX);
+        }
         break;
     case QUAD_CMP_LE:
     case QUAD_CMP_L:
@@ -1010,7 +1272,14 @@ void quad_to_asm(Quad* q, AsmCtx* ctx, NameTable* name_table, VarData* vars,
             break;
         }
         assert(vars[q->dest].alloc_type == ALLOC_REG);
-        if (datasize == 4) {
+        if (datasize == 8) {
+            assert(datatype == VARTYPE_FLOAT);
+            asm_instr(ctx, OP_CVTTSD2SI);
+            emit_var(&vars[q->dest], ctx);
+            emit_xmm_var(&vars[q->op1.var], ctx);
+            asm_instr_end(ctx);
+            break;
+        } else if (datasize == 4) {
             if (datatype == VARTYPE_UINT) {
                 asm_instr(ctx, OP_MOV);
                 emit_var_with_size(&vars[q->dest], 4, ctx);
@@ -1021,6 +1290,12 @@ void quad_to_asm(Quad* q, AsmCtx* ctx, NameTable* name_table, VarData* vars,
                 asm_instr(ctx, OP_MOVSXD);
                 emit_var(&vars[q->dest], ctx);
                 emit_var(&vars[q->op1.var], ctx);
+                asm_instr_end(ctx);
+                break;
+            } else if (datatype == VARTYPE_FLOAT) {
+                asm_instr(ctx, OP_CVTTSS2SI);
+                emit_var(&vars[q->dest], ctx);
+                emit_xmm_var(&vars[q->op1.var], ctx);
                 asm_instr_end(ctx);
                 break;
             }
@@ -1055,7 +1330,22 @@ void quad_to_asm(Quad* q, AsmCtx* ctx, NameTable* name_table, VarData* vars,
             break;
         }
         assert(vars[q->dest].alloc_type == ALLOC_REG);
-        if (datasize == 2 || datasize == 1) {
+        if (datatype == VARTYPE_FLOAT) {
+            if (datasize == 4) {
+                asm_instr(ctx, OP_CVTTSS2SI);
+            } else {
+                asm_instr(ctx, OP_CVTTSD2SI);
+                assert(datasize == 8);
+            }
+            if (q->type == QUAD_CAST_TO_UINT32) {
+                emit_var_with_size(&vars[q->dest], 8, ctx);
+            } else {
+                emit_var(&vars[q->dest], ctx);
+            }
+            emit_xmm_var(&vars[q->op1.var], ctx);
+            asm_instr_end(ctx);
+            break;
+        } else if (datasize == 2 || datasize == 1) {
             if (datatype == VARTYPE_UINT || datatype == VARTYPE_BOOL) {
                 asm_instr(ctx, OP_MOVZX);
             } else if (datatype == VARTYPE_SINT) {
@@ -1086,7 +1376,19 @@ void quad_to_asm(Quad* q, AsmCtx* ctx, NameTable* name_table, VarData* vars,
             break;
         }
         assert(vars[q->dest].alloc_type == ALLOC_REG);
-        if (datatype == VARTYPE_UINT || datatype == VARTYPE_BOOL) {
+        if (datatype == VARTYPE_FLOAT) {
+            if (datasize == 4) {
+                asm_instr(ctx, OP_CVTTSS2SI);
+            } else {
+                asm_instr(ctx, OP_CVTTSD2SI);
+                assert(datasize == 8);
+            }
+            // IDK about this one...
+            emit_var_with_size(&vars[q->dest], 4, ctx);
+            emit_xmm_var(&vars[q->op1.var], ctx);
+            asm_instr_end(ctx);
+            break;
+        } else if (datatype == VARTYPE_UINT || datatype == VARTYPE_BOOL) {
             asm_instr(ctx, OP_MOVZX);
         } else if (datatype == VARTYPE_SINT) {
             asm_instr(ctx, OP_MOVSX);
@@ -1101,6 +1403,19 @@ void quad_to_asm(Quad* q, AsmCtx* ctx, NameTable* name_table, VarData* vars,
     case QUAD_CAST_TO_INT8:
     case QUAD_CAST_TO_UINT8: {
         enum VarDatatype datatype = vars[q->op1.var].datatype;
+        if (datatype == VARTYPE_FLOAT) {
+            if (vars[q->op1.var].byte_size == 4) {
+                asm_instr(ctx, OP_CVTTSS2SI);
+            } else {
+                asm_instr(ctx, OP_CVTTSD2SI);
+                assert(vars[q->op1.var].byte_size == 8);
+            }
+            // IDK about this one...
+            emit_var_with_size(&vars[q->dest], 4, ctx);
+            emit_xmm_var(&vars[q->op1.var], ctx);
+            asm_instr_end(ctx);
+            break;
+        }
         assert(datatype == VARTYPE_UINT || datatype == VARTYPE_SINT ||
                datatype == VARTYPE_BOOL);
         if (!is_same(vars, q->op1.var, q->dest)) {
@@ -1109,6 +1424,50 @@ void quad_to_asm(Quad* q, AsmCtx* ctx, NameTable* name_table, VarData* vars,
             emit_var_with_size(&vars[q->op1.var], 1, ctx);
             asm_instr_end(ctx);
         }
+        break;
+    }
+    case QUAD_CAST_TO_FLOAT32: {
+        enum VarDatatype datatype = vars[q->op1.var].datatype;
+        uint32_t datasize = vars[q->op1.var].byte_size;
+        if (datatype == VARTYPE_FLOAT) {
+            assert(datasize == 8);
+            asm_instr(ctx, OP_CVTSD2SS);
+            emit_xmm_var(&vars[q->dest], ctx);
+            emit_xmm_var(&vars[q->op1.var], ctx);
+            asm_instr_end(ctx);
+            break;
+        } else if (datatype == VARTYPE_SINT) {
+            assert(datasize == 4 || datasize == 8);
+            asm_instr(ctx, OP_CVTSI2SS);
+            emit_xmm_var(&vars[q->dest], ctx);
+            emit_var(&vars[q->op1.var], ctx);
+            asm_instr_end(ctx);
+            break;
+        }
+        // Other datatypes should have been pre-casted away
+        assert(false);
+        break;
+    }
+    case QUAD_CAST_TO_FLOAT64: {
+        enum VarDatatype datatype = vars[q->op1.var].datatype;
+        uint32_t datasize = vars[q->op1.var].byte_size;
+        if (datatype == VARTYPE_FLOAT) {
+            assert(datasize == 4);
+            asm_instr(ctx, OP_CVTSS2SD);
+            emit_xmm_var(&vars[q->dest], ctx);
+            emit_xmm_var(&vars[q->op1.var], ctx);
+            asm_instr_end(ctx);
+            break;
+        } else if (datatype == VARTYPE_SINT) {
+            assert(datasize == 4 || datasize == 8);
+            asm_instr(ctx, OP_CVTSI2SD);
+            emit_xmm_var(&vars[q->dest], ctx);
+            emit_var(&vars[q->op1.var], ctx);
+            asm_instr_end(ctx);
+            break;
+        }
+        // Other datatypes should have been pre-casted away
+        assert(false);
         break;
     }
     case QUAD_ARRAY_TO_PTR:
@@ -1187,11 +1546,19 @@ void quad_to_asm(Quad* q, AsmCtx* ctx, NameTable* name_table, VarData* vars,
         break;
     }
     case QUAD_RETURN:
-        if (vars[q->op1.var].alloc_type != ALLOC_REG ||
-            vars[q->op1.var].reg != RAX) {
-            uint32_t datasize = vars[q->op1.var].byte_size;
+        uint32_t datasize = vars[q->op1.var].byte_size;
+        if (vars[q->op1.var].datatype == VARTYPE_FLOAT) {
+            if (vars[q->op1.var].alloc_type != ALLOC_REG ||
+                vars[q->op1.var].reg != XMM0) {
+                asm_instr(ctx, datasize == 4 ? OP_MOVSS : OP_MOVSD);
+                asm_xmmreg_var(ctx, datasize, XMM0);
+                emit_xmm_var(&vars[q->op1.var], ctx);
+                asm_instr_end(ctx);
+            }
+        } else if (vars[q->op1.var].alloc_type != ALLOC_REG ||
+                   vars[q->op1.var].reg != RAX) {
             asm_instr(ctx, OP_MOV);
-            asm_reg_var(ctx, datasize, RAX);
+            asm_genreg_var(ctx, datasize, RAX);
             emit_var(&vars[q->op1.var], ctx);
             asm_instr_end(ctx);
         }
@@ -1242,19 +1609,54 @@ void quad_to_asm(Quad* q, AsmCtx* ctx, NameTable* name_table, VarData* vars,
         assert(vars[q->dest].alloc_type == ALLOC_REG);
         assert(vars[q->op1.var].alloc_type == ALLOC_MEM);
         asm_instr(ctx, OP_LEA);
-        asm_reg_var(ctx, PTR_SIZE, vars[q->dest].reg);
+        asm_genreg_var(ctx, PTR_SIZE, vars[q->dest].reg);
         emit_var_with_size(&vars[q->op1.var], 8, ctx);
         asm_instr_end(ctx);
         break;
-    case QUAD_DEREF:
+    case QUAD_DEREF: {
         assert(vars[q->dest].alloc_type == ALLOC_REG);
         assert(vars[q->op1.var].alloc_type == ALLOC_REG);
         uint32_t datasize = vars[q->dest].byte_size;
         asm_instr(ctx, OP_MOV);
-        asm_reg_var(ctx, datasize, vars[q->dest].reg);
+        asm_genreg_var(ctx, datasize, vars[q->dest].reg);
         asm_mem_var(ctx, datasize, vars[q->op1.var].reg, 0, RAX, 0);
         asm_instr_end(ctx);
         break;
+    }
+    case QUAD_FNEGATE: {
+        if (!is_same(vars, q->op1.var, q->dest)) {
+            emit_op1_dest_move(q, vars, ctx);
+        }
+        // Why is this so difficult?
+        // The best way to negate a floating point number is to xor the sign bit
+        // But xor for xmm only exists in forms that opperate on the whole 128-bit register
+        // Therefore, the bitmask must be but in a 16-byte memory location
+        asm_instr(ctx, OP_XORPS);
+        emit_xmm_var(&vars[q->dest], ctx);
+        if (vars[q->op1.var].byte_size == 4) {
+            if (saved_syms[0] == SYMBOL_IX_NONE) {
+                Object* obj = ctx->object;
+                saved_syms[0] = Object_declare_var(obj, rdata, (const uint8_t*)"", 
+                                                   0, 4, false);
+                uint8_t sign32[16] = {0x0, 0x0, 0x0, 0x80, 0x0, 0x0, 0x0, 0x0,
+                                      0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
+                Object_append_data(obj, rdata, sign32, 16);
+            }
+            asm_global_mem_var(ctx, 16, saved_syms[0], 0);
+        } else {
+            if (saved_syms[1] == SYMBOL_IX_NONE) {
+                Object* obj = ctx->object;
+                saved_syms[1] = Object_declare_var(obj, rdata, (const uint8_t*)"", 
+                                                   0, 8, false);
+                uint8_t sign64[16] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x80,
+                                      0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
+                Object_append_data(obj, rdata, sign64, 16);
+            }
+            asm_global_mem_var(ctx, 16, saved_syms[1], 0);
+        }
+        asm_instr_end(ctx);
+        break;
+    }
     case QUAD_NEGATE:
         if (!is_same(vars, q->op1.var, q->dest)) {
             emit_op1_dest_move(q, vars, ctx);
@@ -1278,6 +1680,18 @@ void quad_to_asm(Quad* q, AsmCtx* ctx, NameTable* name_table, VarData* vars,
         }
         asm_instr_end(ctx);
         break;
+    case QUAD_FADD:
+        emit_xmm_binop(OP_ADDSS, OP_ADDSD, q, vars, ctx);
+        break;
+    case QUAD_FSUB:
+        emit_xmm_binop(OP_SUBSS, OP_SUBSD, q, vars, ctx);
+        break;
+    case QUAD_FMUL:
+        emit_xmm_binop(OP_MULSS, OP_MULSD, q, vars, ctx);
+        break;
+    case QUAD_FDIV:
+        emit_xmm_binop(OP_DIVSS, OP_DIVSD, q, vars, ctx);
+        break;
     default:
         String_create(&out);
         fmt_quad(q, &out);
@@ -1289,13 +1703,15 @@ void quad_to_asm(Quad* q, AsmCtx* ctx, NameTable* name_table, VarData* vars,
 }
 
 void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
-                         NameTable* name_table) {
+                         NameTable* name_table, section_ix rdata,
+                         symbol_ix* saved_syms) {
     VarList* var_list = &def->vars;
     VarData* vars = var_list->data;
     assert(def->quad_start->type == QUAD_LABEL);
     const uint8_t* name = name_table->data[def->name].name;
 
     uint32_t name_len = name_table->data[def->name].name_len;
+    // TODO: Only allocate 32-byte space here if non-leaf function
     uint64_t stack_size = 32;
 
     for (Quad* q = def->quad_start; q != def->quad_end->next_quad; q = q->next_quad) {
@@ -1306,7 +1722,7 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
         }
     }
 
-    bool push_reg[GEN_REG_COUNT] = {false};
+    bool push_reg[GEN_REG_COUNT + XMM_COUNT] = {false};
 
     for (uint64_t ix = 0; ix < var_list->size; ++ix) {
         if (!var_local(vars[ix].kind)) {
@@ -1321,34 +1737,69 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
             if (!GEN_VOLATILE_REGS[vars[ix].reg]) {
                 push_reg[vars[ix].reg] = true;
             }
+        } else if (vars[ix].alloc_type == ALLOC_REG &&
+                vars[ix].reg >= XMM0 && 
+                vars[ix].reg < XMM0 + XMM_COUNT) {
+            if (!XMM_VOLATILE_REGS[vars[ix].reg - XMM0]) {
+                push_reg[vars[ix].reg] = true;
+            }
         }
     }
+
+    uint32_t push_size = 0;
 
     for (uint32_t reg = 0; reg < GEN_REG_COUNT; ++reg) {
         if (push_reg[reg]) {
             asm_instr(ctx, OP_PUSH);
-            asm_reg_var(ctx, 8, reg);
+            asm_genreg_var(ctx, 8, reg);
             asm_instr_end(ctx);
             stack_size += 8;
+            push_size += 8;
+        }
+    }
+    uint32_t xmm_size = 0;
+    for (uint32_t reg = XMM0; reg < XMM0 + XMM_COUNT; ++reg) {
+        if (push_reg[reg]) {
+            stack_size += 16;
+            xmm_size += 16;
         }
     }
 
+    // TODO: push XMM registers
     if (stack_size % 16 == 0) {
         stack_size += 8;
+    } else if (xmm_size > 0) {
+        stack_size += 16;
     }
+
+
     assert(stack_size <= INT32_MAX);
-    uint32_t stack_size_u32 = stack_size;
+    uint32_t stack_size_u32 = stack_size - push_size;
+    
+    LOG_WARNING("%*.*s Stack size: %u", name_len, name_len, name, stack_size);
 
     asm_instr(ctx, OP_SUB);
-    asm_reg_var(ctx, 8, RSP);
+    asm_genreg_var(ctx, 8, RSP);
     asm_imm_var(ctx, 4, (const uint8_t*)&stack_size_u32);
     asm_instr_end(ctx);
+
+    uint32_t xmm_ix = 0;
+    for (uint32_t reg = XMM0; reg < XMM0 + XMM_COUNT; ++reg) {
+        if (push_reg[reg]) {
+            asm_instr(ctx, OP_MOVDQA);
+            asm_mem_var(ctx, 16, RSP, 0, 0, stack_size_u32 - xmm_size + xmm_ix * 16 - 8);
+            asm_xmmreg_var(ctx, 16, reg);
+            asm_instr_end(ctx);
+            ++xmm_ix;
+        }
+    }
 
     Quad* q = def->quad_start->next_quad;
     String out;
 
     for (; q != def->quad_end->next_quad; q = q->next_quad) {
-        quad_to_asm(q, ctx, name_table, vars, stack_size, def);
+        quad_to_asm(q, ctx, name_table, vars, stack_size, def, rdata,
+                    saved_syms);
     }
 
     uint8_t* end_name = Arena_alloc_count(&ctx->arena, uint8_t, name_len + 6);
@@ -1361,15 +1812,26 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
     end_name[name_len + 5] = 'd';
     asm_put_label(ctx, def->end_label);
 
+    xmm_ix = 0;
+    for (uint32_t reg = XMM0; reg < XMM0 + XMM_COUNT; ++reg) {
+        if (push_reg[reg]) {
+            asm_instr(ctx, OP_MOVDQA);
+            asm_xmmreg_var(ctx, 16, reg);
+            asm_mem_var(ctx, 16, RSP, 0, 0, stack_size_u32 - xmm_size + xmm_ix * 16 - 8);
+            asm_instr_end(ctx);
+            ++xmm_ix;
+        }
+    }
+
     asm_instr(ctx, OP_ADD);
-    asm_reg_var(ctx, 8, RSP);
+    asm_genreg_var(ctx, 8, RSP);
     asm_imm_var(ctx, 4, (const uint8_t*)&stack_size_u32);
     asm_instr_end(ctx);
 
     for (int32_t reg = GEN_REG_COUNT - 1; reg >= 0; --reg) {
         if (push_reg[reg]) {
             asm_instr(ctx, OP_POP);
-            asm_reg_var(ctx, 8, reg);
+            asm_genreg_var(ctx, 8, reg);
             asm_instr_end(ctx);
         }
     }
@@ -1462,11 +1924,14 @@ Object* Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
         def->symbol = sym;
     }
 
+    symbol_ix saved_syms[2] = {SYMBOL_IX_NONE, SYMBOL_IX_NONE};
+
     Amd64Op* start = ctx.start;
     for (uint64_t ix = 0; ix < func_table->size; ++ix) {
         FunctionDef* def = func_table->data[ix];
         object->symbols[def->symbol].offset = object->sections[code_section].data.size;
-        Backend_generate_fn(def, arena, &ctx, name_table);
+        Backend_generate_fn(def, arena, &ctx, name_table, rdata_section,
+                            saved_syms);
         asm_assemble(&ctx, def->symbol);
         if (ix + 1 < func_table->size) {
             asm_reset(&ctx);

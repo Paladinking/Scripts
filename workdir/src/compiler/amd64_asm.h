@@ -5,7 +5,7 @@
 
 uint64_t Backend_get_regs();
 
-void Backend_inital_contraints(ConflictGraph* graph, var_id var_count);
+void Backend_inital_contraints(ConflictGraph* graph, VarList* vars);
 
 void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
                             VarList* vars, FlowNode* node, Arena* arena);

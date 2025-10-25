@@ -1,0 +1,13 @@
+
+fn do_something(uint32 a, uint32 b, uint32 c, uint32 d, uint32 e, uint32 f) -> uint32 {
+    return a + b + c + d + e + f;
+}
+
+
+fn main() -> uint64 {
+    uint32 x = do_something(1, 2, 3, 4, 5, 6);
+
+
+    return x;
+}
+

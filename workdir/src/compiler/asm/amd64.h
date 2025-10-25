@@ -8,6 +8,12 @@
 
 #include "../linker/linker.h"
 
+// REX is included in a mnemonic if it is mandatory for e.g 64-bit size
+// A REX prefix might be present in the final binary anyways depending on operands
+// VEX prefix is not supported.
+// SIMD instructions are encoded as a PREFIX followed by OPCODE2
+// This PREFIX will have a byte used for some other known prefix
+
 enum MnemonicPart {
     PREFIX, // e.g 0x66 (operand size overide prefix)
     REX, // Rex Prefix 
@@ -36,16 +42,19 @@ enum Amd64OperandType {
     OPERAND_MEM16, // e.g WORD [rcx + 8 * rdx - 32]
     OPERAND_MEM32, // e.g DWORD [rcx + 8 * rdx - 32]
     OPERAND_MEM64, // e.g QWORD [rcx + 8 * rdx - 32]
+    OPERAND_MEM128, // e.g DQWORD [rcx + 8 * rdx - 32]
     OPERAND_REG8,  // e.g al
     OPERAND_REG16, // e.g cx
     OPERAND_REG32, // e.g r10d
     OPERAND_REG64, // e.g r12
+    OPERAND_REGXMM, // e.g xmm7
     OPERAND_LABEL, // e.g L12
     OPERAND_SYMBOL_LABEL, // e.g function
     OPERAND_GLOBAL_MEM8,  // e.g BYTE [__literal_string0]
     OPERAND_GLOBAL_MEM16, // e.g WORD [__literal_string0]
     OPERAND_GLOBAL_MEM32, // e.g DWORD [__literal_string0]
     OPERAND_GLOBAL_MEM64, // e.g QWORD [__literal_string0]
+    OPERAND_GLOBAL_MEM128, // e.g DQWORD [__float_mask]
     OPERAND_IMM8,
     OPERAND_IMM16,
     OPERAND_IMM32,
@@ -83,8 +92,25 @@ typedef struct Encodings {
 #define R13 13
 #define R14 14
 #define R15 15
+#define XMM0 16
+#define XMM1 17
+#define XMM2 18
+#define XMM3 19
+#define XMM4 20
+#define XMM5 21
+#define XMM6 22
+#define XMM7 23
+#define XMM8 24
+#define XMM9 25
+#define XMM10 26
+#define XMM11 27
+#define XMM12 28
+#define XMM13 29
+#define XMM14 30
+#define XMM15 31
 
 #define GEN_REG_COUNT 16
+#define XMM_COUNT 16
 
 enum Amd64Opcode {
     OP_NOP, OP_MOV, OP_PUSH, OP_POP, OP_RET,
@@ -106,6 +132,14 @@ enum Amd64Opcode {
     OP_SETG, OP_SETA, OP_SETLE, OP_SETBE,
     OP_SETGE, OP_SETAE, OP_SETL, OP_SETB,
     OP_SETNE, OP_SETNZ, OP_SETE, OP_SETZ,
+
+    OP_MOVSS, OP_MOVSD,
+    OP_CVTSS2SI, OP_CVTSD2SI, OP_CVTSI2SS, OP_CVTSI2SD,
+    OP_CVTSS2SD, OP_CVTSD2SS,
+    OP_XORPS, OP_ADDSS, OP_ADDSD, OP_SUBSS, OP_SUBSD,
+    OP_MULSS, OP_MULSD, OP_DIVSS, OP_DIVSD,
+    OP_MOVDQA,
+    OP_CVTTSS2SI, OP_CVTTSD2SI,
     
     OPCODE_START,
     OPCODE_END,
@@ -166,7 +200,9 @@ void asm_ctx_create(AsmCtx* ctx, Object* object, section_ix code_section);
 
 void asm_instr(AsmCtx* ctx, enum Amd64Opcode op);
 
-void asm_reg_var(AsmCtx* ctx, uint8_t size, uint8_t reg);
+void asm_genreg_var(AsmCtx* ctx, uint8_t size, uint8_t reg);
+
+void asm_xmmreg_var(AsmCtx* ctx, uint8_t size, uint8_t reg);
 
 void asm_label_var(AsmCtx* ctx, uint64_t ix);
 
