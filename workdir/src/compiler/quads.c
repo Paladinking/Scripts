@@ -159,9 +159,7 @@ var_id QuadList_addvar(QuadList* quads, name_id name, type_id type, Parser* pars
         quads->vars.data[id].kind = VAR_TEMP;
     } else {
         func_id func = parser->name_table.data[name].function;
-        if (parser->type_table.data[type].kind == TYPE_ARRAY) {
-            quads->vars.data[id].kind = VAR_ARRAY;
-        } else if (func == FUNC_ID_GLOBAL) {
+        if (func == FUNC_ID_GLOBAL) {
             quads->vars.data[id].kind = VAR_GLOBAL;
         } else {
             quads->vars.data[id].kind = VAR_LOCAL;
@@ -182,7 +180,7 @@ var_id QuadList_addvar(QuadList* quads, name_id name, type_id type, Parser* pars
 void QuadList_add_string(QuadList* quads, Parser* parser, StringLiteral* literal) {
     type_id type = type_array_of(&parser->type_table, TYPE_ID_UINT8, literal->len + 1);
     var_id var = QuadList_addvar(quads, NAME_ID_INVALID, type, parser);
-    quads->vars.data[var].kind = VAR_ARRAY_GLOBAL;
+    quads->vars.data[var].kind = VAR_GLOBAL;
     literal->var = var;
 }
 

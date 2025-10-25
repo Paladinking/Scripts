@@ -618,8 +618,7 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
                             node, vars, arena);
         }
     } else if (q == QUAD_ARRAY_TO_PTR) {
-        assert(vars->data[quad->op1.var].kind == VAR_ARRAY ||
-               vars->data[quad->op1.var].kind == VAR_ARRAY_GLOBAL);
+        assert(vars->data[quad->op1.var].datatype == VARTYPE_ARRAY);
         if (vars->data[quad->dest].alloc_type == ALLOC_MEM) {
             postinsert_move(graph, &quad->dest, live_set, quad, node, vars, arena);
         }
@@ -719,7 +718,7 @@ void emit_var_with_size(VarData* var, uint32_t datasize, AsmCtx* ctx) {
     if (var->alloc_type == ALLOC_MEM) {
         if (var_local(var->kind)) {
             asm_mem_var(ctx, datasize, RSP, 0, RAX, var->memory.offset);
-        } else if (var->kind == VAR_ARRAY_GLOBAL || var->kind == VAR_GLOBAL) {
+        } else if (var->kind == VAR_GLOBAL) {
             asm_global_mem_var(ctx, datasize, var->symbol_ix, 0);
         } else {
             assert(false);
@@ -766,7 +765,7 @@ void emit_xmm_var(VarData* var, AsmCtx* ctx) {
     if (var->alloc_type == ALLOC_MEM) {
         if (var_local(var->kind)) {
             asm_mem_var(ctx, datasize, RSP, 0, RAX, var->memory.offset);
-        } else if (var->kind == VAR_ARRAY_GLOBAL || var->kind == VAR_GLOBAL) {
+        } else if (var->kind == VAR_GLOBAL) {
             asm_global_mem_var(ctx, datasize, var->symbol_ix, 0);
         } else {
             assert(false);
@@ -1471,8 +1470,7 @@ void quad_to_asm(Quad* q, AsmCtx* ctx, NameTable* name_table, VarData* vars,
         break;
     }
     case QUAD_ARRAY_TO_PTR:
-        assert(vars[q->op1.var].kind == VAR_ARRAY ||
-               vars[q->op1.var].kind == VAR_ARRAY_GLOBAL);
+        assert(vars[q->op1.var].datatype == VARTYPE_ARRAY);
         assert(vars[q->dest].alloc_type == ALLOC_REG);
         asm_instr(ctx, OP_LEA);
         emit_var(&vars[q->dest], ctx);
@@ -1575,8 +1573,7 @@ void quad_to_asm(Quad* q, AsmCtx* ctx, NameTable* name_table, VarData* vars,
     case QUAD_CALC_ARRAY_ADDR: {
         assert(vars[q->op2].alloc_type == ALLOC_REG);
         assert(vars[q->dest].alloc_type == ALLOC_REG);
-        assert(vars[q->op1.var].kind == VAR_ARRAY ||
-               vars[q->op1.var].kind == VAR_ARRAY_GLOBAL);
+        assert(vars[q->op1.var].datatype == VARTYPE_ARRAY);
         uint32_t datasize = vars[q->dest].byte_size;
         asm_instr(ctx, OP_LEA);
         emit_var_with_size(&vars[q->dest], datasize, ctx);
