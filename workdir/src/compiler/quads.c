@@ -270,8 +270,6 @@ var_id quads_binop(Parser* parser, Expression* expr, QuadList* quads,
     type_id ltype = expr->binop.lhs->type;
     type_id rtype = expr->binop.rhs->type;
 
-    assert(parser->type_table.data[rtype].kind != TYPE_PTR);
-
     enum QuadType quad;
     enum QuadScale scale = QUADSCALE_NONE;
 
@@ -455,10 +453,14 @@ var_id quads_binop(Parser* parser, Expression* expr, QuadList* quads,
 var_id quads_cast(Parser* parser, Expression* expr, QuadList* quads,
                   var_id dest) {
     type_id src_type = expr->cast.e->type;
+    bool ptr_src = parser->type_table.data[src_type].kind == TYPE_PTR ||
+                   src_type == TYPE_ID_NULL;
+    bool ptr_dest = parser->type_table.data[expr->type].kind == TYPE_PTR ||
+                     expr->type == TYPE_ID_NULL;
+
     if (dest == VAR_ID_INVALID) {
-        if (parser->type_table.data[expr->type].kind == TYPE_PTR &&
-            src_type == TYPE_ID_NULL) {
-            // null to ptr: no-op
+        if (ptr_dest && ptr_src) {
+            // null/ptr to null/ptr: no-op
             return expr->cast.e->var;
         }
         if (src_type == expr->type) {
@@ -481,8 +483,8 @@ var_id quads_cast(Parser* parser, Expression* expr, QuadList* quads,
             QUAD_CAST_TO_FLOAT64, QUAD_CAST_TO_FLOAT32
         };
         q = QuadList_addquad(quads, map[expr->type], dest);
-    } else if (parser->type_table.data[expr->type].kind == TYPE_PTR) { 
-        if (src_type == TYPE_ID_NULL) {
+    } else if (ptr_dest) {
+        if (ptr_src) {
             q = QuadList_addquad(quads, QUAD_MOVE, dest);
         } else {
             q = QuadList_addquad(quads, QUAD_ARRAY_TO_PTR, dest);

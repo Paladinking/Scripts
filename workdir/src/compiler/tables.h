@@ -60,7 +60,8 @@ typedef uint64_t name_id;
 #define NAME_ID_FALSE 8
 #define NAME_ID_EXTERN 9
 #define NAME_ID_NULL 10
-#define NAME_ID_BUILTIN_COUNT 11
+#define NAME_ID_IMPORT 11
+#define NAME_ID_BUILTIN_COUNT 12
 
 // Index into hash table
 typedef uint32_t hash_id;
@@ -257,6 +258,10 @@ typedef struct StringLiteral {
     var_id var;
     struct StringLiteral* next;
 } StringLiteral;
+
+typedef struct Module {
+    const char* filename; // Null-terminated
+} Module;
 
 typedef struct Parser {
     FunctionTable function_table;
