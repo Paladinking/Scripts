@@ -53,6 +53,11 @@ type_id typecheck_cast(Parser* parser, Expression* op) {
             return type;
         }
     }
+    if (parser->type_table.data[type].kind == TYPE_PTR &&
+        parser->type_table.data[t].kind == TYPE_PTR) {
+        // For now...
+        return type;
+    }
     if (t == TYPE_ID_NULL && parser->type_table.data[type].kind == TYPE_PTR) {
         return type;
     }
@@ -260,9 +265,25 @@ type_id typecheck_binop(Parser* parser, Expression* op) {
     case BINOP_CMP_GE:
     case BINOP_CMP_G:
     case BINOP_CMP_L:
+        if (op->binop.lhs->type == TYPE_ID_BOOL ||
+            op->binop.rhs->type == TYPE_ID_BOOL) {
+            a = require_bool(parser, op->binop.lhs);
+            b = require_bool(parser, op->binop.rhs);
+        } else {
+            a = require_number(parser, op->binop.lhs);
+            b = require_number(parser, op->binop.rhs);
+            merge_numbers(parser, a, b, op->binop.lhs, op->binop.rhs);
+        }
+        return TYPE_ID_BOOL;
     case BINOP_CMP_EQ:
     case BINOP_CMP_NEQ:
-        if (op->binop.lhs->type == TYPE_ID_BOOL ||
+        if (parser->type_table.data[op->binop.lhs->type].kind == TYPE_PTR ||
+            op->binop.lhs->type == TYPE_ID_NULL) {
+
+            cast_to(parser, op->binop.rhs, op->binop.lhs->type);
+            typecheck_cast(parser, op->binop.rhs);
+            return TYPE_ID_BOOL;
+        } else if (op->binop.lhs->type == TYPE_ID_BOOL ||
             op->binop.rhs->type == TYPE_ID_BOOL) {
             a = require_bool(parser, op->binop.lhs);
             b = require_bool(parser, op->binop.rhs);

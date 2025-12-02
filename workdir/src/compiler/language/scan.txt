@@ -11,13 +11,17 @@ type: STRUCT = type_id;
 type: UNION = type_id;
 type: ARG_LIST = uint64_t;
 type: ?ARG_LIST = uint64_t;
+type: IMPORT = int64_t;
 
 PROGRAM = '' |
           PROGRAM + FUNCTION |
           PROGRAM + STRUCT |
-          PROGRAM + UNION;
+          PROGRAM + UNION |
+          PROGRAM + IMPORT;
 
 PROGRAM = PROGRAM + error + FUNCTION;
+
+IMPORT = 'import' + identifier : OnScanImport;
 
 FUNCTION = 'fn' + identifier + 
             '(' + ?ARG_LIST + ')' + 
@@ -27,7 +31,7 @@ FUNCTION = 'extern' + 'fn' + identifier +
             '(' + ?ARG_LIST + ')' + ?RET_TYPE + ';' : OnScanExtern;
 
 ?RET_TYPE = '' |
-            '->' + identifier;
+            '->' + identifier + PTRDECL;
 
 ?ARG_LIST = '' : $ 0 |
             ARG_LIST : $ $0;

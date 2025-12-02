@@ -308,6 +308,11 @@ void Backend_add_constrains(ConflictGraph* graph, VarSet* live_set, Quad* quad,
             // Two memory ops not allowed, insert move
             preinsert_move(graph, &quad->op2, live_set, quad, node, vars, arena);
         }
+        if (vars->data[quad->dest].alloc_type == ALLOC_MEM &&
+            vars->data[quad->op1.var].alloc_type == ALLOC_MEM) {
+            // Two memory ops not allowed, insert move
+            preinsert_move(graph, &quad->op1.var, live_set, quad, node, vars, arena);
+        }
 
         if (quad->dest != quad->op2 && quad->dest != quad->op1.var) {
             ConflictGraph_add_edge(graph, quad->dest + graph->reg_count,
@@ -1777,11 +1782,14 @@ void Backend_generate_fn(FunctionDef* def, Arena* arena, AsmCtx* ctx,
         }
     }
 
-    // TODO: push XMM registers
     if (stack_size % 16 == 0) {
         stack_size += 8;
     } else if (xmm_size > 0) {
         stack_size += 16;
+    }
+
+    while (stack_size % 16 != 8) {
+        ++stack_size;
     }
 
 

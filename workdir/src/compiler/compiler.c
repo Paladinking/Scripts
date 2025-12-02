@@ -9,6 +9,14 @@
 #include <glob.h>
 #include <printf.h>
 
+// TODO: modules
+// Syntax: import <identifier>
+// Finds a file called <identifier>.txt and scans it
+// It will not get compiled unless specifed on the command line
+// Linker should be able to read and write COFF64 object files
+// Support should exist so that higher-level tooling can compile whole project at once.
+// Reading COFF objects already works?
+
 void dump_errors(Parser* parser) {
     String s;
     if (String_create(&s)) {
@@ -72,7 +80,6 @@ int compiler(char** argv, int argc) {
         dump_errors(&parser);
         return 1;
     }
-
 
     for (int i = 0; i < parser.function_table.size; ++i) {
         String s;

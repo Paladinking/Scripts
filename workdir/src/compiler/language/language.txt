@@ -1,7 +1,7 @@
 include: "ast.h";
 
 atoms: kwFn, kwStruct, kwUnion, kwIf, kwWhile, kwElse, kwReturn, kwTrue, kwFalse, kwExtern,
-       kwNull, typeid, identifier, integer, real, string;
+       kwNull, kwImport, typeid, identifier, integer, real, string;
 
 type: typeid = type_id;
 type: identifier = StrWithLength;
@@ -50,10 +50,15 @@ type: ARG_LIST = ArgList*;
 
 type: ARRAYDECL = ArraySizes*;
 
+type: IMPORT = int64_t;
+
 PROGRAM = '' |
           PROGRAM + FUNCTION |
           PROGRAM + STRUCT |
-          PROGRAM + UNION;
+          PROGRAM + UNION |
+          PROGRAM + IMPORT;
+
+IMPORT = kwImport + identifier : OnImport;
 
 FN_HEAD = kwFn + identifier : OnFnHead;
 

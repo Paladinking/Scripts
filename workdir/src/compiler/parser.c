@@ -118,6 +118,7 @@ void Parser_create(Parser* parser) {
     parser_add_keyword(parser, "false", NAME_ID_FALSE);
     parser_add_keyword(parser, "extern", NAME_ID_EXTERN);
     parser_add_keyword(parser, "null", NAME_ID_NULL);
+    parser_add_keyword(parser, "import", NAME_ID_IMPORT);
 
     parser_add_builtin(parser, TYPE_ID_UINT64, 8, 8, "uint64");
     parser_add_builtin(parser, TYPE_ID_UINT32, 4, 4, "uint32");
@@ -498,6 +499,12 @@ type_id OnStruct(void* ctx, uint64_t start, uint64_t end,
     return handle_struct(PARSER(ctx), start, end, type, fields);
 }
 
+
+int64_t OnImport(void* ctx, uint64_t start, uint64_t end, StrWithLength file) {
+    // TODO: get module
+    return 0;
+}
+
 FieldList* OnField(void* ctx, uint64_t start, uint64_t end, FieldList* fields, 
                    type_id type, StrWithLength ident) {
     FieldList* f = Arena_alloc_type(&PARSER(ctx)->arena, FieldList);
@@ -784,7 +791,7 @@ void consume_token(void* ctx, uint64_t* start, uint64_t* end) {
                 TOKEN_KWFN, TOKEN_KWSTRUCT, TOKEN_KWUNION,
                 TOKEN_KWIF, TOKEN_KWWHILE, TOKEN_KWELSE,
                 TOKEN_KWRETURN, TOKEN_KWTRUE, TOKEN_KWFALSE, TOKEN_KWEXTERN,
-                TOKEN_KWNULL
+                TOKEN_KWNULL, TOKEN_KWIMPORT
             };
             t->last_token.id = map[name];
         } else if (p->name_table.data[name].kind == NAME_TYPE) {

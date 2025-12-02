@@ -140,6 +140,11 @@ FunctionDef* OnScanExtern(void* ctx, uint64_t start, uint64_t end, StrWithLength
     return OnScanFunction(ctx, start, end, name, arg_count);
 }
 
+
+int64_t OnScanImport(void* ctx, uint64_t start, uint64_t end, StrWithLength file) {
+
+}
+
 void scan_program(Parser* parser, String* indata) {
     parser_set_input(parser, indata);
 
