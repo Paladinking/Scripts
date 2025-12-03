@@ -18,15 +18,19 @@ bool subprocess_run_program(const wchar_t *prog, const wchar_t *cmd,
     memset(&si, 0, sizeof(si));
     memset(&pi, 0, sizeof(pi));
 
-    HANDLE hRead, hWrite;
-    if (!CreatePipe(&hRead, &hWrite, NULL, 0)) {
-        return false;
-    }
-    if (!SetHandleInformation(hWrite, HANDLE_FLAG_INHERIT,
-                              HANDLE_FLAG_INHERIT)) {
-        CloseHandle(hRead);
-        CloseHandle(hWrite);
-        return false;
+    HANDLE hRead = NULL, hWrite = NULL;
+    if (!(opts & SUBPROCESS_STDOUT_INHERIT)) {
+        if (!CreatePipe(&hRead, &hWrite, NULL, 0)) {
+            return false;
+        }
+        if (!SetHandleInformation(hWrite, HANDLE_FLAG_INHERIT,
+                    HANDLE_FLAG_INHERIT)) {
+            CloseHandle(hRead);
+            CloseHandle(hWrite);
+            return false;
+        }
+    } else {
+        hWrite = GetStdHandle(STD_OUTPUT_HANDLE);
     }
 
     DWORD flags = 0;
@@ -55,20 +59,26 @@ bool subprocess_run_program(const wchar_t *prog, const wchar_t *cmd,
     size_t cmd_len = wcslen(cmd);
     wchar_t *cmd_buf = Mem_alloc((cmd_len + 1) * sizeof(wchar_t));
     if (cmd_buf == NULL) {
-        CloseHandle(hRead);
-        CloseHandle(hWrite);
+        if (!(opts & SUBPROCESS_STDOUT_INHERIT)) {
+            CloseHandle(hRead);
+            CloseHandle(hWrite);
+        }
         return false;
     }
     memcpy(cmd_buf, cmd, (cmd_len + 1) * sizeof(wchar_t));
 
     if (!CreateProcessW(prog, cmd_buf, NULL, NULL, TRUE, flags, NULL, NULL, &si,
                         &pi)) {
-        CloseHandle(hRead);
-        CloseHandle(hWrite);
+        if (!(opts & SUBPROCESS_STDOUT_INHERIT)) {
+            CloseHandle(hRead);
+            CloseHandle(hWrite);
+        }
         Mem_free(cmd_buf);
         return false;
     }
-    CloseHandle(hWrite);
+    if (!(opts & SUBPROCESS_STDOUT_INHERIT)) {
+        CloseHandle(hWrite);
+    }
     CloseHandle(pi.hThread);
     if (in != INVALID_HANDLE_VALUE) {
         CloseHandle(in);
@@ -79,6 +89,13 @@ bool subprocess_run_program(const wchar_t *prog, const wchar_t *cmd,
     OVERLAPPED o;
     o.Offset = 0;
     o.OffsetHigh = 0;
+    o.hEvent = NULL;
+    uint64_t delta = 0;
+
+    if (opts & SUBPROCESS_STDOUT_INHERIT) {
+        goto wait_for_exit;
+    }
+
     o.hEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
     if (!o.hEvent) {
         goto cleanup;
@@ -116,8 +133,9 @@ bool subprocess_run_program(const wchar_t *prog, const wchar_t *cmd,
     }
 
     uint64_t now = (stamp.QuadPart * 1000) / freq.QuadPart;
-    uint64_t delta = now - stamp_millies;
+    delta = now - stamp_millies;
     out->buffer[out->length] = '\0';
+wait_for_exit:
     if (delta <= timeout_millies) {
         if (WaitForSingleObject(pi.hProcess, timeout_millies - delta) !=
             WAIT_TIMEOUT) {
