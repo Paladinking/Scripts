@@ -86,7 +86,7 @@ wchar_t **format_file_times(WString *buffer, FileObj *obj, uint32_t count,
     const int64_t half_year = (int64_t)10 * 1000 * 1000 * 60 * 60 * 24 * 182;
     const wchar_t *months[] = {L"",    L"Jan", L"Feb", L"Mar", L"Apr",
                                L"May", L"Jun", L"Jul", L"Aug", L"Sep",
-                               L"Oct", L"Mov", L"Dec"};
+                               L"Oct", L"Nov", L"Dec"};
 
     for (uint32_t ix = 0; ix < count; ++ix) {
         buf[ix] = (void *)(uintptr_t)buffer->length;
