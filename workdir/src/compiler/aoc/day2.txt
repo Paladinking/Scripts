@@ -1,0 +1,97 @@
+import stdlib
+
+
+fn has_repeats(uint64 id) -> bool {
+    uint64 n = 10;
+    uint64 digits = 1;
+    while (n <= id) {
+        n = n * 10;
+        digits = digits + 1;
+    }
+
+    if ((digits % 2) != 0) {
+        return false;
+    }
+    uint64 i = 0;
+    n = 1;
+    while (i < digits / 2) {
+        n = n * 10;
+        i = i + 1;
+    }
+
+    return id / n == id % n;
+}
+
+fn is_invalid(uint64 id) -> bool {
+    uint64 n = 10;
+    uint64 digits = 1;
+    while (n <= id) {
+        n = n * 10;
+        digits = digits + 1;
+    }
+    if (digits == 1) {
+        return false;
+    }
+
+    n = 10;
+    uint64 i = 1;
+    while (i <= digits / 2) {
+        if ((digits % i) == 0) {
+            uint64 v = id;
+            uint64 v1 = v % n;
+            bool same = true;
+            while (v / n > 0) {
+                v = v / n;
+                if ((v % n) != v1) {
+                    same = false;
+                }
+            }
+            if (same) {
+                return true;
+            } 
+        }
+        n = n * 10;
+        i = i + 1;
+    }
+    return false;
+}
+
+
+fn main() -> uint64 {
+    uint64 size;
+    uint8* input = read_file("src\\compiler\\aoc\\input2.txt", &size);
+
+    uint32 count;
+    uint8** parts = split_on(input, ","[0], &count);
+
+    uint64 fake_count = 0;
+    uint64 invalid_count = 0;
+
+    uint32 i = 0;
+    while (i < count) {
+        uint32 c;
+        uint8** p = split_on(parts[i], "-"[0], &c);
+        uint64 p1 = read_uint(p[0]);
+        uint64 p2 = read_uint(p[1]);
+        freelines(p, c);
+
+        uint64 id = p1;
+        while (id <= p2) {
+            if (has_repeats(id)) {
+                fake_count = fake_count + id;
+            }
+            if (is_invalid(id)) {
+                invalid_count = invalid_count + id;
+            }
+            id = id + 1;
+        }
+        i = i + 1;
+    }
+
+    fmt_uint(fake_count);
+    print("\n");
+    fmt_uint(invalid_count);
+    print("\n");
+
+    return 0;
+}

@@ -1,0 +1,288 @@
+extern fn HeapAlloc(uint64 h, uint32 flags, uint64 size) -> uint8*;
+extern fn HeapFree(uint64 h, uint32 flags, uint8* ptr) -> int32;
+extern fn HeapReAlloc(uint64 h, uint32 flags, uint8* ptr, uint64 size) -> uint8*;
+extern fn GetProcessHeap() -> uint64;
+extern fn GetFileType(uint64 h) -> uint32;
+extern fn GetStdHandle(uint32 h) -> uint64;
+extern fn ReadFile(uint64 file, uint8* buf, uint32 toread, uint32* read, uint8* overlap) -> int32;
+extern fn CloseHandle(uint64 h) -> int32;
+extern fn GetFileSizeEx(uint64 file, uint64* size) -> int32;
+extern fn CreateFileW(uint16* filename, uint32 access, uint32 sharemode, uint8* security,
+                      uint32 creationDisposition, uint32 flags, uint64 template) -> uint64;
+extern fn MultiByteToWideChar(uint32 codepoint, uint32 flags, uint8* in, int32 len,
+                              uint16* out, int32 size) -> int32;
+extern fn WriteConsoleW(uint64 h, uint16* buf, uint32 count, uint32* written, 
+                       uint8* reserved) -> int32;
+extern fn WriteFile(uint64 h, uint8* buf, uint32 count, uint32* written, uint8* overlap) -> int32;
+
+fn malloc(uint64 size) -> uint8* {
+    return HeapAlloc(GetProcessHeap(), 0, size);
+}
+
+fn free(uint8* ptr) {
+    HeapFree(GetProcessHeap(), 0, ptr);
+}
+
+fn realloc(uint8* ptr, uint64 size) -> uint8* {
+    return HeapReAlloc(GetProcessHeap(), 0, ptr, size);
+}
+
+fn strlen(uint8* str) -> uint64 {
+    uint64 len = 0;
+    while (str[len] != 0) {
+        len = len + 1;
+    }
+
+    return len;
+}
+
+fn read_file(uint8* filename, uint64* size) -> uint8* {
+    uint64 len = strlen(filename);
+    *size = 0;
+
+    int32 sz = MultiByteToWideChar(65001, 0, filename, len, null, 0);
+    if (sz == 0) {
+        return null;
+    }
+    uint16* wbuf = malloc(2 * (sz + 1));
+    if (wbuf == null) {
+        return null;
+    }
+
+    sz = MultiByteToWideChar(65001, 0, filename, len, wbuf, sz);
+    if (sz == 0) {
+        free(wbuf);
+        return null;
+    }
+    wbuf[sz] = 0;
+
+    uint64 file = CreateFileW(wbuf, 
+        2147483648, // GENENERIC_READ
+        1, // FILE_SHARE_READ 
+        null,
+        3, // OPEN_EXISTING
+        128, // FILE_ATTRIBUTE_NORMAL
+        0
+    );
+    free(wbuf);
+    if (file == 18446744073709551615) {
+        return null;
+    }
+    uint64 file_size;
+    if (GetFileSizeEx(file, &file_size) == 0) {
+        CloseHandle(file);
+        return null;
+    }
+
+    uint8* buf = malloc(file_size + 1);
+    if (buf == null) {
+        CloseHandle(file);
+        return null;
+    }
+
+    uint64 read = 0;
+    uint32 b = 0;
+    while (read < file_size && ReadFile(file, buf + read, file_size - read, &b, null) != 0) {
+        read = read + b;
+    }
+    *size = read;
+    buf[read] = 0;
+    CloseHandle(file);
+
+    return buf;
+}
+
+fn print(uint8* buf) -> uint32 {
+    uint64 len = strlen(buf);
+
+    uint64 h = GetStdHandle(-11);
+    if (GetFileType(h) == 2) { // This is a console
+        uint32 sz = MultiByteToWideChar(65001, 0, buf, len, null, 0);
+        if (sz == 0) {
+            return 0;
+        }
+        uint16* wbuf = malloc(2 * (sz + 1));
+        if (wbuf == null) {
+            return 0;
+        }
+
+        sz = MultiByteToWideChar(65001, 0, buf, len, wbuf, sz);
+        if (sz == 0) {
+            free(wbuf);
+            return 0;
+        }
+        WriteConsoleW(h, wbuf, sz, &sz, null);
+        free(wbuf);
+        return len;
+    } else {
+        uint32 sz = len;
+        WriteFile(h, buf, sz, &sz, null);
+        return sz;
+    }
+}
+
+fn slice(uint8* in, uint64 len) -> uint8* {
+    uint8* s = malloc(len + 1);
+    if (s == null) {
+        return s;
+    }
+    uint64 ix = 0;
+    while (ix < len) {
+        s[ix] = in[ix];
+        ix = ix + 1;
+    }
+    s[len] = 0;
+    return s;
+}
+
+fn fmt_uint(uint64 i) {
+    uint8[256] buf;
+    uint32 w;
+    if (i == 0) {
+        buf[0] = 48;
+        buf[1] = 0;
+        print(buf);
+    } else {
+        uint64 f = 1;
+        uint64 c = 0;
+        while (f <= i) {
+            c = c + 1;
+            f = f * 10;
+        }
+
+        uint64 ix = 0;
+
+        while (ix < c) {
+            uint64 u = i % 10;
+            buf[(c - ix - 1)] = u + 48;
+            ix = ix + 1;
+            i = i / 10;
+        }
+        buf[ix] = 0;
+        print(buf);
+    }
+}
+
+
+
+fn read_uint(uint8* str) -> uint64 {
+    uint64 val = 0;
+    uint64 ix = 0;
+    while (str[ix] >= 48 && str[ix] <= 57) {
+        val = val * 10;
+        val = val + str[ix] - 48;
+        ix = ix + 1;
+    }
+    return val;
+}
+
+fn freelines(uint8** lines, uint32 count) {
+    uint64 j = 0;
+    while (j < count) {
+        free(lines[j]);
+        j = j + 1;
+    }
+    free(lines);
+}
+
+fn splitlines(uint8* in, uint32* count) -> uint8** {
+    uint64 ix = 0;
+    uint64 last = 0;
+
+    uint64 cap = 16;
+    uint8** dest = malloc(cap * 8);
+    if (dest == null) {
+        return null;
+    }
+
+    while (in[ix] != 0) {
+        if (in[ix] == 13 || in[ix] == 10) {
+            uint8* str = slice(in + last, ix - last);
+            if (in[ix] == 13 && in[ix + 1] == 10) {
+                ix = ix + 1;
+            }
+            if (*count == cap) {
+                cap = cap * 2;
+                uint8** n = realloc(dest, 8 * cap);
+                if (n == null) {
+                    freelines(dest, *count);
+                    return null;
+                }
+                dest = n;
+            }
+            if (str == null) {
+                freelines(dest, *count);
+                return null;
+            }
+
+            dest[*count] = str;
+            last = ix + 1;
+            *count = *count + 1;
+        }
+        ix = ix + 1;
+    }
+    
+    if (last != ix) {
+        if (*count == cap) {
+            cap = cap + 1;
+            uint8** n = realloc(dest, 8 * cap);
+
+            if (n == null) {
+                freelines(dest, *count);
+                return null;
+            }
+            dest = n;
+        }
+        uint8* str = slice(in + last, ix - last);
+        if (str == null) {
+            freelines(dest, *count);
+            return null;
+        }
+
+        dest[*count] = str;
+        *count = *count + 1;
+    }
+
+    return dest;
+}
+
+fn split_on(uint8* data, uint8 c, uint32* count) -> uint8** {
+    uint64 ix = 0;
+    *count = 0;
+    while (data[ix] != 0) {
+        if (data[ix] == c) {
+            *count = *count + 1;
+        }
+        ix = ix + 1;
+    }
+    uint8** dest = malloc((*count + 1) * 8);
+    *count = 0;
+    if (dest == null) {
+        return null;
+    }
+
+    uint64 last = 0;
+    ix = 0;
+    while (data[ix] != 0) {
+        if (data[ix] == c) {
+            dest[*count] = slice(data + last, ix - last);
+            if (dest[*count] == null) {
+                freelines(dest, *count);
+                *count = 0;
+                return null;
+            }
+            last = ix + 1;
+            *count = *count + 1;
+        }
+        ix = ix + 1;
+    }
+    dest[*count] = slice(data + last, ix - last);
+    if (dest[*count] == null) {
+        freelines(dest, *count);
+        *count = 0;
+        return null;
+    }
+    *count = *count + 1;
+
+    return dest;
+}
