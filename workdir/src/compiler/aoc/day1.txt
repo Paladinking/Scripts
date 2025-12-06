@@ -1,0 +1,50 @@
+import stdlib
+
+fn main() -> uint64 {
+    uint64 size;
+    uint8* buf = read_file("src\\compiler\\aoc\\input1.txt", &size);
+    if (buf == null) {
+        return 1;
+    }
+
+    uint32 linecount;
+    uint8** lines = splitlines(buf, &linecount);
+
+    uint32 ix = 0;
+
+    uint64 pos = 50;
+    uint64 password = 0;
+    uint64 password2 = 0;
+
+    while (ix < linecount) {
+        uint8 dir = lines[ix][0];
+        uint64 num = read_uint(lines[ix] + 1);
+
+        uint64 count = 0;
+        while (count < num) {
+            if (dir == 76) {
+                pos = (pos + 99) % 100;
+            } else {
+                pos = (pos + 1) % 100;
+            }
+            if (pos == 0) {
+                password2 = password2 + 1;
+            }
+            count = count + 1;
+        }
+        if (pos == 0) {
+            password = password + 1;
+        }
+
+        ix = ix + 1;
+    }
+
+    fmt_uint(password);
+    print("\n");
+    fmt_uint(password2);
+    print("\n");
+
+    freelines(lines, linecount);
+
+    return 0;
+}
