@@ -306,6 +306,251 @@ const uint8_t* pe_section_name(const SectionTableEntry* section, const uint8_t* 
     return name;
 }
 
+void PeObject_write(Object* obj, ByteBuffer* buffer) {
+    uint32_t total_data_size = 0;
+    uint32_t total_reloc_size = 0;
+    for (uint32_t ix = 0; ix < obj->section_count; ++ix) {
+        total_reloc_size += obj->sections[ix].relocation_count * 10;
+        if (obj->sections[ix].relocation_count > 0xffff) {
+            total_reloc_size += 10;
+        }
+        if (obj->sections[ix].type == SECTION_BSS) {
+            continue;
+        }
+        uint32_t size = obj->sections[ix].data.size;
+        total_data_size = ALIGNED_TO(total_data_size + size, 4);
+    }
+
+    uint32_t data_offset = sizeof(CoffHeader) + obj->section_count * sizeof(SectionTableEntry);
+    uint32_t reloc_offset = data_offset + total_data_size;
+    uint32_t symtab_offset = reloc_offset + total_reloc_size;
+    uint32_t strtab_offset = 4;
+
+    CoffHeader header;
+    header.machine = 0x8664;
+    header.number_of_sections = obj->section_count;
+    header.timedate_stamp = 0;
+    header.pointer_to_symbol_table = symtab_offset;
+    header.number_of_symbols = obj->symbol_count;
+    header.size_of_optional_header = 0;
+    header.characteristics = 4;
+
+    Buffer_extend(buffer, (uint8_t*)&header, sizeof(header));
+
+    for (uint32_t ix = 0; ix < obj->section_count; ++ix) {
+        SectionTableEntry sec;
+        memset(sec.name, 0, sizeof(sec.name));
+        uint32_t namelen = strlen((const char*)obj->sections[ix].name);
+        if (namelen <= 8) {
+            memcpy(sec.name, obj->sections[ix].name, namelen + 1);
+        } else {
+            sec.name[0] = '/';
+            uint64_t n = 1;
+            uint64_t ascii_count = 1;
+            while (n * 10 <= strtab_offset) {
+                n = n * 10;
+                ++ascii_count;
+            }
+            uint32_t offset = strtab_offset;
+            for (uint32_t i = 0; i < ascii_count; ++i) {
+                sec.name[ascii_count - i] = (offset % 10) + '0';
+                offset = offset / 10;
+            }
+            strtab_offset += namelen + 1;
+        }
+        sec.virtual_size = 0;
+        sec.virtual_address = 0;
+        sec.size_of_raw_data = obj->sections[ix].data.size;
+        if (obj->sections[ix].type != SECTION_BSS && obj->sections[ix].data.size > 0) {
+            sec.pointer_to_raw_data = data_offset;
+            data_offset = ALIGNED_TO(data_offset + sec.size_of_raw_data, 4);
+        } else {
+            sec.pointer_to_raw_data = 0;
+        }
+        if (obj->sections[ix].relocation_count > 0) {
+            sec.pointer_to_relocations = reloc_offset;
+            reloc_offset += obj->sections[ix].relocation_count * 10;
+        } else {
+            sec.pointer_to_relocations = 0;
+        }
+        sec.pointer_to_line_numbers = 0;
+        sec.number_of_relocations = obj->sections[ix].relocation_count;
+        sec.number_of_line_numbers = 0;
+        sec.characteristics = 0;
+
+        if (obj->sections[ix].relocation_count > 0xffff) {
+            sec.number_of_relocations = 0xffff;
+            sec.characteristics |= IMAGE_SCN_LNK_NRELOC_OVFL;
+        } else {
+            sec.number_of_relocations = obj->sections[ix].relocation_count;
+            reloc_offset += 10;
+        }
+
+        enum SectionType type = obj->sections[ix].type;
+        if (type == SECTION_CODE) {
+            sec.characteristics |= IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE | 
+                                   IMAGE_SCN_MEM_READ;
+        } else if (type == SECTION_DATA || type == SECTION_IDATA) {
+            sec.characteristics |= IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ | 
+                                   IMAGE_SCN_MEM_WRITE;
+        } else if (type == SECTION_RDATA) {
+            sec.characteristics |= IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ;
+        } else if (type == SECTION_BSS) {
+            sec.characteristics |= IMAGE_SCN_CNT_UNINITIALIZED_DATA | IMAGE_SCN_MEM_READ |
+                                   IMAGE_SCN_MEM_WRITE;
+        } else {
+            assert(false);
+        }
+        const uint32_t align = obj->sections[ix].align;
+        switch (align) {
+            case 1:
+                sec.characteristics |= IMAGE_SCN_ALIGN_1BYTES;
+                break;
+            case 2:
+                sec.characteristics |= IMAGE_SCN_ALIGN_2BYTES;
+                break;
+            case 4:
+                sec.characteristics |= IMAGE_SCN_ALIGN_4BYTES;
+                break;
+            case 8:
+                sec.characteristics |= IMAGE_SCN_ALIGN_8BYTES;
+                break;
+            case 16:
+                sec.characteristics |= IMAGE_SCN_ALIGN_16BYTES;
+                break;
+            case 32:
+                sec.characteristics |= IMAGE_SCN_ALIGN_32BYTES;
+                break;
+            case 64:
+                sec.characteristics |= IMAGE_SCN_ALIGN_64BYTES;
+                break;
+            case 128:
+                sec.characteristics |= IMAGE_SCN_ALIGN_128BYTES;
+                break;
+            case 256:
+                sec.characteristics |= IMAGE_SCN_ALIGN_256BYTES;
+                break;
+            case 512:
+                sec.characteristics |= IMAGE_SCN_ALIGN_512BYTES;
+                break;
+            case 1024:
+                sec.characteristics |= IMAGE_SCN_ALIGN_1024BYTES;
+                break;
+            case 2048:
+                sec.characteristics |= IMAGE_SCN_ALIGN_2048BYTES;
+                break;
+            case 4096:
+                sec.characteristics |= IMAGE_SCN_ALIGN_4096BYTES;
+                break;
+            case 8192:
+                sec.characteristics |= IMAGE_SCN_ALIGN_8192BYTES;
+                break;
+            default:
+                assert(false);
+        }
+        Buffer_extend(buffer, (uint8_t*)&sec, sizeof(sec));
+    }
+
+    for (uint32_t ix = 0; ix < obj->section_count; ++ix) {
+        if (obj->sections[ix].type == SECTION_BSS) {
+            continue;
+        }
+        uint32_t size = obj->sections[ix].data.size;
+        Buffer_extend(buffer, obj->sections[ix].data.data, size);
+        while (buffer->size % 4 != 0) {
+            Buffer_append(buffer, 0);
+        }
+    }
+
+    for (uint32_t ix = 0; ix < obj->section_count; ++ix) {
+        if (obj->sections[ix].relocation_count > 0xffff) {
+            CoffRelocation c;
+            c.type = 0;
+            c.symbol_table_index = 0;
+            c.vritual_address = obj->sections[ix].relocation_count;
+            Buffer_extend(buffer, (uint8_t*)&c, 10);
+        }
+        for (uint32_t r_ix = 0; r_ix < obj->sections[ix].relocation_count; ++r_ix) {
+            Relocation* r = &obj->sections[ix].relocations[r_ix];
+            CoffRelocation c;
+            switch (r->type) {
+            case RELOCATE_ABS:
+                c.type = IMAGE_REL_AMD64_ABSOLUTE;
+                break;
+            case RELOCATE_REL32:
+                c.type = IMAGE_REL_AMD64_REL32;
+                break;
+            case RELOCATE_RVA32:
+                c.type = IMAGE_REL_AMD64_ADDR32NB;
+                break;
+            case RELOCATE_ADR64:
+                c.type = IMAGE_REL_AMD64_ADDR64;
+                break;
+            default:
+                assert(false);
+            }
+            c.symbol_table_index = r->symbol;
+            c.vritual_address = r->offset;
+            Buffer_extend(buffer, (uint8_t*)&c, 10);
+        }
+    }
+
+    assert(buffer->size == sizeof(CoffHeader) + obj->section_count * sizeof(SectionTableEntry) +
+           total_data_size + total_reloc_size);
+
+    for (uint32_t ix = 0; ix < obj->symbol_count; ++ix) {
+        Symbol* sym = &obj->symbols[ix];
+        StandardSymbol s;
+        memset(s.name, 0, sizeof(s.name));
+        if (sym->name_len > 8) {
+            memcpy(s.name + 4, &strtab_offset, 4);
+            strtab_offset += sym->name_len + 1;
+        } else {
+            memcpy(s.name, sym->name, sym->name_len);
+        }
+        if (sym->section == SECTION_IX_NONE) {
+            s.section_number = 0;
+        } else {
+            s.section_number = sym->section + 1;
+        }
+        if (sym->type == SYMBOL_STANDARD) {
+            s.type = 0;
+        } else {
+            s.type = 0x20;
+        }
+        s.number_of_aux_symbols = 0;
+        s.value = sym->offset;
+        if (sym->section_relative) {
+            s.storage_class = STORAGE_CLASS_SECTION;
+        } else if (sym->external) {
+            s.storage_class = STORAGE_CLASS_EXTERNAL;
+        } else {
+            s.storage_class = STORAGE_CLASS_STATIC;
+        }
+        Buffer_extend(buffer, (uint8_t*)&s, 18);
+    }
+
+    strtab_offset = buffer->size;
+    Buffer_extend(buffer, (const uint8_t*)"\0\0\0\0", 4);
+
+    for (uint32_t ix = 0; ix < obj->section_count; ++ix) {
+        uint32_t namelen = strlen((const char*)obj->sections[ix].name);
+        if (namelen > 8) {
+            Buffer_extend(buffer, obj->sections[ix].name, namelen + 1);
+        }
+    }
+
+    for (uint32_t ix = 0; ix < obj->symbol_count; ++ix) {
+        if (obj->symbols[ix].name_len > 8) {
+            Buffer_extend(buffer, obj->symbols[ix].name, obj->symbols[ix].name_len);
+            Buffer_append(buffer, 0);
+        }
+    }
+
+    uint32_t strtab_size = buffer->size - strtab_offset;
+    memcpy(buffer->data + strtab_offset, &strtab_size, 4);
+}
+
 Object* PeObject_read(const uint8_t* buf, uint64_t size) {
     const enum LogCatagory LOG_CATAGORY = LOG_CATAGORY_OBJECT_PARSER;
 
@@ -962,7 +1207,7 @@ void PeExectutable_create(Object* obj, ByteBuffer* dest, symbol_ix entrypoint) {
 
     uint32_t iat_offset = 0, iat_size = 0, id_offset = 0, id_size = 0;
     section_ix import_section = SECTION_IX_NONE;
-    // Write .idata section to end of .rdata secton
+    // Write .idata section to end of .rdata section
     for (section_ix i = 0; i < obj->section_count; ++i) {
         if (obj->sections[i].type == SECTION_IDATA) {
             rewrite_idata(obj, i, &iat_offset, &iat_size, &id_offset, &id_size,

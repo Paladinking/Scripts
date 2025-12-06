@@ -253,15 +253,21 @@ bool find_file_relative(wchar_t* buf, size_t size, const wchar_t *filename, bool
            (attr & FILE_ATTRIBUTE_DIRECTORY) == 0;
 }
 
-bool to_windows_path(const wchar_t* path, WString* s) {
-    if (path[0] == L'/' && ((path[1] >= 'a' && path[1] <= 'z') || (path[1] >= 'A' && path[1] <= 'Z')) && (path[2] == L'\0' || path[2] == L'/' || path[2] == L'\\')) {
+bool to_windows_path(const ochar_t* path, WString* s) {
+    if (path[0] == oL('/') && ((path[1] >= oL('a') && path[1] <= oL('z')) ||
+                (path[1] >= oL('A') && path[1] <= oL('Z'))) &&
+            (path[2] == oL('\0') || path[2] == oL('/') || path[2] == oL('\\'))) {
         if (!WString_append(s, path[1]) || !WString_append(s, L':')) {
             SetLastError(ERROR_OUTOFMEMORY);
             return false;
         }
         path += 2;
     }
+#ifdef NARROW_OCHAR
+    if (!WString_append_utf8_bytes(s, path, strlen(path))) {
+#else
     if (!WString_extend(s, path)) {
+#endif
         SetLastError(ERROR_OUTOFMEMORY);
         return false;
     }
@@ -277,8 +283,20 @@ bool to_windows_path(const wchar_t* path, WString* s) {
     return true;
 }
 
+bool directory_part(const ochar_t* path, OString* dest) {
+    const ochar_t* sep = ostrrchr(path, '/');
+    const ochar_t* sep2 = ostrrchr(path, '\\');
+    if (sep == NULL || (sep2 != NULL && sep2 > sep)) {
+        sep = sep2;
+    }
+    if (sep == NULL) {
+        return OString_append(dest, '.');
+    }
+    uint64_t count = sep - path;
+    return OString_append_count(dest, path, count);
+}
 
-bool make_absolute(const wchar_t* path, WString* dest) {
+bool make_absolute(const ochar_t* path, OString* dest) {
     WString win;
     if (!WString_create(&win)) {
         return false;
@@ -286,25 +304,42 @@ bool make_absolute(const wchar_t* path, WString* dest) {
     if (!to_windows_path(path, &win)) {
         return false;
     }
-    DWORD size = GetFullPathNameW(win.buffer, dest->capacity, dest->buffer, NULL);
+#ifdef NARROW_OCHAR
+    WString str;
+    if (!WString_create_capacity(&str, 64)) {
+        WString_free(&win);
+        return false;
+    }
+    WString* s = &str;
+#else
+    WString* s = dest;
+#endif
+    DWORD size = GetFullPathNameW(win.buffer, s->capacity, s->buffer, NULL);
     if (size >= dest->capacity) {
-        if (!WString_reserve(dest, size)) {
+        if (!WString_reserve(s, size)) {
             WString_free(&win);
             return false;
         }
-        size = GetFullPathNameW(win.buffer, dest->capacity, dest->buffer, NULL);
-        if (size >= dest->capacity) {
+        size = GetFullPathNameW(win.buffer, s->capacity, s->buffer, NULL);
+        if (size >= s->capacity) {
             WString_free(&win);
             return false;
         }
     }
-    dest->length = size;
+    s->length = size;
     WString_free(&win);
+#ifdef NARROW_OCHAR
+    if (!String_from_utf16_bytes(dest, s->buffer, s->length)) {
+        WString_free(s);
+        return false;
+    }
+    WString_free(s);
+#endif
     return true;
 }
 
 
-DWORD get_file_attrs(const wchar_t* path) {
+DWORD get_file_attrs(const ochar_t* path) {
     WString s;
     WString_create(&s);
 
@@ -1095,7 +1130,7 @@ void Glob_abort(GlobCtx* ctx) {
     ctx->stack = NULL;
 }
 
-bool WalkDir_begin(WalkCtx* ctx, const wchar_t* dir, bool absolute_path) {
+bool WalkDir_begin(WalkCtx* ctx, const ochar_t* dir, bool absolute_path) {
     WString* s = &ctx->p.path;
     ctx->absolute_path = absolute_path;
     if (!WString_create(s)) {

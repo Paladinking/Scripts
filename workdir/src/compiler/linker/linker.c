@@ -505,6 +505,9 @@ void merge_objects(Object* a, Object* b) {
                         break;
                     }
                     a->symbols[sym].section = section;
+                    a->symbols[sym].offset = b->symbols[i].offset;
+                    a->symbols[sym].type = b->symbols[i].type;
+                    a->symbols[sym].section_relative = b->symbols[i].section_relative;
                     b->symbols[i].section = sym;
                 }
                 Mem_free((uint8_t*)name);
@@ -749,6 +752,10 @@ void Object_serialize(Object* obj, String* dest) {
     }
 }
 
+void Object_write(Object* obj, ByteBuffer* b) {
+    PeObject_write(obj, b);
+}
+
 Symbol* find_symbol(Object* obj, const uint8_t* sym, uint32_t sym_len) {
     symbol_ix* map = Object_build_map(obj);
     uint32_t map_size = obj->map_size;
@@ -816,16 +823,35 @@ void Linker_run(ObjectSet* objects, const ochar_t** argv, uint32_t argc,
 
     LOG_INFO("Reading libraries");
     String filebuf;
+    uint32_t libcount = 0;
     for (uint32_t ix = 0; ix < argc; ++ix) {
         if (!read_text_file(&filebuf, argv[ix])) {
-            LOG_ERROR("Failed reading library '%s'", argv[ix]);
+            LOG_ERROR("Failed reading file '%s'", argv[ix]);
             return;
         }
-        Libary_create(&libs[ix]);
-        if (!PeLibrary_read(&libs[ix].objects, (const uint8_t*)filebuf.buffer,
-                            filebuf.length)) {
-            return;
+        uint64_t namelen = strlen(argv[ix]);
+        if (namelen > 4 && argv[ix][namelen - 1] == 'b' &&
+            argv[ix][namelen - 2] == 'i' && 
+            argv[ix][namelen - 3] == 'l' &&
+            argv[ix][namelen - 4] == '.') {
+            ++libcount;
+            Libary_create(&libs[libcount - 1]);
+            if (!PeLibrary_read(&libs[ix].objects, (const uint8_t*)filebuf.buffer,
+                                filebuf.length)) {
+                LOG_ERROR("Failed reading library '%s'", argv[libcount - 1]);
+                return;
+            }
+        } else {
+            Object* o = PeObject_read((const uint8_t*)filebuf.buffer, filebuf.length);
+            if (o == NULL) {
+                LOG_ERROR("Failed reading object '%s'", argv[ix]);
+                return;
+            }
+
+            ObjectSet_add(objects, o);
         }
+
+
         String_free(&filebuf);
     }
     LOG_INFO("Done reading libraries");
@@ -865,7 +891,7 @@ void Linker_run(ObjectSet* objects, const ochar_t** argv, uint32_t argc,
         bool found = false;
         uint32_t old_sym_count = dest->symbol_count;
 
-        for (uint32_t i = 0; i < argc; ++i) {
+        for (uint32_t i = 0; i < libcount; ++i) {
             if (Library_find_symbol(&libs[i], sym.str, sym.len, &queue)) {
                 LOG_INFO("Found symbol '%*.*s' in lib %u", sym.len, sym.len, sym.str, i);
                 found = true;
@@ -884,11 +910,9 @@ void Linker_run(ObjectSet* objects, const ochar_t** argv, uint32_t argc,
 
     objects->object_count = 1;
 
-    for (uint32_t i = 0; i < argc; ++i) {
+    for (uint32_t i = 0; i < libcount; ++i) {
         remap_section_relative(libs[i].dest);
-        LOG_INFO("Reading library '%s'", argv[i]);
 
-        LOG_INFO("Merging %s (%u sections)", argv[i], libs[i].dest->section_count);
         merge_objects(dest, libs[i].dest);
         Mem_free(libs[i].dest);
         libs[i].dest = NULL;

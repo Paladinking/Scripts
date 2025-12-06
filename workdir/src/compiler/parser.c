@@ -1,7 +1,8 @@
 #include "language/parse.h"
 #include "tokenizer.h"
+#include "glob.h"
 
-const LineInfo LINE_INFO_NONE = {-1, -1};
+const LineInfo LINE_INFO_NONE = {"", -1, -1};
 
 const static enum LogCatagory LOG_CATAGORY = LOG_CATAGORY_PARSER;
 
@@ -30,6 +31,47 @@ void parser_add_builtin(Parser* parser, type_id id, uint32_t size, uint32_t alig
 
     name_id n = name_type_insert(&parser->name_table, str, id, def, &parser->arena);
     def->builtin.name = n;
+}
+
+bool add_module(Parser* parser, const char* filename, bool is_import) {
+    ModuleList* list = &parser->modules;
+
+    String full;
+    if (!String_create(&full)) {
+        return false;
+    }
+    if (!directory_part(parser->filename, &full) ||
+        !String_append(&full, '/') || !String_extend(&full, filename)) {
+        String_free(&full);
+        return false;
+    }
+
+    String file;
+    if (!String_create(&file) || !make_absolute(full.buffer, &file)) {
+        String_free(&full);
+        return false;
+    }
+    String_free(&full);
+
+    for (uint32_t ix = 0; ix < list->count; ++ix) {
+        if (strcmp(file.buffer, list->modules[ix].filename) == 0) {
+            if (!is_import) {
+                list->modules[ix].import = false;
+            }
+            return true;
+        }
+    }
+    RESERVE32(list->modules, list->count + 1, list->capacity);
+
+    list->modules[list->count].filename = file.buffer;
+    list->modules[list->count].import = is_import;
+    list->modules[list->count].content.buffer = NULL;
+    list->modules[list->count].content.capacity = 0;
+    list->modules[list->count].content.length = 0;
+    ++list->count;
+
+    LOG_INFO("Module: %s", parser->modules.modules[parser->modules.count - 1].filename);
+    return true;
 }
 
 void Parser_create(Parser* parser) {
@@ -94,12 +136,29 @@ void Parser_create(Parser* parser) {
         Mem_free(name_data);
         out_of_memory(NULL);
     }
+
+    Module* modules = Mem_alloc(2 * sizeof(Module));
+    if (modules == NULL) {
+        Arena_free(&parser->arena);
+        Mem_free(function_data);
+        Mem_free(extern_data);
+        Mem_free(type_data);
+        Mem_free(name_data);
+        Mem_free(parser->name_table.scope_stack);
+        out_of_memory(NULL);
+    }
+    parser->modules.modules = modules;
+    parser->modules.count = 0;
+    parser->modules.capacity = 2;
+
     parser->name_table.scope_count = 1;
     parser->name_table.scope_capacity = 8;
 
     parser->pos = 0;
     parser->input_size = 0;
     parser->indata = NULL;
+    parser->filename = ".";
+    parser->import_module = false;
 
     parser->first_error = NULL;
     parser->last_error = NULL;
@@ -150,7 +209,7 @@ static inline Statement* create_stmt(Parser* p, enum StatementKind kind, uint64_
                                      uint64_t end) {
     Statement* s = Arena_alloc_type(&p->arena, Statement);
     s->type = kind;
-    s->line = (LineInfo){start, end};
+    s->line = (LineInfo){p->filename, start, end};
     return s;
 }
 
@@ -161,7 +220,7 @@ static inline Expression* create_expr(Parser* p, enum ExpressionKind kind, uint6
     e->type = TYPE_ID_INVALID;
     e->var = VAR_ID_INVALID;
     e->kind = kind;
-    e->line = (LineInfo){start, end};
+    e->line = (LineInfo){p->filename, start, end};
     return e;
 }
 
@@ -212,7 +271,7 @@ void OnElseHead(void* ctx, uint64_t start, uint64_t end) {
 name_id OnFnHead(void* ctx, uint64_t start, uint64_t end, StrWithLength s) {
     Parser* p = PARSER(ctx);
     name_id name = name_find(&p->name_table, s);
-    LineInfo l  = {start, end};
+    LineInfo l  = {p->filename, start, end};
     if (name == NAME_ID_INVALID) {
         fatal_error(p, PARSE_ERROR_INTERNAL, l);
         return NAME_ID_INVALID;
@@ -307,7 +366,7 @@ Statements OnStatements(void *ctx, uint64_t start, uint64_t end, StatementList *
 
 Statement* declare_variable(Parser* p, uint64_t start, uint64_t end,
                       StrWithLength ident, type_id type, Expression* val) {
-    LineInfo l = {start, end};
+    LineInfo l = {p->filename, start, end};
     name_id name = name_variable_insert(&p->name_table, ident, type,
                                         p->function_table.size, &p->arena);
     if (name == NAME_ID_INVALID) {
@@ -335,7 +394,7 @@ Statement* declare_variable(Parser* p, uint64_t start, uint64_t end,
 
 Arg* OnArg(void* ctx, uint64_t start, uint64_t end, type_id type, StrWithLength s) {
     Parser* p = PARSER(ctx);
-    LineInfo pos = {start, end};
+    LineInfo pos = {p->filename, start, end};
     name_id name = name_variable_insert(&p->name_table, s, type, p->function_table.size,
                                         &p->arena);
     if (name == NAME_ID_INVALID) {
@@ -423,7 +482,7 @@ FunctionDef* OnExternFunction(void* ctx, uint64_t start, uint64_t end,
                               name_id fn_name, ArgList* arglist,
                               type_id ret_type) {
     Parser* p = PARSER(ctx);
-    LineInfo l  = {start, end};
+    LineInfo l  = {p->filename, start, end};
 
     if (p->name_table.data[fn_name].kind != NAME_FUNCTION) {
         return NULL;
@@ -501,16 +560,16 @@ type_id OnStruct(void* ctx, uint64_t start, uint64_t end,
 
 
 int64_t OnImport(void* ctx, uint64_t start, uint64_t end, StrWithLength file) {
-    // TODO: get module
     return 0;
 }
 
 FieldList* OnField(void* ctx, uint64_t start, uint64_t end, FieldList* fields, 
                    type_id type, StrWithLength ident) {
-    FieldList* f = Arena_alloc_type(&PARSER(ctx)->arena, FieldList);
+    Parser* p = PARSER(ctx);
+    FieldList* f = Arena_alloc_type(&p->arena, FieldList);
     f->field.type = type;
     f->field.name = ident;
-    f->field.line = (LineInfo){start, end};
+    f->field.line = (LineInfo){p->filename, start, end};
     f->field.offset = 0;
     f->next = fields;
     return f;
@@ -524,12 +583,13 @@ FunctionDef* OnFunction(void* ctx, uint64_t start, uint64_t end,
     if (fn_name == NAME_ID_INVALID) {
         return NULL;
     }
-    LineInfo l = {start, end};
+    LineInfo l = {p->filename, start, end};
     if (p->name_table.data[fn_name].kind != NAME_FUNCTION) {
         return NULL;
     }
 
     FunctionDef* f = p->name_table.data[fn_name].func_def;
+    f->undefined = p->import_module;
     func_id id = p->function_table.size;
     add_func(p, arglist, id, f, &p->function_table, statements.statements, 
              statements.count, ret_type);
@@ -606,11 +666,11 @@ Expression* OnString(void* ctx, uint64_t start, uint64_t end, StrWithLength s) {
 Expression* OnIdentExpr(void* ctx, uint64_t start, uint64_t end, StrWithLength ident) {
     Parser* p = PARSER(ctx);
     name_id name = name_find(&p->name_table, ident);
-    LineInfo l = {start, end};
+    LineInfo l = {p->filename, start, end};
 
     Expression* e = create_expr(PARSER(ctx), EXPRESSION_VARIABLE, start, end);
     if (name == NAME_ID_INVALID) {
-        add_error(p, PARSE_ERROR_BAD_NAME, e->line);
+        add_error(p, PARSE_ERROR_BAD_NAME, l);
         e->kind = EXPRESSION_INVALID;
     } else {
         e->variable.ix = name;
@@ -753,7 +813,7 @@ Token peek_token(void *ctx, uint64_t *start, uint64_t *end) {
 void parser_error(void *ctx, SyntaxError e) {
     struct Tokenizer* t = ctx;
     Parser* p = t->parser;
-    LineInfo l = {e.start, e.end};
+    LineInfo l = {p->filename, e.start, e.end};
     add_error(p, PARSE_ERROR_INVALID_CHAR, l);
 }
 
@@ -844,8 +904,8 @@ void consume_token(void* ctx, uint64_t* start, uint64_t* end) {
     t->end = p->pos;
 }
 
-void parse_program(Parser* parser, String *indata) {
-    parser_set_input(parser, indata);
+void parse_program(Parser* parser, String *indata, const char* filename, bool is_import) {
+    parser_set_input(parser, indata, filename, is_import);
     struct Tokenizer t;
     t.parser = parser;
     t.start = 0;

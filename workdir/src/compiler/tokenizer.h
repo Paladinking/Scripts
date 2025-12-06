@@ -5,7 +5,7 @@
 #include <dynamic_string.h>
 
 // Set parser input to indata
-void parser_set_input(Parser* parser, String* indata);
+void parser_set_input(Parser* parser, String* indata, const char* filename, bool is_import);
 
 // Skip all space characters at current pos
 void parser_skip_spaces(Parser* parser);

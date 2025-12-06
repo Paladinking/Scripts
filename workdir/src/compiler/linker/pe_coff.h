@@ -5,6 +5,8 @@
 
 Object* PeObject_read(const uint8_t* buf, uint64_t size);
 
+void PeObject_write(Object* obj, ByteBuffer* buffer);
+
 bool PeLibrary_read(ObjectSet* dest, const uint8_t* buf, uint64_t size);
 
 void PeExectutable_create(Object* obj, ByteBuffer* dest, symbol_ix entrypoint);

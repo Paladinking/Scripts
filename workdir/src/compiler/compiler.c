@@ -29,6 +29,7 @@ void dump_errors(Parser* parser) {
 }
 
 int compiler(char** argv, int argc) {
+    FlagValue outfile = { FLAG_STRING };
     FlagInfo flags[] = {
         {'s', "log-to-socket", NULL}, // 0
         {'\0', "show-ast"},           // 1
@@ -36,7 +37,9 @@ int compiler(char** argv, int argc) {
         {'\0', "show-quads"},         // 3
         {'\0', "show-asm"},           // 4
         {'\0', "show-object"},        // 5
-        {'\0', "show-all"}            // 6
+        {'\0', "show-all"},           // 6
+        {'c', NULL},                  // 7
+        {'o', NULL, &outfile},        // 8
     };
     const uint32_t flag_count = sizeof(flags) / sizeof(FlagInfo);
     ErrorInfo err;
@@ -55,7 +58,7 @@ int compiler(char** argv, int argc) {
     bool show_quads = flags[3].count > 0 || flags[6].count > 0;
     bool show_asm = flags[4].count > 0 || flags[6].count > 0;
     bool show_object = flags[5].count > 0 || flags[6].count > 0;
-
+    bool compile_only = flags[7].count > 0;
 
     if (argc < 2) {
         LOG_USER_ERROR("Missing argument");
@@ -65,21 +68,42 @@ int compiler(char** argv, int argc) {
     Parser parser;
     Parser_create(&parser);
 
-    String s;
-    if (!read_text_file(&s, argv[1])) {
-        LOG_USER_ERROR("Failed to read '%s'\n", argv[1]);
-        return 1;
+    for (uint32_t ix = 1; ix < argc; ++ix) {
+        if (!add_module(&parser, argv[ix], false)) {
+            LOG_USER_ERROR("Failed to find '%s'\n", argv[ix]);
+            return 1;
+        }
     }
 
-    scan_program(&parser, &s);
+
+    for (uint32_t mod = 0; mod < parser.modules.count; ++mod) {
+        String s;
+        const char* filename = parser.modules.modules[mod].filename;
+        if (!read_text_file(&s, filename)) {
+            LOG_USER_ERROR("Failed to read '%s'\n", filename);
+            return 1;
+        }
+        parser.modules.modules[mod].content = s;
+        scan_program(&parser, &s, filename);
+
+        if (parser.first_error != NULL) {
+            dump_errors(&parser);
+            return 1;
+        }
+    }
     if (parser.first_error == NULL) {
-        parse_program(&parser, &s);
+        for (uint32_t ix = 0; ix < parser.modules.count; ++ix) {
+            Module* mod = &parser.modules.modules[ix];
+
+            parse_program(&parser, &mod->content, mod->filename, mod->import);
+
+            if (parser.first_error != NULL) {
+                dump_errors(&parser);
+                return 1;
+            }
+        }
     }
 
-    if (parser.first_error != NULL) {
-        dump_errors(&parser);
-        return 1;
-    }
 
     for (int i = 0; i < parser.function_table.size; ++i) {
         String s;
@@ -125,6 +149,24 @@ int compiler(char** argv, int argc) {
                                     parser.first_str, &parser.arena,
                                     show_asm);
 
+    if (compile_only) {
+        const char* outname = outfile.str;
+        if (!outfile.has_value) {
+            outname = "out.obj";
+        }
+        ByteBuffer b;
+        Buffer_create(&b);
+        Object_write(object, &b);
+
+        if (write_file(outname, b.data, b.size)) {
+            LOG_USER_WARNING("Created '%s'", outname);
+            return 0;
+        } else {
+            LOG_USER_ERROR("Failed creating '%s'", outname);
+            return 1;
+        }
+    }
+
     ObjectSet objects;
     ObjectSet_create(&objects);
     ObjectSet_add(&objects, object);
@@ -159,12 +201,13 @@ int compiler(char** argv, int argc) {
         String_free(&path);
     }
 
-    const char* linker_args[2];
+    const char* linker_args[3];
     uint32_t arg_count = 0;
     if (kernel32Path.length > 0) {
         linker_args[0] = kernel32Path.buffer;
         ++arg_count;
     }
+    //linker_args[arg_count++] = "stdlib.obj";
 
     Linker_run(&objects, linker_args, arg_count, show_object);
     String_free(&kernel32Path);

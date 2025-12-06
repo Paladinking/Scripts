@@ -12,6 +12,7 @@ typedef struct StrWithLength {
 
 
 typedef struct LineInfo {
+    const char* filename;
     uint64_t start;
     uint64_t end;
 } LineInfo;

@@ -11,7 +11,6 @@ type: STRUCT = type_id;
 type: UNION = type_id;
 type: ARG_LIST = uint64_t;
 type: ?ARG_LIST = uint64_t;
-type: IMPORT = int64_t;
 
 PROGRAM = '' |
           PROGRAM + FUNCTION |

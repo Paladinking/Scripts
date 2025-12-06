@@ -5,8 +5,8 @@
 
 void Parser_create(Parser* parser);
 
-void scan_program(Parser* parser, String* indata);
+void scan_program(Parser* parser, String* indata, const char* filename);
 
-void parse_program(Parser* parser, String* indata);
+void parse_program(Parser* parser, String* indata, const char* filename, bool is_import);
 
 #endif

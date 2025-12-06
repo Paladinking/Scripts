@@ -5,7 +5,9 @@ const static enum LogCatagory LOG_CATAGORY = LOG_CATAGORY_TOKENIZER;
 
 
 // Set parser input to indata
-void parser_set_input(Parser* parser, String* indata) {
+void parser_set_input(Parser* parser, String* indata, const char* filename, bool is_import) {
+    parser->filename = filename;
+    parser->import_module = is_import;
     parser->indata = (const uint8_t*)indata->buffer;
     parser->pos = 0;
     parser->input_size = indata->length;
@@ -51,7 +53,7 @@ void parser_skip_statement(Parser *parser) {
     uint64_t open_cur = 0;
     while (1) {
         if (parser->pos >= parser->input_size) {
-            LineInfo l = {pos, parser->pos};
+            LineInfo l = {parser->filename, pos, parser->pos};
             add_error(parser, PARSE_ERROR_EOF, l);
             return;
         }
@@ -70,7 +72,7 @@ void parser_skip_statement(Parser *parser) {
         } else if (c == '"' || c == '\'') {
             while (1) {
                 if (parser->pos >= parser->input_size) {
-                    LineInfo l = {pos, parser->pos};
+                    LineInfo l = {parser->filename, pos, parser->pos};
                     add_error(parser, PARSE_ERROR_EOF, l);
                     return;
                 }
@@ -103,7 +105,7 @@ const uint8_t* parser_read_name(Parser* parser, uint32_t* len) {
         break;
     }
     if (name_len > 0xffff) {
-        LineInfo l = {base - parser->indata, parser->pos};
+        LineInfo l = {parser->filename, base - parser->indata, parser->pos};
         add_error(parser, PARSE_ERROR_BAD_NAME, l);
         *len = 0;
         return NULL;
@@ -121,7 +123,7 @@ uint8_t* parser_read_string(Parser* parser, uint64_t* len) {
     bool has_err = false;
     while (1) {
         if (parser->pos >= parser->input_size) {
-            LineInfo l = {pos - 1, parser->pos};
+            LineInfo l = {parser->filename, pos - 1, parser->pos};
             add_error(parser, PARSE_ERROR_EOF, l);
             return NULL;
         }
@@ -131,7 +133,7 @@ uint8_t* parser_read_string(Parser* parser, uint64_t* len) {
             break;
         } if (c == '\\') {
             if (parser->pos >= parser->input_size) {
-                LineInfo l = {pos - 1, parser->pos};
+                LineInfo l = {parser->filename, pos - 1, parser->pos};
                 add_error(parser, PARSE_ERROR_EOF, l);
                 return NULL;
             } 
@@ -143,7 +145,7 @@ uint8_t* parser_read_string(Parser* parser, uint64_t* len) {
                 continue;
             } else if (c == 'x') {
                 if (parser->pos >= parser->input_size) {
-                    LineInfo l = {pos - 1, parser->pos};
+                    LineInfo l = {parser->filename, pos - 1, parser->pos};
                     add_error(parser, PARSE_ERROR_EOF, l);
                     return NULL;
                 }
@@ -151,14 +153,14 @@ uint8_t* parser_read_string(Parser* parser, uint64_t* len) {
                 parser->pos += 1;
                 if ((c < '0' || c > '9') && (c < 'a' || c > 'z') && 
                     (c < 'A' || c > 'Z')) {
-                    LineInfo pos = {parser->pos - 3, parser->pos};
+                    LineInfo pos = {parser->filename, parser->pos - 3, parser->pos};
                     add_error(parser, PARSE_ERROR_INVALID_ESCAPE, pos);
                     has_err = true;
                     parser->pos -= 1;
                 } else {
                     *len += 1;
                     if (parser->pos >= parser->input_size) {
-                        LineInfo l = {pos - 1, parser->pos};
+                        LineInfo l = {parser->filename, pos - 1, parser->pos};
                         add_error(parser, PARSE_ERROR_EOF, l);
                         return NULL;
                     }
@@ -170,7 +172,7 @@ uint8_t* parser_read_string(Parser* parser, uint64_t* len) {
                     continue;
                 }
             } else {
-                LineInfo pos = {parser->pos - 2, parser->pos};
+                LineInfo pos = {parser->filename, parser->pos - 2, parser->pos};
                 add_error(parser, PARSE_ERROR_INVALID_ESCAPE, pos);
                 has_err = true;
                 parser->pos -= 1;
@@ -247,7 +249,7 @@ static bool parser_read_uint(Parser* parser, uint64_t* i, uint8_t base) {
     *i = 0;
     uint64_t n = 0;
     if (parser->pos >= parser->input_size) {
-        LineInfo l = {parser->pos, parser->pos};
+        LineInfo l = {parser->filename, parser->pos, parser->pos};
         add_error(parser, PARSE_ERROR_EOF, l);
         return false;
     }
@@ -258,7 +260,7 @@ static bool parser_read_uint(Parser* parser, uint64_t* i, uint8_t base) {
     if (base == 16) { // Hex
         if ((c < '0' || c > '9') && (c < 'a' || c > 'f') &&
             (c < 'A' && c > 'F')) {
-            LineInfo l = {parser->pos, parser->pos + 1};
+            LineInfo l = {parser->filename, parser->pos, parser->pos + 1};
             add_error(parser, PARSE_ERROR_INVALID_CHAR, l);
             return false;
         }
@@ -282,7 +284,7 @@ static bool parser_read_uint(Parser* parser, uint64_t* i, uint8_t base) {
         } while (parser->pos < parser->input_size);
     } else if (base == 2) { // Binary
         if (c != '0' && c != '1') {
-            LineInfo l = {parser->pos, parser->pos + 1};
+            LineInfo l = {parser->filename, parser->pos, parser->pos + 1};
             add_error(parser, PARSE_ERROR_INVALID_CHAR, l);
             return false;
         }
@@ -302,7 +304,7 @@ static bool parser_read_uint(Parser* parser, uint64_t* i, uint8_t base) {
         } while (parser->pos < parser->input_size);
     } else if (base == 8) { // Octal
         if (c < '0' || c > '7') {
-            LineInfo l = {parser->pos, parser->pos + 1};
+            LineInfo l = {parser->filename, parser->pos, parser->pos + 1};
             add_error(parser, PARSE_ERROR_INVALID_CHAR, l);
             return false;
         }
@@ -322,7 +324,7 @@ static bool parser_read_uint(Parser* parser, uint64_t* i, uint8_t base) {
         } while (parser->pos < parser->input_size);
     } else { // Base 10
         if (c < '0' || c > '9') {
-            LineInfo l = {parser->pos, parser->pos + 1};
+            LineInfo l = {parser->filename, parser->pos, parser->pos + 1};
             add_error(parser, PARSE_ERROR_INVALID_CHAR, l);
             return false;
         }
@@ -347,7 +349,7 @@ static bool parser_read_uint(Parser* parser, uint64_t* i, uint8_t base) {
         } while (parser->pos < parser->input_size);
     }
     if (overflow) {
-        LineInfo l = {start, parser->pos};
+        LineInfo l = {parser->filename, start, parser->pos};
         add_error(parser, PARSE_ERROR_INVALID_LITERAL, l);
         return false;
     }
@@ -359,13 +361,13 @@ static bool parser_read_uint(Parser* parser, uint64_t* i, uint8_t base) {
 // Read a number literar, integer or real
 bool parser_read_number(Parser* parser, uint64_t* i, double* d, bool* is_int) {
     if (parser->pos >= parser->input_size) {
-        LineInfo l = {parser->pos, parser->pos};
+        LineInfo l = {parser->filename, parser->pos, parser->pos};
         add_error(parser, PARSE_ERROR_EOF, l);
         return false;
     }
     uint8_t c = parser->indata[parser->pos];
     if ((c < '0' || c > '9') && c != '.') {
-        LineInfo l = {parser->pos, parser->pos + 1};
+        LineInfo l = {parser->filename, parser->pos, parser->pos + 1};
         add_error(parser, PARSE_ERROR_INVALID_CHAR, l);
         return false;
     }
@@ -383,7 +385,7 @@ bool parser_read_number(Parser* parser, uint64_t* i, double* d, bool* is_int) {
             parser->pos += 2;
         }
         if (parser->pos >= parser->input_size) {
-            LineInfo l = {parser->pos, parser->pos};
+            LineInfo l = {parser->filename, parser->pos, parser->pos};
             add_error(parser, PARSE_ERROR_EOF, l);
             return false;
         }
@@ -431,7 +433,7 @@ bool parser_read_number(Parser* parser, uint64_t* i, double* d, bool* is_int) {
     } else if (c == '0'){
         c = parser->indata[parser->pos];
         if (c >= '0' && c <= '9') {
-            LineInfo l = {parser->pos, parser->pos + 1};
+            LineInfo l = {parser->filename, parser->pos, parser->pos + 1};
             add_error(parser, PARSE_ERROR_INVALID_CHAR, l);
             return false;
         }
@@ -439,13 +441,13 @@ bool parser_read_number(Parser* parser, uint64_t* i, double* d, bool* is_int) {
     if (c == '.') {
         parser->pos += 1;
         if (parser->pos >= parser->input_size) {
-            LineInfo l = {parser->pos, parser->pos};
+            LineInfo l = {parser->filename, parser->pos, parser->pos};
             add_error(parser, PARSE_ERROR_EOF, l);
             return false;
         }
         c = parser->indata[parser->pos];
         if (c < '0' || c > '9') {
-            LineInfo l = {parser->pos, parser->pos + 1};
+            LineInfo l = {parser->filename, parser->pos, parser->pos + 1};
             add_error(parser, PARSE_ERROR_INVALID_CHAR, l);
             return false;
         }
@@ -463,7 +465,7 @@ bool parser_read_number(Parser* parser, uint64_t* i, double* d, bool* is_int) {
     if (c == 'e' || c == 'E') {
         parser->pos += 1;
         if (parser->pos >= parser->input_size) {
-            LineInfo l = {parser->pos, parser->pos};
+            LineInfo l = {parser->filename, parser->pos, parser->pos};
             add_error(parser, PARSE_ERROR_EOF, l);
             return false;
         }
@@ -474,7 +476,7 @@ bool parser_read_number(Parser* parser, uint64_t* i, double* d, bool* is_int) {
             neg_exp = c == '-';
             parser->pos += 1;
             if (parser->pos >= parser->input_size) {
-                LineInfo l = {parser->pos, parser->pos};
+                LineInfo l = {parser->filename, parser->pos, parser->pos};
                 add_error(parser, PARSE_ERROR_EOF, l);
                 return false;
             }
