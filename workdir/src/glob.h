@@ -28,9 +28,11 @@ bool is_file(const ochar_t* str);
 
 bool is_directory(const wchar_t* str);
 
-bool make_absolute(const wchar_t* path, WString* dest);
+bool make_absolute(const ochar_t* path, OString* dest);
 
-bool to_windows_path(const wchar_t* path, WString* s);
+bool directory_part(const ochar_t* path, OString* dest);
+
+bool to_windows_path(const ochar_t* path, WString* s);
 
 typedef struct _Path {
     WString path;
@@ -101,9 +103,9 @@ bool Glob_next(GlobCtx* ctx, Path** path);
 
 void Glob_abort(GlobCtx* ctx);
 
-DWORD get_file_attrs(const wchar_t* path);
+DWORD get_file_attrs(const ochar_t* path);
 
-bool WalkDir_begin(WalkCtx* ctx, const wchar_t* dir, bool absolute_path);
+bool WalkDir_begin(WalkCtx* ctx, const ochar_t* dir, bool absolute_path);
 
 int WalkDir_next(WalkCtx* ctx, Path** path);
 

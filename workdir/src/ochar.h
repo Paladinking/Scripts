@@ -24,6 +24,7 @@
     #define OString_create_capacity WString_create_capacity
     #define OString_free WString_free
     #define OString_append WString_append
+    #define OString_extend WString_extend
     #define OString_append_count WString_append_count
 #else
     typedef char ochar_t;
@@ -43,6 +44,7 @@
     #define OString_create_capacity String_create_capacity
     #define OString_free String_free
     #define OString_append String_append
+    #define OString_extend String_extend
     #define OString_append_count String_append_count
 #endif
 

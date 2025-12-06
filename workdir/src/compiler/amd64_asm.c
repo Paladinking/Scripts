@@ -1913,6 +1913,9 @@ Object* Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
         Object_append_data(object, rdata_section, liter->bytes, liter->len + 1);
 
         for (uint64_t ix = 0; ix < func_table->size; ++ix) {
+            if (func_table->data[ix]->undefined) {
+                continue;
+            }
             func_table->data[ix]->vars.data[v].symbol_ix = symbol;
         }
         ++i;
@@ -1931,6 +1934,9 @@ Object* Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
         sym = Object_declare_import(object, SECTION_IX_NONE, name, name_len);
 
         for (uint64_t ix = 0; ix < func_table->size; ++ix) {
+            if (func_table->data[ix]->undefined) {
+                continue;
+            }
             func_table->data[ix]->vars.data[v].symbol_ix = sym;
         }
     }
@@ -1939,8 +1945,16 @@ Object* Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
         FunctionDef* def = func_table->data[i];
         const uint8_t* name = name_table->data[def->name].name;
         uint32_t name_len = name_table->data[def->name].name_len;
-        symbol_ix sym = Object_declare_fn(object, code_section, name,
-                                          name_len, true);
+
+        symbol_ix sym;
+        if (def->undefined) {
+            sym = Object_declare_fn(object, SECTION_IX_NONE, name,
+                                    name_len, true);
+        } else {
+            sym = Object_declare_fn(object, code_section, name,
+                                    name_len, true);
+        }
+
         def->symbol = sym;
     }
 
@@ -1949,6 +1963,9 @@ Object* Backend_generate_asm(NameTable *name_table, FunctionTable *func_table,
     Amd64Op* start = ctx.start;
     for (uint64_t ix = 0; ix < func_table->size; ++ix) {
         FunctionDef* def = func_table->data[ix];
+        if (def->undefined) {
+            continue;
+        }
         object->symbols[def->symbol].offset = object->sections[code_section].data.size;
         Backend_generate_fn(def, arena, &ctx, name_table, rdata_section,
                             saved_syms);

@@ -612,6 +612,9 @@ Object* Generate_code(Quads* quads, FunctionTable* functions, FunctionTable* ext
     }
 
     for (uint64_t ix = 0; ix < functions->size; ++ix) {
+        if (functions->data[ix]->undefined) {
+            continue;
+        }
         Quad* start = functions->data[ix]->quad_start;
         Quad* end = functions->data[ix]->quad_end;
         // Break up quads

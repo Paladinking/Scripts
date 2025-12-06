@@ -49,7 +49,7 @@ if not backend().msvc:
 
 def main():
     ntsymbols = ["memcpy", "strlen", "memmove", "_wsplitpath_s", "wcslen",
-                 "_wmakepath_s", "strchr", "_stricmp", "towlower", "towupper",
+                 "_wmakepath_s", "strchr", "strrchr", "_stricmp", "towlower", "towupper",
                  "_wcsicmp", "_snwprintf_s", "_snprintf_s", "_vscwprintf", 
                  "_vsnprintf", "_vsnwprintf", "_vscprintf", "memset", 
                  "wcscmp", "strcmp", "_fltused", "wcschr", "wcsrchr", 

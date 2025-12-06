@@ -1464,6 +1464,9 @@ void Quad_GenerateQuads(Parser* parser, Quads* quads, Arena* arena) {
 
     for (func_id ix = 0; ix < parser->function_table.size; ++ix) {
         FunctionDef* def = parser->function_table.data[ix];
+        if (def->undefined) {
+            continue;
+        }
 
         label_id l = QuadList_addlabel(&list);
         Quad* q = QuadList_addquad(&list, QUAD_LABEL, VAR_ID_INVALID);

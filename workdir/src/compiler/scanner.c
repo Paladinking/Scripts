@@ -20,7 +20,7 @@ Token scanner_peek_token(void* ctx, uint64_t* start, uint64_t* end) {
 void scanner_error(void *ctx, SyntaxError e) {
     struct Tokenizer *t = ctx;
     Parser* parser = t->parser;
-    LineInfo l = {e.start, e.end};
+    LineInfo l = {parser->filename, e.start, e.end};
     add_error(parser, PARSE_ERROR_INVALID_CHAR, l);
 }
 
@@ -84,6 +84,8 @@ FunctionDef* OnScanFunction(void* ctx, uint64_t start, uint64_t end, StrWithLeng
     FunctionDef* func = Arena_alloc_type(&parser->arena, FunctionDef);
     func->arg_count = arg_count;
     func->return_type = TYPE_ID_INVALID;
+    func->line.filename = parser->filename;
+    func->undefined = false;
     func->line.start = start;
     func->line.end = end;
     func->quad_start = NULL;
@@ -94,7 +96,7 @@ FunctionDef* OnScanFunction(void* ctx, uint64_t start, uint64_t end, StrWithLeng
     name_id id = name_function_insert(&parser->name_table, name, &parser->type_table,
                                       func, &parser->arena);
     if (id == NAME_ID_INVALID) {
-        LineInfo l = {start, end};
+        LineInfo l = {parser->filename, start, end};
         add_error(parser, PARSE_ERROR_BAD_NAME, l);
         return NULL;
     }
@@ -108,6 +110,7 @@ type_id scan_struct(struct Tokenizer* t, uint64_t start, uint64_t end, StrWithLe
     Parser* p = t->parser;
     type_id struct_type = type_struct_create(&p->type_table, &p->arena);
     TypeDef* def = p->type_table.data[struct_type].type_def;
+    def->struct_.line.filename = p->filename;
     def->struct_.line.start = start;
     def->struct_.line.end = end;
     def->struct_.type = type;
@@ -117,7 +120,7 @@ type_id scan_struct(struct Tokenizer* t, uint64_t start, uint64_t end, StrWithLe
     def->struct_.name = id;
 
     if (id == NAME_ID_INVALID) {
-        LineInfo l = {start, end};
+        LineInfo l = {p->filename, start, end};
         add_error(p, PARSE_ERROR_BAD_NAME, l);
         return TYPE_ID_INVALID;
     }
@@ -141,12 +144,32 @@ FunctionDef* OnScanExtern(void* ctx, uint64_t start, uint64_t end, StrWithLength
 }
 
 
-int64_t OnScanImport(void* ctx, uint64_t start, uint64_t end, StrWithLength file) {
+void OnScanImport(void* ctx, uint64_t start, uint64_t end, StrWithLength file) {
+    struct Tokenizer *t = ctx;
+    Parser* parser = t->parser;
 
+    char* filename = Mem_alloc(file.len + 5);
+    if (filename == NULL) {
+        out_of_memory(parser);
+    }
+    memcpy(filename, file.str, file.len);
+    filename[file.len] = '.';
+    filename[file.len + 1] = 't';
+    filename[file.len + 2] = 'x';
+    filename[file.len + 3] = 't';
+    filename[file.len + 4] = '\0';
+
+    bool success = add_module(parser, filename, true);
+    Mem_free(filename);
+
+    if (!success) {
+        LineInfo l = {parser->filename, start, end};
+        add_error(parser, PARSE_ERROR_BAD_NAME, l); // TODO: fix error type
+    }
 }
 
-void scan_program(Parser* parser, String* indata) {
-    parser_set_input(parser, indata);
+void scan_program(Parser* parser, String* indata, const char* filename) {
+    parser_set_input(parser, indata, filename, false);
 
     struct Tokenizer t;
     t.parser = parser;

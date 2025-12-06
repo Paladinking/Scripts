@@ -2,6 +2,7 @@
 #define COMPILER_TABLES_H_00
 
 #include "utils.h"
+#include <dynamic_string.h>
 #include <arena.h>
 
 // Index into type_table
@@ -261,7 +262,15 @@ typedef struct StringLiteral {
 
 typedef struct Module {
     const char* filename; // Null-terminated
+    bool import; // True if no code should be generated for this module
+    String content;
 } Module;
+
+typedef struct ModuleList {
+    uint32_t count;
+    uint32_t capacity;
+    Module* modules;
+} ModuleList;
 
 typedef struct Parser {
     FunctionTable function_table;
@@ -272,6 +281,10 @@ typedef struct Parser {
     
     const uint8_t* indata;
     uint64_t input_size;
+    const char* filename;
+    bool import_module;
+
+    ModuleList modules;
 
     uint64_t pos;
 
@@ -283,6 +296,8 @@ typedef struct Parser {
     Error* first_error;
     Error* last_error;
 } Parser;
+
+bool add_module(Parser* parser, const char* filename, bool external);
 
 type_id type_of(NameTable* name_table, name_id name);
 

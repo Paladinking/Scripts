@@ -217,6 +217,8 @@ typedef struct FunctionDef {
     LineInfo line;
 
     symbol_ix symbol;
+    bool undefined;
+
     label_id end_label;
     // First quad of function
     struct Quad* quad_start;
