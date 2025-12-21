@@ -1295,12 +1295,16 @@ void output_get_literal_token(Rule* rules, uint32_t rule_count, HANDLE h) {
         }
         ++literals_count;
     }
+    _printf_h(h, "    Token t;\n");
+    _printf_h(h, "    t.literal = s;\n");
     _printf_h(h, "    if (*ix >= len) {\n");
-    _printf_h(h, "        return (Token){ TOKEN_UNKOWN };\n");
+    _printf_h(h, "        t.id = TOKEN_UNKOWN;\n");
+    _printf_h(h, "        return t;\n");
     _printf_h(h, "    }\n");
     if (literals_count == 0) {
+        _printf_h(h, "    t.id = TOKEN_UNKOWN;\n");
         _printf_h(h, "    *ix += 1;\n");
-        _printf_h(h, "    return (Token){ TOKEN_UNKOWN };\n");
+        _printf_h(h, "    return t;\n");
         _printf_h(h, "}\n\n");
         return;
     }
@@ -1347,14 +1351,16 @@ void output_get_literal_token(Rule* rules, uint32_t rule_count, HANDLE h) {
             visited[longest_ix] = 1;
             if (longest_len == 1) {
                 if (first) {
-                    _printf_h(h, "        return (Token){ ");
+                    _printf_h(h, "        t.id = ");
                     output_literal_token(&rules[longest_ix], h);
-                    _printf_h(h, " };\n");
+                    _printf_h(h, ";\n");
+                    _printf_h(h, "        return t;\n");
                 } else {
                     _printf_h(h, " else {\n");
-                    _printf_h(h, "            return (Token){ ");
+                    _printf_h(h, "            t.id = ");
                     output_literal_token(&rules[longest_ix], h);
-                    _printf_h(h, " };\n");
+                    _printf_h(h, ";\n");
+                    _printf_h(h, "            return t;\n");
                     _printf_h(h, "        }\n");
                 }
                 covered = true;
@@ -1373,9 +1379,10 @@ void output_get_literal_token(Rule* rules, uint32_t rule_count, HANDLE h) {
             }
             _printf_h(h, ") {\n");
             _printf_h(h, "            *ix += %lu;\n", longest_len - 1);
-            _printf_h(h, "            return (Token){ ");
+            _printf_h(h, "            t.id = ");
             output_literal_token(&rules[longest_ix], h);
-            _printf_h(h, " };\n");
+            _printf_h(h, ";\n");
+            _printf_h(h, "            return t;\n");
             _printf_h(h, "        }");
 
             longest_ix = rule_count;
@@ -1383,14 +1390,16 @@ void output_get_literal_token(Rule* rules, uint32_t rule_count, HANDLE h) {
         }
         if (!covered) {
             _printf_h(h, " else {\n");
-            _printf_h(h, "            return (Token){ TOKEN_UNKOWN };\n");
+            _printf_h(h, "            t.id = TOKEN_UNKOWN;\n");
+            _printf_h(h, "            return t;\n");
             _printf_h(h, "        }\n");
         }
     }
 
     Mem_free(visited);
     _printf_h(h, "    default:\n");
-    _printf_h(h, "        return (Token){ TOKEN_UNKOWN };\n");
+    _printf_h(h, "        t.id = TOKEN_UNKOWN;\n");
+    _printf_h(h, "        return t;\n");
     _printf_h(h, "    }\n");
     _printf_h(h, "}\n");
 }
