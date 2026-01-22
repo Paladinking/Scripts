@@ -6,7 +6,7 @@ import sys
 import shutil
 import argparse
 
-from typing import Any, List, Optional, TextIO, Type, Union, Tuple, Dict, overload
+from typing import Any, Iterator, List, Literal, Optional, TextIO, Type, Union, Tuple, Dict, overload
 
 BUILD_DIR: pathlib.Path
 BIN_DIR: pathlib.Path
@@ -24,6 +24,12 @@ use_copyto = False
 
 CLFLAGS: str
 LINKFLAGS: str
+
+GCC = "gcc.exe" if sys.platform == "win32" else "gcc"
+GPP = "g++.exe" if sys.platform == "win32" else "g++"
+DLLTOOL = "dlltool.exe" if sys.platform == "win32" else "dlltool"
+CMAKE = "cmake.exe" if sys.platform == "win32" else "cmake"
+EMCMAKE = "cmake.bat" if sys.platform == "win32" else "emcmake"
 
 g_context: Optional['Context'] = None
 
@@ -78,6 +84,9 @@ class Obj:
                 self.depends.append(dep)
             else:
                 self.depends.append(dep.product)
+
+    def language(self) -> Literal['C', 'CXX']:
+        return 'C' if self.source.lower().endswith('.c') else 'CXX'
 
     @property
     def product(self) -> str:
@@ -143,6 +152,14 @@ class Exe:
     def product(self) -> str:
         return str(pathlib.PurePath(self.directory) / self.name)
 
+    def languages(self) -> List[Literal['C', 'CXX']]:
+        has_c = any(o.language() == 'C' for o in self.objs)
+        has_cxx = any(o.language() == 'CXX' for o in self.objs)
+        if has_c:
+            return ['C', 'CXX'] if has_cxx else ['C']
+        else:
+            return ['CXX'] if has_cxx else ['C']
+
 class BackendBase:
     builddir: pathlib.Path
     bindir: pathlib.Path
@@ -156,6 +173,9 @@ class BackendBase:
     @property
     def mingw(self) -> bool:
         return False
+    @property
+    def gcc(self) -> bool:
+        return True
     @property
     def clang(self) -> bool:
         return False
@@ -177,14 +197,24 @@ class EmCC(BackendBase):
     def compile_obj(self, obj: Obj) -> str:
         return f"emcc -c -o {obj.product} {obj.cmp_flags} {obj.source}"
 
-    def compile_obj_ninja(self) -> str:
+    def compile_c_obj_ninja(self) -> str:
         return "    deps = gcc\n    depfile = $out.d\n" + \
                "    command = emcc.bat -MMD -MF $out.d -c $in -o $out $cl_flags"
 
-    def link_exe_ninja(self) -> str:
+    def compile_cxx_obj_ninja(self) -> str:
+        return "    deps = gcc\n    depfile = $out.d\n" + \
+               "    command = em++.bat -MMD -MF $out.d -c $in -o $out $cl_flags"
+
+    def link_c_exe_ninja(self) -> str:
         return "    command = emcc.bat -o $out $in $link_flags"
 
-    def link_dll_ninja(self) -> str:
+    def link_cxx_exe_ninja(self) -> str:
+        return "    command = em++.bat -o $out $in $link_flags"
+
+    def link_c_dll_ninja(self) -> str:
+        raise RuntimeError("Link dll not supported for emcc")
+
+    def link_cxx_dll_ninja(self) -> str:
         raise RuntimeError("Link dll not supported for emcc")
 
     def find_headers(self, obj: Obj) -> List[str]:
@@ -215,73 +245,17 @@ class EmCC(BackendBase):
         paths = [pathlib.Path(s).absolute().relative_to(WORKDIR) for s in files]
         return ' '.join([f'--embed-file="{p}"@"/{pathlib.PurePosixPath(p)}"' for p in paths])
 
-class ZigCC(BackendBase):
-    name = "zigcc"
-
-    @property
-    def clang(self) -> bool:
-        return True
-
-    def handle_obj_line(self, obj: Obj, line: str) -> bool:
-        return False
-
-    def compile_obj(self, obj: Obj) -> str:
-        return f"zig.exe cc -c -o {obj.product} {obj.cmp_flags} {obj.source}"
-
-    def compile_obj_ninja(self) -> str:
-        return "    deps = gcc\n    depfile = $out.d\n" + \
-               "    command = zig.exe cc -MMD -MF $out.d -c $in -o $out $cl_flags"
-
-    def link_exe_ninja(self) -> str:
-        return "    command = zig.exe cc -o $out $in $link_flags"
-
-    def link_dll_ninja(self) -> str:
-        return "    command = zig.exe cc -shared -o $out $in $link_flags"
-
-    def find_headers(self, obj: Obj) -> List[str]:
-        cmd = f"zig.exe cc -MM {obj.cmp_flags} {obj.source}"
-        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if res.returncode != 0:
-            print(res)
-            raise RuntimeError("Failed generating headers")
-        line = res.stdout.decode().replace("\\\r\n", "")
-        return line.split()[2:]
-
-    def link_exe(self, exe: Exe) -> str:
-        row = " ".join([f"{obj.product}" for obj in exe.objs] + [f"{cmd.product}" for cmd in exe.cmds])
-        return f"zig.exe cc -o {exe.product} {exe.link_flags} {row}"
-
-    def link_dll(self, exe: Exe) -> str:
-        row = " ".join([f"{obj.product}" for obj in exe.objs] + [f"{cmd.product}" for cmd in exe.cmds])
-        return f"zig.exe cc -shared -o {exe.product} {exe.link_flags} {row}"
-
-    def include(self, directory: str) -> str:
-        return f"-I{directory}"
-
-    def libpath(self, directory: str) -> str:
-        return f"-L{directory}"
-
-    def define(self, key: str, val: Optional[str]) -> str:
-        if val:
-            return f"-D{key}={val}"
-        return f"-D{key}"
-
-    def import_lib_cmd(self, out: str, dll: str, symbols: List[str]) -> Cmd:
-        def_path = BUILD_DIR / pathlib.PurePath(out).with_suffix(".def").name
-        rel_def_path = def_path.relative_to(BUILD_DIR)
-        def_file = Command(str(rel_def_path), f"python comp.py --deffile {def_path} {' '.join(symbols)}")
-        out_path = BUILD_DIR / out
-        cmd = f"zig.exe dlltool -D {dll} -d {def_path} -l {out_path}"
-        return Command(out, cmd, def_file)
-
-class Mingw(BackendBase):
-    name = "mingw"
-
-    def __init__(self) -> None:
+class Gcc(BackendBase):
+    def __init__(self, mingw: bool=False) -> None:
         self._pending_line = False
+        self._mingw = mingw
+        self.name = "mingw" if mingw else "gcc" 
 
     @property
     def mingw(self) -> bool:
+        return self._mingw
+    @property
+    def gcc(self) -> bool:
         return True
 
     def handle_obj_line(self, obj: Obj, line: str) -> bool:
@@ -310,20 +284,30 @@ class Mingw(BackendBase):
         return True
     
     def compile_obj(self, obj: Obj) -> str:
-        return f"gcc.exe -MMD -MF - -c -o {obj.product} {obj.cmp_flags} {obj.source}"
+        return f"{GCC} -MMD -MF - -c -o {obj.product} {obj.cmp_flags} {obj.source}"
     
-    def compile_obj_ninja(self) -> str:
+    def compile_c_obj_ninja(self) -> str:
         return "    deps = gcc\n    depfile = $out.d\n" + \
-               "    command = gcc.exe -MMD -MF $out.d -c $in -o $out $cl_flags"
+               f"    command = {GCC} -MMD -MF $out.d -c $in -o $out $cl_flags"
 
-    def link_exe_ninja(self) -> str:
-        return "    command = gcc.exe -o $out $in $link_flags"
+    def compile_cxx_obj_ninja(self) -> str:
+        return "    deps = gcc\n    depfile = $out.d\n" + \
+               f"    command = {GPP} -MMD -MF $out.d -c $in -o $out $cl_flags"
 
-    def link_dll_ninja(self) -> str:
-        return "    command = gcc.exe -shared -o $out $in $link_flags"
+    def link_c_exe_ninja(self) -> str:
+        return f"    command = {GCC} -o $out $in $link_flags"
+
+    def link_cxx_exe_ninja(self) -> str:
+        return f"    command = {GPP} -o $out $in $link_flags"
+
+    def link_c_dll_ninja(self) -> str:
+        return f"    command = {GCC} -shared -o $out $in $link_flags"
+
+    def link_cxx_dll_ninja(self) -> str:
+        return f"    command = {GPP} -shared -o $out $in $link_flags"
 
     def find_headers(self, obj: Obj) -> List[str]:
-        cmd = f"gcc.exe -MM {obj.cmp_flags} {obj.source}"
+        cmd = f"{GCC} -MM {obj.cmp_flags} {obj.source}"
         res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if res.returncode != 0:
             print(res)
@@ -333,11 +317,11 @@ class Mingw(BackendBase):
 
     def link_exe(self, exe: Exe) -> str:
         row = " ".join([f"{obj.product}" for obj in exe.objs] + [f"{cmd.product}" for cmd in exe.cmds])
-        return f"gcc.exe -o {exe.product} {exe.link_flags} {row}"
+        return f"{GCC} -o {exe.product} {exe.link_flags} {row}"
 
     def link_dll(self, exe: Exe) -> str:
         row = " ".join([f"{obj.product}" for obj in exe.objs] + [f"{cmd.product}" for cmd in exe.cmds])
-        return f"gcc.exe -shared -o {exe.product} {exe.link_flags} {row}"
+        return f"{GCC} -shared -o {exe.product} {exe.link_flags} {row}"
 
     def include(self, directory: str) -> str:
         return f"-I{directory}"
@@ -353,11 +337,14 @@ class Mingw(BackendBase):
     def import_lib_cmd(self, out: str, dll: str, symbols: List[str]) -> Cmd:
         def_path = BUILD_DIR / pathlib.PurePath(out).with_suffix(".def").name
         rel_def_path = def_path.relative_to(BUILD_DIR)
-        def_file = Command(str(rel_def_path), f"python comp.py --deffile {def_path} {' '.join(symbols)}")
+        def_file = Command(str(rel_def_path), f"python comp.py -b {ACTIVE_BACKEND} --deffile {def_path} {' '.join(symbols)}")
         out_path = BUILD_DIR / out
-        cmd = f"dlltool.exe -D {dll} -d {def_path} -l {out_path}"
+        cmd = f"{DLLTOOL} -D {dll} -d {def_path} -l {out_path}"
         return Command(out, cmd, def_file)
 
+class Mingw(Gcc):
+    def __init__(self) -> None:
+        super().__init__(True)
 
 class Msvc(BackendBase):
     name = "msvc"
@@ -382,15 +369,24 @@ class Msvc(BackendBase):
     def compile_obj(self, obj: Obj) -> str:
         return f"cl.exe /c /nologo /showIncludes /Fo:{obj.product} {obj.cmp_flags} {obj.source}"
 
-    def compile_obj_ninja(self) -> str:
+    def compile_c_obj_ninja(self) -> str:
         return "    deps = msvc\n" + \
         "    command = cl.exe /nologo /showIncludes /c $in /Fo:$out $cl_flags"
 
-    def link_exe_ninja(self) -> str:
+    def compile_cxx_obj_ninja(self) -> str:
+        return self.compile_c_obj_ninja()
+
+    def link_c_exe_ninja(self) -> str:
         return "    command = link.exe /nologo /OUT:$out $link_flags $in"
 
-    def link_dll_ninja(self) -> str:
+    def link_cxx_exe_ninja(self) -> str:
+        return self.link_c_exe_ninja()
+
+    def link_c_dll_ninja(self) -> str:
         return "    command = link.exe /nologo /OUT:$out /DLL $link_flags $in"
+
+    def link_cxx_dll_ninja(self) -> str:
+        return self.link_cxx_dll_ninja()
 
     def find_headers(self, obj: Obj) -> List[str]:
         cl = shutil.which("cl.exe")
@@ -491,6 +487,8 @@ def Executable(name: str, *sources: Union[str, Obj, Cmd],
                group: Optional[str]=None,
                packages: List[Package]=[],
                context: Optional[Context]=None) -> Exe:
+    if sys.platform == "win32":
+        name += ".exe"
     if context is None:
         context = g_context
     if cmp_flags is None:
@@ -595,7 +593,7 @@ def CopyToBin(*src: str) -> List[Cmd]:
         f = pathlib.PurePath(file)
         name = pathlib.PurePath(file).name
         dest = BIN_DIR / name
-        cmd = Command(name, f"python comp.py --copyto {f} {dest}", str(f),
+        cmd = Command(name, f"python comp.py -b {ACTIVE_BACKEND} --copyto {f} {dest}", str(f),
                       directory=str(BIN_DIR))
         cmd.rule = "copyto"
         res.append(cmd)
@@ -605,7 +603,7 @@ def CopyToBin(*src: str) -> List[Cmd]:
 def ImportLib(lib: str, dll: str, symbols: List[str]) -> Cmd:
     return BACKEND.import_lib_cmd(lib, dll, symbols)
 
-Backend = Union[Msvc, Mingw, ZigCC, EmCC]
+Backend = Union[Msvc, Gcc, Mingw, EmCC]
 BACKEND: Backend
 ACTIVE_BACKEND: str
 
@@ -757,26 +755,40 @@ def ninjafile(dest: TextIO = sys.stdout) -> None:
         print(f"build {group}: phony {deps}\n", file=dest)
 
     if len(OBJECTS) > 0:
+        has_c = any(obj.language() == 'C' for obj in OBJECTS.values())
+        has_cxx = any(obj.language() == 'CXX' for obj in OBJECTS.values())
         print(f"cl_flags = {CLFLAGS}", file=dest)
-        print(f"rule cl", file=dest)
-        print(BACKEND.compile_obj_ninja(), file=dest)
+        if has_c:
+            print(f"rule cl", file=dest)
+            print(BACKEND.compile_c_obj_ninja(), file=dest)
+        if has_cxx:
+            print(f"rule cxx", file=dest)
+            print(BACKEND.compile_cxx_obj_ninja(), file=dest)
 
     if len(EXECUTABLES) > 0:
         print(f"link_flags = {LINKFLAGS}", file=dest)
-        print("rule link_exe", file=dest)
-        print(BACKEND.link_exe_ninja(), file=dest)
-        if any(True for a in EXECUTABLES.values() if a.dll):
-            print("rule link_dll", file=dest)
-            print(BACKEND.link_dll_ninja(), file=dest)
+        if any((not a.dll) and 'CXX' not in a.languages() for a in EXECUTABLES.values()):
+            print("rule link_c_exe", file=dest)
+            print(BACKEND.link_c_exe_ninja(), file=dest)
+        if any((not a.dll) and 'CXX' in a.languages() for a in EXECUTABLES.values()):
+            print("rule link_cxx_exe", file=dest)
+            print(BACKEND.link_cxx_exe_ninja(), file=dest)
+        if any(a.dll and 'CXX' not in a.languages() for a in EXECUTABLES.values()):
+            print("rule link_c_dll", file=dest)
+            print(BACKEND.link_c_dll_ninja(), file=dest)
+        if any(a.dll and 'CXX' in a.languages() for a in EXECUTABLES.values()):
+            print("rule link_cxx_exe", file=dest)
+            print(BACKEND.link_cxx_dll_ninja(), file=dest)
 
     if use_copyto:
         print(f"rule copyto", file=dest)
-        print("    command = python comp.py --copyto $in $out", file=dest)
+        print(f"    command = python comp.py -b {ACTIVE_BACKEND} --copyto $in $out", file=dest)
     print(file=dest)
 
 
     for key, obj in OBJECTS.items():
-        print(f"build {esc(obj.product)}: cl {esc(obj.source)}", end="", file=dest)
+        rule = 'cl' if obj.language() == 'C' else 'cxx'
+        print(f"build {esc(obj.product)}: {rule} {esc(obj.source)}", end="", file=dest)
         if obj.depends:
             deps = ' '.join((esc(d) for d in obj.depends))
             print(f" || {deps}", file=dest)
@@ -788,12 +800,12 @@ def ninjafile(dest: TextIO = sys.stdout) -> None:
     for key, exe in EXECUTABLES.items():
         row = " ".join([f"{esc(obj.product)}" for obj in exe.objs] + 
                        [f"{esc(cmd.product)}" for cmd in exe.cmds])
-        if exe.dll:
-            print(f"build {esc(exe.product)}: link_dll {row}", file=dest)
-        else:
-            print(f"build {esc(exe.product)}: link_exe {row}", file=dest)
+        cxx = 'CXX' in exe.languages()
+        rule = ('link_cxx_dll' if cxx else 'link_c_dll') if exe.dll else \
+               ('link_cxx_exe' if cxx else 'link_c_exe')
+        print(f"build {esc(exe.product)}: {rule} {row}", file=dest)
         if exe.link_flags != LINKFLAGS:
-            print(f"    link_flags = {exe.link_flags}", file=dest)
+            print(f"    link_flags = {exe.link_flags.replace('$', '$$')}", file=dest)
     print(file=dest)
     ix = 0
     for key, obj in CUSTOMS.items():
@@ -876,7 +888,8 @@ def compile_commands(dest: TextIO = sys.stdout) -> None:
     import json
     print(json.dumps(res, indent=4), file=dest)
 
-all_backends: Dict[str, Type['Backend']] = {"msvc": Msvc, "mingw": Mingw, 'zigcc': ZigCC, 'emcc': EmCC}
+all_backends: Dict[str, Type['Backend']] = {"msvc": Msvc, "mingw": Mingw, 'emcc': EmCC,
+                                            "gcc": Gcc}
 active_backends: Dict[str, 'Backend'] = {}
 
 args = None
@@ -944,6 +957,13 @@ def set_backend(name: str) -> None:
     BACKEND = backend
     ACTIVE_BACKEND = name
 
+    if sys.platform == "win32":
+        if isinstance(backend, Gcc) and not backend.mingw:
+            raise RuntimeError(f"Invalid {name} backend for plattform {sys.platform}")
+    else:
+        if not isinstance(backend, Gcc) or backend.mingw:
+            raise RuntimeError(f"Invalid backend {name} for plattform {sys.platform}")
+
     os.chdir(WORKDIR)
 
     run = True
@@ -987,7 +1007,7 @@ def get_make() -> Tuple[str, List[str]]:
         s = 'nmake.exe'
         args = ['/NOLOGO', get_args().target]
     else:
-        s = 'ninja.exe'
+        s = 'ninja.exe' if sys.platform == "win32" else "ninja"
         if get_args().target == 'clean':
             args = ['-t', 'clean']
         else:
@@ -1114,11 +1134,48 @@ def build(comp_file: str) -> None:
     if res.returncode != 0:
         exit(res.returncode)
 
+def parse_gitmodules(file: pathlib.Path) -> List[Tuple[str, str, str]]:
+    with open(file, 'r') as f:
+        data = f.read()
+    lines = data.splitlines()
+    it = iter(lines)
+    modules: List[Tuple[str, str, str]] = []
+    def _next(it: Iterator[str]) -> str:
+        while True:
+            s = next(it).strip()
+            if len(s) > 0:
+                return s
+    try:
+        while True:
+            _next(it)
+            pathline = _next(it)
+            urlline = _next(it)
+            branchline = _next(it)
+            try:
+                path = pathline.split()[2]
+                url = urlline.split()[2]
+                branch = branchline.split()[2]
+                modules.append((path, url, branch))
+            except IndexError:
+                raise RuntimeError("Invalid .gitmodules file")
+    except StopIteration:
+        return modules
 
-def find_cmake() -> str:
-    cmake = shutil.which('cmake.exe')
+def clone_gitmodules(file: pathlib.Path) -> None:
+    modules = parse_gitmodules(file)
+    root = file.parent
+    for path, url, branch in modules:
+        res = subprocess.run(['git', 'clone', '--filter=blob:none', url, 
+                              str(root / path), '-b', branch, '--recursive',
+                              '--depth', '1'])
+        if res.returncode != 0:
+            raise RuntimeError("Failed cloning submodules")
+
+def find_cmake(src: pathlib.Path, build: pathlib.Path, 
+               path: pathlib.Path) -> Tuple[str, List[str]]:
+    cmake = shutil.which(CMAKE)
     if cmake is None:
-        raise RuntimeError("Could not find cmake.exe")
+        raise RuntimeError(f"Could not find {CMAKE}")
     res = subprocess.run(['cmake', '--version'], stdout=subprocess.PIPE)
     if res.returncode != 0:
         raise RuntimeError("Bad cmake version")
@@ -1136,7 +1193,23 @@ def find_cmake() -> str:
             raise RuntimeError("Insufficient cmake version")
     except Exception:
         raise RuntimeError("Bad cmake version")
-    return cmake
+    args = ['-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release',
+            '-S', str(src), '-B', str(build),
+            f'-DCMAKE_INSTALL_PREFIX={path}']
+    if BACKEND.name == "emcc":
+        emcmake = shutil.which(EMCMAKE)
+        if emcmake is None:
+            raise RuntimeError(f"Could not find {EMCMAKE}")
+        return (cmake, [emcmake, 'cmake'] + args)
+    elif BACKEND.name == "msvc":
+        args.append('-DCMAKE_C_COMPILER=cl.exe')
+        args.append('-DCMAKE_CXX_COMPILER=cl.exe')
+    else:
+        args.append(f'-DCMAKE_C_COMPILER={GCC}')
+        args.append(f'-DCMAKE_CXX_COMPILER={GPP}')
+        if sys.platform == 'win321':
+            args.append(f'-DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON')
+    return (cmake, [cmake] + args)
 
 
 def _sdl3_gfx_hook(path: pathlib.Path, pkg: Dict[str, Any]) -> None:
@@ -1166,16 +1239,11 @@ def _box2d_hook(path: pathlib.Path, pkg: Dict[str, Any]) -> None:
     cmake_src_path = src_path / 'box2d-3.1.1'
 
     build_dir = src_path / 'build'
-    cmake = find_cmake()
+    cmake, args = find_cmake(cmake_src_path, build_dir, path)
 
-    if BACKEND.name == "msvc":
-        cmp = "cl.exe"
-    else:
-        cmp = "gcc.exe"
-
-    res = subprocess.run([cmake, '-B', str(build_dir), '-S', str(cmake_src_path), '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release',
-                          f'-DCMAKE_INSTALL_PREFIX={path}', '-DBOX2D_SAMPLES=OFF', '-DBOX2D_UNIT_TESTS=OFF', '-DBUILD_SHARED_LIBS=OFF',
-                           f'-DCMAKE_C_COMPILER={cmp}'])
+    res = subprocess.run([*args, 
+                          '-DBOX2D_SAMPLES=OFF', '-DBOX2D_UNIT_TESTS=OFF', 
+                          '-DBUILD_SHARED_LIBS=OFF'])
     if res.returncode != 0:
         raise RuntimeError("Failed building box2d")
     res = subprocess.run([cmake, '--build', str(build_dir)])
@@ -1186,10 +1254,65 @@ def _box2d_hook(path: pathlib.Path, pkg: Dict[str, Any]) -> None:
         raise RuntimeError("Failed building box2d")
     shutil.rmtree(src_path)
 
-def _sdl3_emsdk_hook(path: pathlib.Path, pkg: Dict[str, Any]) -> None:
+def _freetype_emsdk_hook(path: pathlib.Path, pkh: Dict[str, Any]) -> None:
+    src_path = path.with_name(path.name + "-src")
+    
+    if src_path.exists():
+        shutil.rmtree(src_path)
+    shutil.move(path, src_path)
+    cmake_src_path = src_path / 'freetype-d3a395b5fe515fd5c31d263bfc03fd85dd381a8f'
+
+    build_dir = src_path / 'build'
+    cmake, args = find_cmake(cmake_src_path, build_dir, path)
+
+    res = subprocess.run(args)
+    if res.returncode != 0:
+        raise RuntimeError(f"Failed building {path}")
+    res = subprocess.run([cmake, '--build', str(build_dir)])
+    if res.returncode != 0:
+        raise RuntimeError(f"Failed building {path}")
+    res = subprocess.run([cmake, '--install', str(build_dir)])
+    if res.returncode != 0:
+        raise RuntimeError(f"Failed building {path}")
+    shutil.rmtree(src_path)
+
+def _opencv_hook(path: pathlib.Path, pkg: Dict[str, Any]) -> None:
+    src_path = path.with_name(path.name + "-src")
+    build_dir = src_path / 'build'
+
+    if src_path.exists():
+        shutil.rmtree(src_path)
+
+    shutil.move(path, src_path)
+    cmake, args = find_cmake(src_path / 'opencv-4.13.0', build_dir, path)
+    depargs = ['-DBUILD_PERF_TESTS:BOOL=OFF', '-DBUILD_TESTS:BOOL=OFF',
+               '-DBUILD_DOCS:BOOL=OFF', '-DWITH_CUDA:BOOL=OFF', '-DBUILD_EXAMPLES:BOOL=OFF',
+               '-DINSTALL_CREATE_DISTRIB=ON']
+
+    res = subprocess.run([*args, *depargs])
+    if res.returncode != 0:
+        raise RuntimeError(f"Failed building {path}")
+    res = subprocess.run([cmake, '--build', str(build_dir)])
+    if res.returncode != 0:
+        raise RuntimeError(f"Failed building {path}")
+    res = subprocess.run([cmake, '--install', str(build_dir)])
+    if res.returncode != 0:
+        raise RuntimeError(f"Failed building {path}")
+    shutil.rmtree(src_path)
+
+def _sdl3_hook(path: pathlib.Path, pkg: Dict[str, Any]) -> None:
     if pkg['name'] != 'SDL3':
-        sdl3_path = find_package('SDL3').path / 'lib' / 'cmake' / 'SDL3'
+        if BACKEND.name == 'msvc':
+            sdl3_path = find_package('SDL3').path / 'cmake'
+        else:
+            sdl3_path = find_package('SDL3').path / 'lib' / 'cmake' / 'SDL3'
         depargs: List[str] = [f'-DSDL3_DIR={sdl3_path.absolute()}']
+        if pkg['name'] == 'SDL3_ttf':
+            freetype_inc = find_package('freetype').path / 'include' / 'freetype2'
+            freetype_lib = find_package('freetype').path / 'lib' / 'libfreetype.a'
+            depargs.append(f'-DFREETYPE_INCLUDE_DIRS={freetype_inc.absolute()}')
+            depargs.append(f'-DFREETYPE_LIBRARY={freetype_lib.absolute()}')
+            depargs.append(f'-DSDLTTF_SAMPLES=OFF')
     else:
         depargs = []
     src_path = path.with_name(path.name + "-src")
@@ -1200,16 +1323,21 @@ def _sdl3_emsdk_hook(path: pathlib.Path, pkg: Dict[str, Any]) -> None:
     shutil.move(path, src_path)
     if pkg['name'] == 'SDL3':
         cmake_src_path = src_path / 'SDL-release-3.2.16'
-    else:
+    elif pkg['name'] == 'SDL3_image':
         cmake_src_path = src_path / 'SDL_image-release-3.2.4'
-    build_dir = src_path / 'build'
-    cmake = find_cmake()
-    emcmake = shutil.which('emcmake.bat')
-    if emcmake is None:
-        raise RuntimeError("Could not find emcmake.bat")
+    else:
+        cmake_src_path = src_path / 'SDL_ttf-release-3.2.2'
 
-    res = subprocess.run([emcmake, 'cmake', '-B', str(build_dir), '-S', str(cmake_src_path), '-G', 'Ninja',
-                          '-DCMAKE_BUILD_TYPE=Release', f'-DCMAKE_INSTALL_PREFIX={path}', *depargs])
+    build_dir = src_path / 'build'
+    cmake, args = find_cmake(cmake_src_path, build_dir, path)
+
+    if pkg['name'] == 'SDL3_image':
+        depargs.append('-DSDLIMAGE_VENDORED=OFF')
+
+    if BACKEND.name == "mingw":
+        depargs.append('-DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON')
+
+    res = subprocess.run([*args, *depargs])
     if res.returncode != 0:
         raise RuntimeError(f"Failed building {path}")
     res = subprocess.run([cmake, '--build', str(build_dir)])
@@ -1240,6 +1368,34 @@ KNOWN_PACKAGES = {
             "hook": _box2d_hook
         }
     },
+    "OpenCV": {
+        "msvc": {
+            "url": "https://github.com/opencv/opencv/archive/refs/tags/4.13.0.zip",
+            "include": ["include"],
+            "libpath": ["x64/vc16/lib"],
+            "libname": ["opencv_world4130.lib"],
+            "dll": ["x64/vc16/bin/opencv_videoio_ffmpeg4130_64.dll", "x64/vc16/bin/opencv_world4130.dll"],
+            "hook": _opencv_hook
+        },
+        "mingw": {
+            "url": "https://github.com/opencv/opencv/archive/refs/tags/4.13.0.zip",
+            "include": ["include"],
+            "libpath": ["x64/mingw/lib"],
+            "libname": ["-lopencv_world4130"],
+            "dll": ["x64/mingw/bin/opencv_videoio_ffmpeg4130_64.dll", "x64/mingw/bin/libopencv_world4130.dll"],
+            "hook": _opencv_hook
+        }
+    },
+    "freetype": {
+        "emcc": {
+            "url": "https://github.com/libsdl-org/freetype/archive/d3a395b5fe515fd5c31d263bfc03fd85dd381a8f.zip",
+            "include": ["include"],
+            "libpath": ["lib"],
+            "libname": ["-lfreetype"],
+            "dll": [],
+            "hook": _freetype_emsdk_hook
+        }
+    },
     "SDL3_gfx": {
         "msvc": {
             "url": "https://github.com/sabdul-khabir/SDL3_gfx/archive/refs/tags/v1.0.1.zip",
@@ -1264,18 +1420,31 @@ KNOWN_PACKAGES = {
     },
     "SDL3": {
         "msvc": {
-            "url": "https://github.com/libsdl-org/SDL/releases/download/release-3.2.16/SDL3-devel-3.2.16-VC.zip", 
-            "include": ["SDL3-3.2.16/include"],
-            "libpath": ["SDL3-3.2.16/lib/x64"],
+            "url": "https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.2.16.zip", 
+            "include": ["include"],
+            "libpath": ["lib"],
             "libname": ["SDL3.lib"],
-            "dll": ["SDL3-3.2.16/lib/x64/SDL3.dll"]
+            "dll": ["bin/SDL3.dll"],
+            "hook": _sdl3_hook,
+            "name": 'SDL3'
         },
         "mingw": { 
-            "url": "https://github.com/libsdl-org/SDL/releases/download/release-3.2.16/SDL3-devel-3.2.16-mingw.zip",
-            "include": ["SDL3-3.2.16/x86_64-w64-mingw32/include"],
-            "libpath": ["SDL3-3.2.16/x86_64-w64-mingw32/lib"],
+            "url": "https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.2.16.zip",
+            "include": ["include"],
+            "libpath": ["lib"],
             "libname": ["-lSDL3"],
-            "dll": ["SDL3-3.2.16/x86_64-w64-mingw32/bin/SDL3.dll"]
+            "dll": ["bin/SDL3.dll"],
+            "hook": _sdl3_hook,
+            "name": 'SDL3'
+        },
+        "gcc": { 
+            "url": "https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.2.16.zip",
+            "include": ["include"],
+            "libpath": ["lib"],
+            "libname": ["-lSDL3"],
+            "dll": ["lib/libSDL3.so.0"],
+            "hook": _sdl3_hook,
+            "name": 'SDL3'
         },
         "emcc": {
             "url": "https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.2.16.zip",
@@ -1283,24 +1452,37 @@ KNOWN_PACKAGES = {
             "libpath": ["lib"],
             "libname": ["-lSDL3"],
             "dll": [],
-            "hook": _sdl3_emsdk_hook,
+            "hook": _sdl3_hook,
             "name": 'SDL3'
         }
     },
     "SDL3_image": {
         "msvc": {
-            "url": "https://github.com/libsdl-org/SDL_image/releases/download/release-3.2.4/SDL3_image-devel-3.2.4-VC.zip",
-            "include": ["SDL3_image-3.2.4/include"],
-            "libpath": ["SDL3_image-3.2.4/lib/x64"],
+            "url": "https://github.com/libsdl-org/SDL_image/archive/refs/tags/release-3.2.4.zip",
+            "include": ["include"],
+            "libpath": ["lib"],
             "libname": ["SDL3_image.lib"],
-            "dll": ["SDL3_image-3.2.4/lib/x64/SDL3_image.dll"]
+            "dll": ["bin/SDL3_image.dll"],
+            "hook": _sdl3_hook,
+            "name": 'SDL3_image'
         },
         "mingw": { 
-            "url": "https://github.com/libsdl-org/SDL_image/releases/download/release-3.2.4/SDL3_image-devel-3.2.4-mingw.zip",
-            "include": ["SDL3_image-3.2.4/x86_64-w64-mingw32/include"],
-            "libpath": ["SDL3_image-3.2.4/x86_64-w64-mingw32/lib"],
+            "url": "https://github.com/libsdl-org/SDL_image/archive/refs/tags/release-3.2.4.zip",
+            "include": ["include"],
+            "libpath": ["lib"],
             "libname": ["-lSDL3_image"],
-            "dll": ["SDL3_image-3.2.4/x86_64-w64-mingw32/bin/SDL3_image.dll"]
+            "dll": ["bin/SDL3_image.dll"],
+            "hook": _sdl3_hook,
+            "name": 'SDL3_image'
+        },
+        "gcc": { 
+            "url": "https://github.com/libsdl-org/SDL_image/archive/refs/tags/release-3.2.4.zip",
+            "include": ["include"],
+            "libpath": ["lib"],
+            "libname": ["-lSDL3_image"],
+            "dll": ["lib/libSDL3_image.so.0"],
+            "hook": _sdl3_hook,
+            "name": 'SDL3_image'
         },
         "emcc": {
             "url": "https://github.com/libsdl-org/SDL_image/archive/refs/tags/release-3.2.4.zip",
@@ -1308,7 +1490,7 @@ KNOWN_PACKAGES = {
             'libpath': ['lib'],
             'libname': ['-lSDL3_image'],
             'dll': [],
-            "hook": _sdl3_emsdk_hook,
+            "hook": _sdl3_hook,
             "name": 'SDL3_image'
         }
     },
@@ -1327,6 +1509,15 @@ KNOWN_PACKAGES = {
             "libpath": ["SDL3_ttf-3.2.2/x86_64-w64-mingw32/lib"],
             "libname": ["-lSDL3_ttf"],
             "dll": ["SDL3_ttf-3.2.2/x86_64-w64-mingw32/bin/SDL3_ttf.dll"]
+        },
+        "emcc": {
+            "url": "https://github.com/libsdl-org/SDL_ttf/archive/refs/tags/release-3.2.2.zip",
+            "include": ['include'],
+            'libpath': ['lib'],
+            'libname': ['-lSDL3_ttf'],
+            'dll': [],
+            "hook": _sdl3_hook,
+            "name": 'SDL3_ttf'
         }
     },
     "Photon": {

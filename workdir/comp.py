@@ -19,9 +19,6 @@ LINKFLAGS_DBG = "-g -Og -O0 -march=native"
 BUILD_DIR_DBG = "build-gcc"
 BIN_DIR_DBG = "bin-gcc"
 
-BUILD_DIR_ZIG = "build-zig"
-BIN_DIR_ZIG = "bin-zig"
-
 
 WORKDIR = pathlib.Path(__file__).parent.resolve()
 
@@ -38,7 +35,6 @@ def translate(*src: str) -> List[Cmd]:
 
 add_backend("Msvc", "Msvc", BUILD_DIR, BIN_DIR, WORKDIR, CLFLAGS, LINKFLAGS)
 add_backend("Mingw", "Mingw", BUILD_DIR_DBG, BIN_DIR_DBG, WORKDIR, CLFLAGS_DBG, LINKFLAGS_DBG)
-add_backend("Zigcc", "Zigcc", BUILD_DIR_ZIG, BIN_DIR_ZIG, WORKDIR, CLFLAGS_DBG, LINKFLAGS_DBG)
 
 get_parser().add_argument("--scrape", "-s", action="store_true")
 
