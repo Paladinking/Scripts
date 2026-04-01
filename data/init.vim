@@ -116,14 +116,27 @@ vnoremap p "0p
 let mapleader = ","
 
 nnoremap ff <cmd>Telescope find_files<cr>
-nnoremap <leader>fr <cmd>Telescope resume<cr><Esc>
-nnoremap <leader>fg <cmd>Telescope live_grep<cr>
+nnoremap fr <cmd>Telescope resume<cr><Esc>
+nnoremap fg <cmd>Telescope live_grep<cr>
 nnoremap <leader>fb <cmd>Telescope buffers<cr>
 nnoremap <leader>fh <cmd>Telescope help_tags<cr>
 nnoremap <leader>fs <cmd>Telescope grep_string<cr>
 
 lua <<EOF
 
+vim.keymap.set("v", "ff", function()
+    vim.cmd('normal! "vy')
+    local text = vim.fn.getreg('v')
+    require('telescope.builtin').find_files({search = text, default_text = text})
+end)
+vim.keymap.set("v", "fr", function()
+    require('telescope.builtin').resume({})
+end)
+vim.keymap.set("v", "fg", function()
+    vim.cmd('normal! "vy')
+    local text = vim.fn.getreg('v')
+    require('telescope.builtin').live_grep({search = text, default_text = text})
+end)
 
 vim.g.loaded_netrw = 1
 vim.g.loaded_netrwPlugin = 1
@@ -143,14 +156,11 @@ require("nvim-tree").setup({
     }
 })
 
-require("nvim-treesitter.configs").setup({
-    highlight = {
-        enable = true,
-        additional_vim_regex_highlighting = { "python" }
-    },
-    indent = {
-        enable = false
-    }
+require("nvim-treesitter").install {"python", "c", "cpp", "javascript", "typescript", "json", "tsx"}
+
+vim.api.nvim_create_autocmd('FileType', {
+  pattern = { "python", "c", "cpp", "javascript", "typescript", "json", "tsx", "typescriptreact" },
+  callback = function() vim.treesitter.start() end,
 })
 
 local nvim_tree_events = require('nvim-tree.api').events
@@ -158,31 +168,32 @@ local nvim_tree_events = require('nvim-tree.api').events
 local cmp = require'cmp'
 
 cmp.setup({
-snippet = {
-    -- REQUIRED - you must specify a snippet engine
-    expand = function(args)
-    vim.fn["vsnip#anonymous"](args.body) -- For `vsnip` users.
-    end,
-},
-window = {
-    -- completion = cmp.config.window.bordered(),
-    documentation = cmp.config.window.bordered(),
-},
-mapping = cmp.mapping.preset.insert({
-    ['<C-b>'] = cmp.mapping.scroll_docs(-4),
-    ['<C-f>'] = cmp.mapping.scroll_docs(4),
-    ['<C-Space>'] = cmp.mapping.complete(),
-    ['<C-e>'] = cmp.mapping.abort(),
-    ['<Tab>'] = cmp.mapping.select_next_item(),
-    ['<S-Tab>'] = cmp.mapping.select_prev_item(),
-    ['<CR>'] = cmp.mapping.confirm({ select = false }), -- Accept currently selected item. Set `select` to `false` to only confirm explicitly selected items.
-}),
-sources = cmp.config.sources({
-    { name = 'nvim_lsp' },
-    { name = 'vsnip' }, -- For vsnip users.
-    }, {
-        { name = 'buffer' },
-    })
+    snippet = {
+        -- REQUIRED - you must specify a snippet engine
+        expand = function(args)
+        vim.fn["vsnip#anonymous"](args.body) -- For `vsnip` users.
+        end,
+    },
+    window = {
+        -- completion = cmp.config.window.bordered(),
+        documentation = cmp.config.window.bordered(),
+    },
+
+    mapping = cmp.mapping.preset.insert({
+        ['<C-b>'] = cmp.mapping.scroll_docs(-4),
+        ['<C-f>'] = cmp.mapping.scroll_docs(4),
+        ['<C-Space>'] = cmp.mapping.complete(),
+        ['<C-e>'] = cmp.mapping.abort(),
+        ['<Tab>'] = cmp.mapping.select_next_item(),
+        ['<S-Tab>'] = cmp.mapping.select_prev_item(),
+        ['<CR>'] = cmp.mapping.confirm({ select = false }), -- Accept currently selected item. Set `select` to `false` to only confirm explicitly selected items.
+    }),
+    sources = cmp.config.sources({
+        { name = 'nvim_lsp' },
+        { name = 'vsnip' }, -- For vsnip users.
+        }, {
+            { name = 'buffer' },
+        })
 })
 
 -- Set configuration for specific filetype.
@@ -212,57 +223,10 @@ cmp.setup.cmdline(':', {
     })
     })
 
--- Set up lspconfig.
-local capabilities = require('cmp_nvim_lsp').default_capabilities()
-
---require('lspconfig')['jedi_language_server'].setup {
---    capabilities = capabilities
---}
-
---require('lspconfig')['sumneko_lua'].setup {
---    capabilities = capabilities
---}
-local nvim_lsp = require'lspconfig'
-
-nvim_lsp.rust_analyzer.setup({
-    capabilities=capabilities,
-    settings = {
-        ["rust-analyzer"] = {
-            imports = {
-                granularity = {
-                    group = "module",
-                },
-                prefix = "self",
-            },
-            cargo = {
-                buildScripts = {
-                    enable = true,
-                },
-            },
-            procMacro = {
-                enable = true
-            },
-        }
-    }
+vim.lsp.config('clangd', {
+    cmd = {'clangd', '-header-insertion=never'}
 })
-
-nvim_lsp.pyright.setup({
-    capabilities=capabilities
-})
-
-nvim_lsp.clangd.setup({
-    cmd = {'clangd', '-header-insertion=never'},
-    capabilities=capabilities
-})
-
-nvim_lsp.zls.setup({
-    capabilities=capabilities
-})
-
-nvim_lsp.ts_ls.setup({
-    capabilities=capabilities
-})
-
+vim.lsp.enable({'rust_analyzer', 'clangd', 'pyright', 'zls', 'ts_ls'})
 
 vim.api.nvim_create_autocmd('LspAttach', {
     group = vim.api.nvim_create_augroup('UserLspConfig', {}),
@@ -282,7 +246,8 @@ vim.api.nvim_create_autocmd('LspAttach', {
 
 vim.o.keywordprg = ':help'
 
-vim.highlight.priorities.semantic_tokens = 95
+vim.hl.priorities.semantic_tokens = 95
 
 EOF
+
 
