@@ -1739,8 +1739,22 @@ int main() {
         ExitProcess(0);
     }
 
+    HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+    DWORD old_mode;
+    bool restore_mode = false;
+    if ((opts & OPTION_COLOR) && GetFileType(out) == FILE_TYPE_CHAR) {
+        if (GetConsoleMode(out, &old_mode)) {
+            restore_mode = true;
+            SetConsoleMode(out, old_mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+        }
+    }
+
     MatchResult res = pattern_match(argc, argv, opts, before, after, max_count, &filter);
     Mem_free(argv);
+    if (restore_mode) {
+        SetConsoleMode(out, old_mode);
+    }
+
     int status;
     if (res == MATCH_OK) {
         status = 0;
