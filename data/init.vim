@@ -233,6 +233,9 @@ vim.api.nvim_create_autocmd('LspAttach', {
     callback = function(ev)
         local opts = { buffer = ev.buf}
         vim.keymap.set('n', '<C-a>', vim.lsp.buf.code_action, opts)
+        vim.keymap.set('n', '<C-e>', function() vim.diagnostic.jump({count = 1, severity = vim.diagnostic.severity.ERROR}) end, opts)
+        vim.keymap.set('n', '<M-e>', function() vim.diagnostic.jump({count = 1}) end, opts)
+        vim.keymap.set('n', '<M-E>', function() vim.diagnostic.jump({count = -1}) end, opts)
         vim.keymap.set('n', 'gD', vim.lsp.buf.declaration, opts)
         vim.keymap.set('n', 'K', function() vim.lsp.buf.hover({border = 'single'}) end, opts)
         vim.keymap.set('n', 'gd', vim.lsp.buf.definition, opts)
