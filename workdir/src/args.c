@@ -716,7 +716,6 @@ bool get_arg_len(const ochar_t* cmd, size_t* ix, size_t* len, bool* quoted, unsi
             if (in_quotes && cmd[*ix + 1] == oL('"')) {
                 ++(*len);
                 ++(*ix);
-                in_quotes = !in_quotes;
             } else {
                 in_quotes = !in_quotes;
             }
@@ -799,7 +798,6 @@ ochar_t* get_arg(const ochar_t* cmd, size_t *ix, ochar_t* dest, unsigned flags) 
                 dest[0] = oL('"');
                 ++dest;
                 ++(*ix);
-                in_quotes = !in_quotes;
             } else {
                 in_quotes = !in_quotes;
             }
