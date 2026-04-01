@@ -487,7 +487,7 @@ def Executable(name: str, *sources: Union[str, Obj, Cmd],
                group: Optional[str]=None,
                packages: List[Package]=[],
                context: Optional[Context]=None) -> Exe:
-    if sys.platform == "win32":
+    if sys.platform == "win32" and not name.endswith('.exe'):
         name += ".exe"
     if context is None:
         context = g_context

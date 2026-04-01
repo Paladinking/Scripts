@@ -19,7 +19,6 @@ LINKFLAGS_DBG = "-g -Og -O0 -march=native"
 BUILD_DIR_DBG = "build-gcc"
 BIN_DIR_DBG = "bin-gcc"
 
-
 WORKDIR = pathlib.Path(__file__).parent.resolve()
 
 def translate(*src: str) -> List[Cmd]:
@@ -106,6 +105,8 @@ def main():
                *arg_src, ntdll)
 
     Executable("casefold.exe", "src/casefold.c", *unicode, *arg_src, ntdll)
+    Executable("launch.exe", "src/launch.c", *arg_src, ntdll, "src/subprocess.c", "src/glob.c",
+               "src/path_utils.c")
 
     scrape = Executable("symbol-scrape.exe", "src/symbol-scrape.c", "src/path_utils.c",
                "src/glob.c", "src/coff.c", whashmap, hashmap, *arg_src, ntdll)
@@ -143,6 +144,11 @@ def main():
     Executable("reset.exe", "src/reset.c")
 
     Executable("tap-file.exe", "src/tap-file.c", "src/glob.c", *arg_src, ntdll)
+
+    Executable("pmonitor.exe", "src/pmonitor.c", "src/printf.c", ntdll)
+
+    Executable("cal.exe", "src/cal.c", "src/subprocess.c", "src/glob.c",
+               *arg_src, ntdll)
 
     CopyToBin("autocmp.json", "script/err.exe", "script/2to3.bat",
               "script/cal.bat", "script/ports.bat", "script/short.bat",
