@@ -250,5 +250,3 @@ vim.hl.priorities.semantic_tokens = 95
 
 EOF
 
-
->>>>>>> temp
