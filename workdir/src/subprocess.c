@@ -25,8 +25,10 @@ bool subprocess_run_program(const wchar_t *prog, const wchar_t *cmd,
         }
         if (!SetHandleInformation(hWrite, HANDLE_FLAG_INHERIT,
                     HANDLE_FLAG_INHERIT)) {
+            DWORD err = GetLastError();
             CloseHandle(hRead);
             CloseHandle(hWrite);
+            SetLastError(err);
             return false;
         }
     } else {
@@ -44,6 +46,8 @@ bool subprocess_run_program(const wchar_t *prog, const wchar_t *cmd,
         in = CreateFileW(L"NUL", GENERIC_READ,
                          FILE_SHARE_READ | FILE_SHARE_WRITE, &attr,
                          OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    } else if (opts & SUBPROCESS_STDIN_INHERIT) {
+        in = GetStdHandle(STD_INPUT_HANDLE);
     }
 
     si.dwFlags = STARTF_USESTDHANDLES;
@@ -63,24 +67,27 @@ bool subprocess_run_program(const wchar_t *prog, const wchar_t *cmd,
             CloseHandle(hRead);
             CloseHandle(hWrite);
         }
+        SetLastError(ERROR_OUTOFMEMORY);
         return false;
     }
     memcpy(cmd_buf, cmd, (cmd_len + 1) * sizeof(wchar_t));
 
     if (!CreateProcessW(prog, cmd_buf, NULL, NULL, TRUE, flags, NULL, NULL, &si,
                         &pi)) {
+        DWORD err = GetLastError();
         if (!(opts & SUBPROCESS_STDOUT_INHERIT)) {
             CloseHandle(hRead);
             CloseHandle(hWrite);
         }
         Mem_free(cmd_buf);
+        SetLastError(err);
         return false;
     }
     if (!(opts & SUBPROCESS_STDOUT_INHERIT)) {
         CloseHandle(hWrite);
     }
     CloseHandle(pi.hThread);
-    if (in != INVALID_HANDLE_VALUE) {
+    if (in != INVALID_HANDLE_VALUE && !(opts & SUBPROCESS_STDIN_INHERIT)) {
         CloseHandle(in);
     }
 
@@ -110,6 +117,7 @@ bool subprocess_run_program(const wchar_t *prog, const wchar_t *cmd,
 
     while (1) {
         if (!String_reserve(out, out->length + 1025)) {
+            SetLastError(ERROR_OUTOFMEMORY);
             goto cleanup;
         }
         if (!ReadFile(hRead, out->buffer + out->length, 1024, &count, &o)) {
@@ -123,6 +131,8 @@ bool subprocess_run_program(const wchar_t *prog, const wchar_t *cmd,
         uint64_t now = (stamp.QuadPart * 1000) / freq.QuadPart;
         uint64_t delta = now - stamp_millies;
         if (delta > timeout_millies) {
+            // timeout is not failure
+            status = true;
             goto cleanup;
         }
         if (!GetOverlappedResultEx(hRead, &o, &count, timeout_millies - delta,
@@ -146,6 +156,7 @@ wait_for_exit:
     }
     status = true;
 cleanup:
+    DWORD err = GetLastError();
     if (pi.hProcess) {
         *exit_code = STATUS_TIMEOUT;
         TerminateProcess(pi.hProcess, STATUS_TIMEOUT);
@@ -158,5 +169,6 @@ cleanup:
         CloseHandle(o.hEvent);
     }
     Mem_free(cmd_buf);
+    SetLastError(err);
     return status;
 }

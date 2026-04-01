@@ -5,6 +5,7 @@
 #define SUBPROCESS_STDERR_NONE 1
 #define SUBPROCESS_STDIN_DEVNULL 2
 #define SUBPROCESS_STDOUT_INHERIT 4
+#define SUBPROCESS_STDIN_INHERIT 8
 
 // Run cmd as a subprocess, wait for it to complete, and save stdout to out
 // buffer.
