@@ -106,10 +106,14 @@ def main():
     Executable("test2.exe", *arg_src, "src/test2.c", "src/glob.c", "src/dynamic_string.c", u64hashmap,  ntdll,
                defines=["NEXTLINE_FAST"], namespace="test2")
 
+    Executable("test.exe", *arg_src, "src/test.c", ntdll)
+
     Executable("symbol-dump.exe", "src/symbol-dump.c", "src/coff.c", "src/glob.c",
                *arg_src, ntdll)
 
     Executable("casefold.exe", "src/casefold.c", *unicode, *arg_src, ntdll)
+    Executable("launch.exe", "src/launch.c", *arg_src, ntdll, "src/subprocess.c", "src/glob.c",
+               "src/path_utils.c")
 
     scrape = Executable("symbol-scrape.exe", "src/symbol-scrape.c", "src/path_utils.c",
                "src/glob.c", "src/coff.c", whashmap, hashmap, *arg_src, ntdll)
@@ -147,6 +151,11 @@ def main():
     Executable("reset.exe", "src/reset.c")
 
     Executable("tap-file.exe", "src/tap-file.c", "src/glob.c", *arg_src, ntdll)
+
+    Executable("pmonitor.exe", "src/pmonitor.c", "src/printf.c", ntdll)
+
+    Executable("cal.exe", "src/cal.c", "src/subprocess.c", "src/glob.c",
+               *arg_src, ntdll)
 
     CopyToBin("autocmp.json", "script/err.exe", "script/2to3.bat",
               "script/cal.bat", "script/ports.bat", "script/short.bat",
