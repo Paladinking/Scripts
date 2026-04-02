@@ -13,26 +13,19 @@ call plug#begin()
 Plug 'neovim/nvim-lspconfig'
 
 Plug 'nvim-lua/plenary.nvim'
-Plug 'nvim-telescope/telescope.nvim', { 'branch': '0.1.x' }
+Plug 'nvim-telescope/telescope.nvim', { 'tag': 'v0.2.1' }
 
 Plug 'hrsh7th/cmp-nvim-lsp'
 Plug 'hrsh7th/cmp-buffer'
 Plug 'hrsh7th/cmp-path'
 Plug 'hrsh7th/cmp-cmdline'
 Plug 'hrsh7th/nvim-cmp'
-"Plug 'sakhnik/nvim-gdb'
-
-Plug 'hrsh7th/cmp-vsnip'
-Plug 'hrsh7th/vim-vsnip'
 
 Plug 'nvim-tree/nvim-web-devicons' " optional, for file icons
 Plug 'nvim-tree/nvim-tree.lua'
 
-"Plug 'mhinz/vim-signify'
-
 Plug 'morhetz/gruvbox'
 Plug 'jeetsukumaran/vim-indentwise'
-"Plug 'romgrk/barbar.nvim'
 
 Plug 'tpope/vim-fugitive'
 
