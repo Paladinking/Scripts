@@ -85,6 +85,38 @@ int instruction_length(unsigned char* data, unsigned len) {
         return -1;
     }
     unsigned char modrm = data[ix];
+    unsigned sib = 0;
+    if ((modrm & 0b11000000) != 0b11000000 && (modrm & 0b00000111) == 0b00000100) {
+        // SIB byte is present (0b11xxxxxx means reg-reg, otherwise 0bxxxxx100 means SIB)
+        sib = 1;
+        ++ix;
+        if (ix == len) {
+            return -1;
+        }
+        if ((data[ix] & 0b00000111) == 0b00000101) {
+            if ((modrm & 0b11000000) == 0b01000000) {
+                sib += 1;
+            } else {
+                sib += 4;
+            }
+        }
+    }
+
+    // mov
+    if (opcode == 0x89) {
+        if ((modrm & 0b11000000) == 0b01000000) {
+            return rex + lp_count + sib + 3;
+        } else if ((modrm & 0b11000000) == 0b10000000) {
+            return rex + lp_count + sib + 6;
+        } else if ((modrm & 0b11000000) == 0b00000000) {
+            if ((modrm & 0b00000111) == 0b00000101) {
+                return rex + lp_count + sib + 6;
+            }
+            return rex + lp_count + sib + 2;
+        } else {
+            return rex + lp_count + sib + 2;
+        }
+    }
 
     // sub 64-bit register
     if (opcode == 0x81 || opcode == 0x83) {
