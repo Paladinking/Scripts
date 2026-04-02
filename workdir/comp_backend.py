@@ -487,8 +487,8 @@ def Executable(name: str, *sources: Union[str, Obj, Cmd],
                group: Optional[str]=None,
                packages: List[Package]=[],
                context: Optional[Context]=None) -> Exe:
-    if sys.platform == "win32" and not name.endswith('.exe'):
-        name += ".exe"
+    if sys.platform == "win32" and not name.endswith('.exe') and not name.endswith('.dll'):
+        name += ".exe" if not dll else ".dll"
     if context is None:
         context = g_context
     if cmp_flags is None:
