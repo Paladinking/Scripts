@@ -27,6 +27,9 @@ Plug 'nvim-tree/nvim-tree.lua'
 Plug 'morhetz/gruvbox'
 Plug 'jeetsukumaran/vim-indentwise'
 
+Plug 'hrsh7th/cmp-vsnip'
+Plug 'hrsh7th/vim-vsnip'
+
 Plug 'tpope/vim-fugitive'
 
 Plug 'nvim-treesitter/nvim-treesitter', { 'branch': 'main'}
