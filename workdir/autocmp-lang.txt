@@ -1,0 +1,31 @@
+include: "autocmp.h";
+
+atoms: string, newline;
+
+type: PREFIX = int32_t;
+type: string = char*;
+type: PAREN_LIST = ParenList*;
+type: COMMAND = Command*;
+type: LINE = Line;
+type: DYNAMIC = DynamicMatch*;
+
+COMMAND = string : OnCommand | '(' + PAREN_LIST + ')' : OnListCommand;
+
+PAREN_LIST = string  : OnParenList | 
+             PAREN_LIST + '|' + string : OnAddParenList;
+
+
+
+PREFIX = '|' :$ 1 | PREFIX + '|' :$ $0 + 1;
+
+LINE = newline :$ (Line){.command = NULL, .loop = NULL} |
+       COMMAND + newline : OnLine |
+       COMMAND + '>' + COMMAND + newline : OnLineWithLoop;
+    
+
+DYNAMIC = string + '<' + string + '<' + string + '|' + string + newline : OnDynamic;
+
+PROGRAM = '' | 
+          PROGRAM + LINE : OnProgramLine | 
+          PROGRAM + PREFIX + LINE : OnProgramLineWithPrefix |
+          PROGRAM + DYNAMIC : OnProgramDynamic;
