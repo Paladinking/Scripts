@@ -165,6 +165,17 @@ def main():
                         "expr.txt", desc,
                         directory="src")
 
+    cmd_c, cmd_h = Command(["autocmp-lang.c", "autocmp-lang.h"], 
+                             f"{desc.product} autocmp-lang.txt -s PROGRAM -o src/autocmp-lang.c -H src/autocmp-lang.h",
+                             "autocmp-lang.txt", desc,
+                             directory="src")
+
+    cmd_o = Object("autocmp-lang.obj", cmd_c.product, depends=[cmd_h.product])
+
+    Executable("autocmp-test", "src/autocmp-parser.c", *arg_src, lhashmap, whashmap,
+               cmd_o, "src/subprocess.c",
+               "src/glob.c", "src/match_node.c", ntdll)
+
     with Context(group="tests", directory=f"{bin_dir()}/tests",
                  includes=["src"], namespace="tests"):
         Executable("test_regex.exe", "src/tests/test_regex.c", "src/regex.c", *unicode,
