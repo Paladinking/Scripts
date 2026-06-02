@@ -78,11 +78,11 @@ def main():
                "src/unicode/unicode_width.c", ntdll, 
                extra_link_flags="Advapi32.lib" if backend().msvc else "-ladvapi32")
     
-    whashmap = Object("whashmap.obj", "src/hashmap.c", 
+    whashmap = Object("whashmap", "src/hashmap.c", 
                       defines=['HASHMAP_WIDE', 'HASHMAP_CASE_INSENSITIVE'])
-    lhashmap = Object("lhashmap.obj", "src/hashmap.c", defines=['HASHMAP_LINKED'])
-    hashmap = Object("hashmap.obj", "src/hashmap.c")
-    u64hashmap = Object("u64hashmap.obj", "src/hashmap.c", defines=['HASHMAP_U64'])
+    lhashmap = Object("lhashmap", "src/hashmap.c", defines=['HASHMAP_LINKED'])
+    hashmap = Object("hashmap", "src/hashmap.c")
+    u64hashmap = Object("u64hashmap", "src/hashmap.c", defines=['HASHMAP_U64'])
 
     Executable("autocmp.dll", "src/autocmp.c", *arg_src, "src/match_node.c",
                "src/subprocess.c", whashmap, lhashmap, "src/json.c", 
@@ -94,7 +94,7 @@ def main():
                "src/unicode/tables.c", "src/printf.c", ntdll, defines=['JSON_RPC_TESTS'],
                namespace="json_rpc")
 
-    glob_fast = Object("glob_xmm.obj", "src/glob.c", defines=["NEXTLINE_FAST"])
+    glob_fast = Object("glob_xmm", "src/glob.c", defines=["NEXTLINE_FAST"])
     Executable("file-match.exe", "src/file-match.c", glob_fast, "src/regex.c",
                *unicode, *arg_src, ntdll, "src/mutex.c")
 
@@ -129,7 +129,7 @@ def main():
                               f"tools\\index.h -w {index_files}",
                               embed, *index, directory="tools")
 
-        symbols = Object("symbols.obj", "src/symbol-scrape.c", 
+        symbols = Object("symbols", "src/symbol-scrape.c", 
                          defines=["EMBEDDED_SYMBOLS"], depends=[embed_index])
         Executable("symbols.exe", symbols, hashmap, *arg_src, ntdll, 
                    extra_link_flags="tools\\index.obj")
@@ -170,7 +170,7 @@ def main():
                              "autocmp-lang.txt", desc,
                              directory="src")
 
-    cmd_o = Object("autocmp-lang.obj", cmd_c.product, depends=[cmd_h.product])
+    cmd_o = Object("autocmp-lang", cmd_c.product, depends=[cmd_h.product])
 
     Executable("autocmp-test", "src/autocmp-parser.c", *arg_src, lhashmap, whashmap,
                cmd_o, "src/subprocess.c",
@@ -203,14 +203,14 @@ def main():
                                  ("peek_token", "scanner_peek_token"),
                                  ("consume_token", "scanner_consume_token"),
                                  ("literal_token", "scanner_literal_token")]
-        scan_o = Object("scan.obj", scan_c.product, depends=[scan_h.product],
+        scan_o = Object("scan", scan_c.product, depends=[scan_h.product],
                         defines=scan_defs, includes=["src/compiler"])
-        parse_o = Object("parse.obj", parse_c.product, depends=[parse_h.product],
+        parse_o = Object("parse", parse_c.product, depends=[parse_h.product],
                          includes=["src/compiler"])
 
-        scanner_o = Object("scanner.obj", "src/compiler/scanner.c", includes=["src/compiler"],
+        scanner_o = Object("scanner", "src/compiler/scanner.c", includes=["src/compiler"],
                              depends=[scan_h.product], defines=scan_defs)
-        parser_o = Object("parser.obj", "src/compiler/parser.c", includes=["src/compiler"],
+        parser_o = Object("parser", "src/compiler/parser.c", includes=["src/compiler"],
                               depends=[parse_h.product])
 
         encodings_c = Command("encodings.c", 
@@ -234,9 +234,6 @@ def main():
         Executable("lsp.exe", "src/compiler/lsp.c", "src/dynamic_string.c", "src/compiler/log.c",
                    "src/args.c", "src/printf.c",
                    ntdll, extra_link_flags=link)
-    
-    build(__file__)
-
 
 if __name__ == "__main__":
-    main()
+    build(main)

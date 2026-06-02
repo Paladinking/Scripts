@@ -6,7 +6,7 @@ import sys
 import shutil
 import argparse
 
-from typing import Any, Iterator, List, Literal, Optional, TextIO, Type, Union, Tuple, Dict, overload
+from typing import Any, Callable, Iterator, List, Literal, Optional, TextIO, Type, Union, Tuple, Dict, overload
 
 BUILD_DIR: pathlib.Path
 BIN_DIR: pathlib.Path
@@ -167,6 +167,17 @@ class BackendBase:
     clflags: str
     linkflags: str
 
+    def compile_c_obj(self, obj: Obj) -> str:
+        raise NotImplementedError("Not implemented")
+    def compile_cxx_obj(self, obj: Obj) -> str:
+        raise NotImplementedError("Not implemented")
+
+    def compile_obj(self, obj: Obj) -> str:
+        if 'CXX' in obj.language():
+            return self.compile_cxx_obj(obj)
+        else:
+            return self.compile_c_obj(obj)
+
     @property
     def msvc(self) -> bool:
         return False
@@ -184,72 +195,18 @@ class BackendBase:
         return False
     def embed_files(self, files: List[str]) -> Optional[str]:
         return None
-
-
-class EmCC(BackendBase):
-    name = "emcc"
     @property
-    def ecmascript(self) -> bool:
-        return True
-    def handle_obj_line(self, obj: Obj, line: str) -> bool:
-        return False
+    def obj_suffix(self) -> str:
+        return 'o'
 
-    def compile_obj(self, obj: Obj) -> str:
-        return f"emcc -c -o {obj.product} {obj.cmp_flags} {obj.source}"
-
-    def compile_c_obj_ninja(self) -> str:
-        return "    deps = gcc\n    depfile = $out.d\n" + \
-               "    command = emcc.bat -MMD -MF $out.d -c $in -o $out $cl_flags"
-
-    def compile_cxx_obj_ninja(self) -> str:
-        return "    deps = gcc\n    depfile = $out.d\n" + \
-               "    command = em++.bat -MMD -MF $out.d -c $in -o $out $cl_flags"
-
-    def link_c_exe_ninja(self) -> str:
-        return "    command = emcc.bat -o $out $in $link_flags"
-
-    def link_cxx_exe_ninja(self) -> str:
-        return "    command = em++.bat -o $out $in $link_flags"
-
-    def link_c_dll_ninja(self) -> str:
-        raise RuntimeError("Link dll not supported for emcc")
-
-    def link_cxx_dll_ninja(self) -> str:
-        raise RuntimeError("Link dll not supported for emcc")
-
-    def find_headers(self, obj: Obj) -> List[str]:
-        raise RuntimeError("find_headers not supported for emcc")
-
-    def link_exe(self, exe: Exe) -> str:
-        row = " ".join([f"{obj.product}" for obj in exe.objs] + [f"{cmd.product}" for cmd in exe.cmds])
-        return f"emcc.bat -o {exe.product} {exe.link_flags} {row}"
-
-    def link_dll(self, exe: Exe) -> str:
-        raise RuntimeError("Not supported for emcc")
-
-    def include(self, directory: str) -> str:
-        return f"-I{directory}"
-
-    def libpath(self, directory: str) -> str:
-        return f"-L{directory}"
-
-    def define(self, key: str, val: Optional[str]) -> str:
-        if val:
-            return f"-D{key}={val}"
-        return f"-D{key}"
-
-    def import_lib_cmd(self, out: str, dll: str, symbols: List[str]) -> Cmd:
-        raise RuntimeError("Not supported for emcc")
-
-    def embed_files(self, files: List[str]) -> Optional[str]:
-        paths = [pathlib.Path(s).absolute().relative_to(WORKDIR) for s in files]
-        return ' '.join([f'--embed-file="{p}"@"/{pathlib.PurePosixPath(p)}"' for p in paths])
-
-class Gcc(BackendBase):
-    def __init__(self, mingw: bool=False) -> None:
-        self._pending_line = False
+class GccBase(BackendBase):
+    def __init__(self, gcc_exe: str, gpp_exe: str, dlltool_exe: str, 
+                 name: str, mingw: bool=False) -> None:
+        self._gcc_exe = gcc_exe
+        self._gpp_exe = gpp_exe
+        self._dlltool_exe = dlltool_exe
         self._mingw = mingw
-        self.name = "mingw" if mingw else "gcc" 
+        self.name = name
 
     @property
     def mingw(self) -> bool:
@@ -257,71 +214,41 @@ class Gcc(BackendBase):
     @property
     def gcc(self) -> bool:
         return True
-
-    def handle_obj_line(self, obj: Obj, line: str) -> bool:
-        if obj.headers is None:
-            obj.headers = dict()
-        pref = f"{obj.product}:"
-        offset = 0
-        if line.startswith(pref):
-            line = line[len(pref):]
-            offset = 1
-        elif not self._pending_line:
-            return False
-        self._pending_line = False
-
-        if line.endswith("\\"):
-            self._pending_line = True
-            line = line[:-2]
-
-        for h in line.split()[offset:]:
-            try:
-                header = str(pathlib.Path(h).resolve().relative_to(WORKDIR))
-                obj.headers[header] = None
-            except Exception:
-                pass
-
-        return True
     
-    def compile_obj(self, obj: Obj) -> str:
-        return f"{GCC} -MMD -MF - -c -o {obj.product} {obj.cmp_flags} {obj.source}"
+    def compile_c_obj(self, obj: Obj) -> str:
+        depfile = str(pathlib.PurePath(obj.product).with_suffix('.d'))
+        return f"{self._gcc_exe} -MMD -MF {depfile} -c {obj.source} -o {obj.product} {obj.cmp_flags}"
+    def compile_cxx_obj(self, obj: Obj) -> str:
+        depfile = str(pathlib.PurePath(obj.product).with_suffix('.d'))
+        return f"{self._gpp_exe} -MMD -MF {depfile} -c {obj.source} -o {obj.product} {obj.cmp_flags}"
     
     def compile_c_obj_ninja(self) -> str:
         return "    deps = gcc\n    depfile = $out.d\n" + \
-               f"    command = {GCC} -MMD -MF $out.d -c $in -o $out $cl_flags"
+               f"    command = {self._gcc_exe} -MMD -MF $out.d -c $in -o $out $cl_flags"
 
     def compile_cxx_obj_ninja(self) -> str:
         return "    deps = gcc\n    depfile = $out.d\n" + \
-               f"    command = {GPP} -MMD -MF $out.d -c $in -o $out $cl_flags"
+               f"    command = {self._gpp_exe} -MMD -MF $out.d -c $in -o $out $cl_flags"
 
     def link_c_exe_ninja(self) -> str:
-        return f"    command = {GCC} -o $out $in $link_flags"
+        return f"    command = {self._gcc_exe} -o $out $in $link_flags"
 
     def link_cxx_exe_ninja(self) -> str:
-        return f"    command = {GPP} -o $out $in $link_flags"
+        return f"    command = {self._gpp_exe} -o $out $in $link_flags"
 
     def link_c_dll_ninja(self) -> str:
-        return f"    command = {GCC} -shared -o $out $in $link_flags"
+        return f"    command = {self._gcc_exe} -shared -o $out $in $link_flags"
 
     def link_cxx_dll_ninja(self) -> str:
-        return f"    command = {GPP} -shared -o $out $in $link_flags"
-
-    def find_headers(self, obj: Obj) -> List[str]:
-        cmd = f"{GCC} -MM {obj.cmp_flags} {obj.source}"
-        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if res.returncode != 0:
-            print(res)
-            raise RuntimeError("Failed generating headers")
-        line = res.stdout.decode().replace("\\\r\n", "")
-        return line.split()[2:]
+        return f"    command = {self._gpp_exe} -shared -o $out $in $link_flags"
 
     def link_exe(self, exe: Exe) -> str:
         row = " ".join([f"{obj.product}" for obj in exe.objs] + [f"{cmd.product}" for cmd in exe.cmds])
-        return f"{GCC} -o {exe.product} {exe.link_flags} {row}"
+        return f"{self._gcc_exe} -o {exe.product} {exe.link_flags} {row}"
 
     def link_dll(self, exe: Exe) -> str:
         row = " ".join([f"{obj.product}" for obj in exe.objs] + [f"{cmd.product}" for cmd in exe.cmds])
-        return f"{GCC} -shared -o {exe.product} {exe.link_flags} {row}"
+        return f"{self._gpp_exe} -shared -o {exe.product} {exe.link_flags} {row}"
 
     def include(self, directory: str) -> str:
         return f"-I{directory}"
@@ -342,9 +269,50 @@ class Gcc(BackendBase):
         cmd = f"{DLLTOOL} -D {dll} -d {def_path} -l {out_path}"
         return Command(out, cmd, def_file)
 
-class Mingw(Gcc):
+class Mingw(GccBase):
     def __init__(self) -> None:
-        super().__init__(True)
+        super().__init__(GCC, GPP, DLLTOOL, "mingw", True)
+
+class Gcc(GccBase):
+    def __init__(self) -> None:
+        super().__init__(GCC, GPP, DLLTOOL, "gcc", False)
+
+class ArmNoneEabiGcc(GccBase):
+    def __init__(self) -> None:
+        if sys.platform == 'win32':
+            ext = '.exe'
+        else:
+            ext = ''
+        super().__init__("arm-none-eabi-gcc" + ext, "arm-none-eabi-g++" + ext,
+                         "arm-none-eabi-dlltool" + ext,
+                         "arm-none-eabi-gcc", False)
+
+class EmCC(GccBase):
+    def __init__(self) -> None:
+        if sys.platform == 'win32':
+            ext = '.bat'
+        else:
+            ext = ''
+        super().__init__("emcc" + ext, "em++" + ext, "dlltool", "emcc", False)
+    @property
+    def ecmascript(self) -> bool:
+        return True
+
+    def link_c_dll_ninja(self) -> str:
+        raise RuntimeError("Link dll not supported for emcc")
+
+    def link_cxx_dll_ninja(self) -> str:
+        raise RuntimeError("Link dll not supported for emcc")
+
+    def link_dll(self, exe: Exe) -> str:
+        raise RuntimeError("Not supported for emcc")
+
+    def import_lib_cmd(self, out: str, dll: str, symbols: List[str]) -> Cmd:
+        raise RuntimeError("Not supported for emcc")
+
+    def embed_files(self, files: List[str]) -> Optional[str]:
+        paths = [pathlib.Path(s).absolute().relative_to(WORKDIR) for s in files]
+        return ' '.join([f'--embed-file="{p}"@"/{pathlib.PurePosixPath(p)}"' for p in paths])
 
 class Msvc(BackendBase):
     name = "msvc"
@@ -352,29 +320,18 @@ class Msvc(BackendBase):
     @property
     def msvc(self) -> bool:
         return True
-
-    def handle_obj_line(self, obj: Obj, line: str) ->  bool:
-        if obj.headers is None:
-            obj.headers = dict()
-        if line.startswith("Note: including file"):
-            path = pathlib.Path(line[21:].strip()).resolve()
-            try:
-                path = path.relative_to(WORKDIR)
-                obj.headers[str(path)] = None
-            except ValueError:
-                pass
-            return True
-        return False
-
-    def compile_obj(self, obj: Obj) -> str:
-        return f"cl.exe /c /nologo /showIncludes /Fo:{obj.product} {obj.cmp_flags} {obj.source}"
+    def compile_c_obj(self, obj: Obj) -> str:
+        return f"cl.exe /nologo /showIncludes /TC /c {obj.source} /Fo:{obj.product} {obj.cmp_flags}"
+    def compile_cxx_obj(self, obj: Obj) -> str:
+        return f"cl.exe /nologo /showIncludes /TP /c {obj.source} /Fo:{obj.product} {obj.cmp_flags}"
 
     def compile_c_obj_ninja(self) -> str:
         return "    deps = msvc\n" + \
-        "    command = cl.exe /nologo /showIncludes /c $in /Fo:$out $cl_flags"
+        "    command = cl.exe /nologo /showIncludes /TC /c $in /Fo:$out $cl_flags"
 
     def compile_cxx_obj_ninja(self) -> str:
-        return self.compile_c_obj_ninja()
+        return "    deps = msvc\n" + \
+        "    command = cl.exe /nologo /showIncludes /TP /c $in /Fo:$out $cl_flags"
 
     def link_c_exe_ninja(self) -> str:
         return "    command = link.exe /nologo /OUT:$out $link_flags $in"
@@ -387,28 +344,6 @@ class Msvc(BackendBase):
 
     def link_cxx_dll_ninja(self) -> str:
         return self.link_cxx_dll_ninja()
-
-    def find_headers(self, obj: Obj) -> List[str]:
-        cl = shutil.which("cl.exe")
-        if cl is None:
-            raise RuntimeError("Failed to find cl.exe executable")
-        cmd = f"{cl} /P /showIncludes /FiNUL {obj.cmp_flags} {obj.source}"
-        print(cmd)
-        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if res.returncode != 0:
-            print(res, file=sys.stderr)
-            raise RuntimeError("Failed generating headers")
-        headers = dict()
-        for line in res.stderr.decode().replace("\r\n", "\n").split("\n"):
-            if not line.startswith("Note: including file:"):
-                continue
-            path = pathlib.Path(line[21:].strip()).resolve()
-            try:
-                path = path.relative_to(WORKDIR)
-                headers[str(path)] = None
-            except ValueError:
-                continue
-        return list(headers.keys())
     
     def link_exe(self, exe: Exe) -> str:
         row = " ".join([f"{obj.product}" for obj in exe.objs] + [f"{cmd.product}" for cmd in exe.cmds])
@@ -434,12 +369,18 @@ class Msvc(BackendBase):
         cmd = f"lib /NOLOGO /MACHINE:X64 /DEF /OUT:{BUILD_DIR / out} /NAME:{dll} {exports}"
         return Command(out, cmd)
 
+    @property
+    def obj_suffix(self) -> str:
+        return 'obj'
+
 
 def Object(name: str, source: str, cmp_flags: Optional[str]=None, namespace: str="",
            depends: List[Union[str, Product]]=[],
            defines: List[Union[str, Tuple[str, str]]]=[],
            includes: List[str]=[], extra_cmp_flags: Optional[str]=None,
            context: Optional[Context]=g_context) -> Obj:
+    if not name.endswith('.' + backend().obj_suffix) and not name.endswith('.o') and not name.endswith('.obj'):
+        name += f'.{backend().obj_suffix}'
     if context is None:
         context = g_context
     if cmp_flags is None:
@@ -488,7 +429,8 @@ def Executable(name: str, *sources: Union[str, Obj, Cmd],
                packages: List[Package]=[],
                context: Optional[Context]=None) -> Exe:
     if sys.platform == "win32" and not name.endswith('.exe') and not name.endswith('.dll'):
-        name += ".exe" if not dll else ".dll"
+        if backend().mingw or backend().msvc:
+            name += ".exe" if not dll else ".dll"
     if context is None:
         context = g_context
     if cmp_flags is None:
@@ -509,7 +451,7 @@ def Executable(name: str, *sources: Union[str, Obj, Cmd],
     cmds = []
     for src in sources:
         if isinstance(src, str):
-            obj_name = str(pathlib.PurePath(src).with_suffix('.obj').name)
+            obj_name = str(pathlib.PurePath(src).with_suffix(f'.{backend().obj_suffix}').name)
             obj = Object(obj_name, src, cmp_flags, namespace, defines=defines,
                          includes=includes, context=context)
         else:
@@ -603,130 +545,12 @@ def CopyToBin(*src: str) -> List[Cmd]:
 def ImportLib(lib: str, dll: str, symbols: List[str]) -> Cmd:
     return BACKEND.import_lib_cmd(lib, dll, symbols)
 
-Backend = Union[Msvc, Gcc, Mingw, EmCC]
+Backend = Union[Msvc, Gcc, Mingw, ArmNoneEabiGcc, EmCC]
 BACKEND: Backend
 ACTIVE_BACKEND: str
 
 def define(key: str, val: Optional[str]=None) -> str:
     return BACKEND.define(key, val)
-
-COMPCACHE: Optional[dict[str, Any]] = None
-
-def comp_cache() -> dict[str, Any]:
-    global COMPCACHE
-    if COMPCACHE is not None:
-        return COMPCACHE
-    import json
-    try:
-        with open(WORKDIR / 'comp_cache.json', 'r') as file:
-            COMPCACHE = json.load(file)
-    except Exception:
-        COMPCACHE = dict()
-    return COMPCACHE # type: ignore
-
-def write_comp_cache() -> None:
-    try:
-        import json
-        with open(WORKDIR / 'comp_cache.json', 'w') as file:
-            file.write(json.dumps(COMPCACHE, indent=4))
-    except Exception as e:
-        print(f"Failed writing cache: {e}", file=sys.stderr)
-
-def set_headers_and_last_cmd(obj: Obj) -> None:
-    try:
-        data = comp_cache()
-        if BACKEND.name not in data:
-            data[BACKEND.name] = dict()
-        if obj.name not in data[BACKEND.name]:
-            data[BACKEND.name][obj.name] = {"cmd": obj.cmd, "headers": obj.headers}
-        else:
-            data[BACKEND.name][obj.name]['cmd'] = obj.cmd
-            data[BACKEND.name][obj.name]['headers'] = obj.headers and list(obj.headers.keys())
-    except Exception as e:
-        print(f"Failed updating cache: {e}", file=sys.stderr)
-
-
-def set_last_cmd(obj: Product) -> None:
-    try:
-        data = comp_cache()
-        if BACKEND.name not in data:
-            data[BACKEND.name] = dict()
-        if obj.name not in data[BACKEND.name]:
-            data[BACKEND.name][obj.name] = {"cmd": obj.cmd}
-        else:
-            data[BACKEND.name][obj.name]['cmd'] = obj.cmd
-    except Exception as e:
-        print(f"Failed updating cache: {e}", file=sys.stderr)
-
-def last_cmd(prod: Product) -> Optional[str]:
-    try:
-        data = comp_cache()
-        cache = data[BACKEND.name][prod.name]
-        if isinstance(cache['cmd'], str):
-            return cache['cmd']
-    except Exception:
-        pass
-    return None
-
-def find_headers(obj: Obj) -> Optional[Dict[str, None]]:
-    data = None
-    try:
-        data = comp_cache()
-        cache = data[BACKEND.name][obj.name]
-        #assert 'stamp' in cache and isinstance(cache['stamp'], float)
-        assert 'headers' in cache and isinstance(cache['headers'], list)
-        return {h: None for h in cache['headers']}
-        t = os.path.getmtime(obj.source)
-        for header in cache['headers']:
-            assert isinstance(header, str)
-            stamp = os.path.getmtime(header)
-            if stamp > t:
-                t = stamp
-        if t < cache['stamp']:
-            return cache['headers']
-    except Exception:
-        cache = None
-    return None
-    created: List[pathlib.Path] = []
-    for dep in obj.depends:
-        path = pathlib.Path(dep)
-        if path.suffix in [".h", ".hpp", ".inl"]:
-            if not path.exists():
-                try:
-                    path.touch()
-                    created.append(path)
-                except Exception:
-                    pass
-
-    try:
-        headers = BACKEND.find_headers(obj)
-        for ix in range(len(headers)):
-            header = headers[ix]
-            try:
-                header = str(pathlib.Path(header).resolve().relative_to(WORKDIR))
-                headers[ix] = header
-            except Exception:
-                pass
-    finally:
-        for path in created:
-            try:
-                path.unlink()
-            except Exception:
-                pass
-
-
-    if data is None:
-        data = dict()
-
-    if BACKEND.name not in data:
-        data[BACKEND.name] = dict()
-    data[BACKEND.name][obj.name] = {'stamp': time.time(), 'headers': headers}
-    try:
-        with open('comp_cache.json', 'w') as file:
-            json.dump(data, file, indent=4)
-    except Exception:
-        pass
-    return headers
 
 def resolve_dirs() -> None:
     dirs = list(DIRECTORIES.keys())
@@ -822,60 +646,6 @@ def ninjafile(dest: TextIO = sys.stdout) -> None:
         deps = ' '.join(esc(d) for d in obj.depends)
         print(f"build {prods}: {rule} {deps}", file=dest)
 
-        
-def makefile(dest: TextIO = sys.stdout) -> None:
-    resolve_dirs()
-
-    for obj in OBJECTS.values():
-        p = pathlib.Path(obj.source).resolve()
-        if not p.is_file():
-            raise RuntimeError(f"File '{p}' does not exist")
-
-    for group, targets in TARGET_GROUPS.items():
-        print(f"{group}:", end="", file=dest)
-        for prod in targets:
-            print(" \\", file=dest)
-            print(f"\t{prod.product}", end="", file=dest)
-        print("\n", file=dest)
-    for d in DIRECTORIES:
-        path = pathlib.PurePath(d)
-        parents = [str(p) for p in path.parents[:-1]]
-        if len(parents) > 0:
-            parent_str = " " + " ".join(parents)
-        else:
-            parent_str = ""
-        print(f"{path}:{parent_str}\n\t-@ if NOT EXIST \"{path}\" mkdir \"{path}\"", file=dest)
-
-    print(file=dest)
-
-    for key, obj in OBJECTS.items():
-        if obj.namespace:
-            bld_dir = str(BUILD_DIR / obj.namespace)
-        else:
-            bld_dir = str(BUILD_DIR)
-        if obj.headers is None or last_cmd(obj) != obj.cmd:
-            headers = [str(BUILD_DIR / "Makefile")]
-        else:
-            headers = list(obj.headers.keys())
-        depends = " ".join([obj.source] + headers + [bld_dir] + obj.depends)
-        print(f"{obj.product}: {depends}", file=dest)
-        print(f"\t{obj.cmd}", file=dest)
-    print(file=dest)
-    for key, exe in EXECUTABLES.items():
-        row = " ".join([f"{obj.product}" for obj in exe.objs] + 
-                       [f"{cmd.product}" for cmd in exe.cmds] + 
-                       ([str(BUILD_DIR / "Makefile")] if last_cmd(exe) != exe.cmd else []))
-        print(f"{exe.product}: {row} {exe.directory}", file=dest)
-        print(f"\t{exe.cmd}", file=dest)
-    print(file=dest)
-    for key, cmd in CUSTOMS.items():
-        row = " ".join(cmd.depends + [cmd.dir] + ([str(BUILD_DIR / "Makefile")] 
-                       if last_cmd(cmd) != cmd.cmd else []))
-        print(f"{cmd.product}: {row}", file=dest)
-        print(f"\t{cmd.cmd}", file=dest)
-    print(file=dest)
-    print(f"clean:\n\tdel /S /Q {BUILD_DIR}\\*\n\tdel /S /Q {BIN_DIR}\\*", file=dest)
-
 def compile_commands(dest: TextIO = sys.stdout) -> None:
     directory = str(WORKDIR.resolve())
     res = []
@@ -889,7 +659,7 @@ def compile_commands(dest: TextIO = sys.stdout) -> None:
     print(json.dumps(res, indent=4), file=dest)
 
 all_backends: Dict[str, Type['Backend']] = {"msvc": Msvc, "mingw": Mingw, 'emcc': EmCC,
-                                            "gcc": Gcc}
+                                            "gcc": Gcc, "arm-none-eabi-gcc": ArmNoneEabiGcc}
 active_backends: Dict[str, 'Backend'] = {}
 
 args = None
@@ -906,14 +676,10 @@ def get_parser() -> 'argparse.ArgumentParser':
                             default=None, help="Specify the backend to use.")
         parser.add_argument("--target", "-t", help="Specify target to build", action="store", 
                             default="all")
-        parser.add_argument("--fast", "-f", help="Speed up by not validating header cache", 
-                            action="store_true", default=False)
         parser.add_argument("--deffile", help="Generate a .def file", action="store",
                             nargs="+", default=None)
         parser.add_argument("--copyto", help="Copy file", action="store",
                             nargs="+", default=None)
-        parser.add_argument("--make", help="Use nmake instead of ninja", action="store_true",
-                            default=False)
     return parser
 
 
@@ -929,7 +695,7 @@ def add_backend(name: str, backend_name: str, builddir: str, bindir: str,
                 workdir: pathlib.Path, clflags: str, linkflags: str) -> None:
     if backend_name.lower() not in all_backends:
         raise RuntimeError("Invalid backend")
-    backend = all_backends[name.lower()]()
+    backend = all_backends[backend_name.lower()]()
     backend.builddir = pathlib.Path(builddir)
     backend.bindir = pathlib.Path(bindir)
     backend.workdir = workdir
@@ -958,10 +724,10 @@ def set_backend(name: str) -> None:
     ACTIVE_BACKEND = name
 
     if sys.platform == "win32":
-        if isinstance(backend, Gcc) and not backend.mingw:
+        if isinstance(backend, Gcc):
             raise RuntimeError(f"Invalid {name} backend for plattform {sys.platform}")
     else:
-        if not isinstance(backend, Gcc) or backend.mingw:
+        if isinstance(backend, Msvc) or backend.mingw:
             raise RuntimeError(f"Invalid backend {name} for plattform {sys.platform}")
 
     os.chdir(WORKDIR)
@@ -996,59 +762,43 @@ def build_dir() -> str:
 def bin_dir() -> str:
     return str(BIN_DIR)
 
-def generate() -> None:
-    if get_args().compiledb:
-        compile_commands()
-    else:
-        makefile()
-
 def get_make() -> Tuple[str, List[str]]:
-    if get_args().make:
-        s = 'nmake.exe'
-        args = ['/NOLOGO', get_args().target]
+    s = 'ninja.exe' if sys.platform == "win32" else "ninja"
+    if get_args().target == 'clean':
+        args = ['-t', 'clean']
     else:
-        s = 'ninja.exe' if sys.platform == "win32" else "ninja"
-        if get_args().target == 'clean':
-            args = ['-t', 'clean']
-        else:
-            args = [get_args().target]
+        args = [get_args().target]
     make = shutil.which(s)
     if make is None:
         raise RuntimeError(f"Could not find {s}")
     return make, args
 
-def build(comp_file: str) -> None:
+def build(generate: Callable[[], None]=lambda: None,
+          deps: List[str]=[]) -> None:
+    import inspect
+    caller_file = inspect.stack()[1].filename
+    deps = deps + [__file__]
 
-    comp_stamp = os.path.getmtime(pathlib.Path(comp_file))
+    comp_stamp = os.path.getmtime(pathlib.Path(caller_file))
+    for file in deps:
+        stamp = os.path.getmtime(pathlib.Path(file))
+        if stamp > comp_stamp:
+            comp_stamp = stamp
+
     compiledb = WORKDIR / 'compile_commands.json'
+    make = BUILD_DIR / 'build.ninja'
 
-    if get_args().make:
-        make = BUILD_DIR / 'Makefile'
-    else:
-        make = BUILD_DIR / 'build.ninja'
-
-
-    cmd_map = dict()
-    
-    if get_args().make:
-        for obj in OBJECTS.values():
-            obj.headers = find_headers(obj)
-            obj.cmd = BACKEND.compile_obj(obj)
-            cmd_map[obj.cmd] = obj
-        for exe in EXECUTABLES.values():
-            if exe.dll:
-                exe.cmd = BACKEND.link_dll(exe)
-            else:
-                exe.cmd = BACKEND.link_exe(exe)
-            cmd_map[exe.cmd] = exe
-        for c in CUSTOMS.values():
-            cmd_map[c.cmd] = c
+    generated = False
 
     try:
         if not BUILD_DIR.exists():
             os.mkdir(BUILD_DIR)
 
         if not compiledb.exists() or os.path.getmtime(compiledb) < comp_stamp or get_args().compiledb:
+            if not generated:
+                generate()
+                generated = True
+
             file_open = False
             try:
                 with open(compiledb, 'w') as file:
@@ -1060,14 +810,14 @@ def build(comp_file: str) -> None:
                 raise
         if not make.exists() or os.path.getmtime(make) < comp_stamp:
             print("Regenerating Makefile")
+            if not generated:
+                generate()
+                generated = True
             file_open = False
             try:
                 with open(make, 'w') as file:
                     file_open = True
-                    if get_args().make:
-                        makefile(dest=file)
-                    else:
-                        ninjafile(dest=file)
+                    ninjafile(dest=file)
             except:
                 if file_open:
                     make.unlink()
@@ -1076,63 +826,11 @@ def build(comp_file: str) -> None:
         print(f"Failed building: {e}", file=sys.stderr)
         exit(1)
 
-    tgt = get_args().target
-    if tgt != "clean" and not any((tgt in c for c in (OBJECTS, EXECUTABLES, 
-                                                      CUSTOMS, DIRECTORIES, 
-                                                      TARGET_GROUPS))):
-        if str(BIN_DIR / tgt) in EXECUTABLES:
-            get_args().target = str(BIN_DIR / tgt)
-
     make_exe, args = get_make()
-    if not get_args().make:
-        res = subprocess.run([make_exe, '-f', str(make), *args])
-        if res.returncode != 0:
-            exit(res.returncode)
-        return
-    res = subprocess.Popen([make_exe, '-f', str(make), *args], bufsize=1,
-                           universal_newlines=True, stdout=subprocess.PIPE)
-    assert res.stdout is not None
-
-    cur_obj = None
-
-    change = False
-
-    for line in res.stdout:
-        l = line.strip()
-        if l in cmd_map:
-            cur_obj = cmd_map[l]
-            if not isinstance(cur_obj, Obj):
-                cur_obj = None
-            else:
-                cur_obj.headers = dict()
-        elif isinstance(cur_obj, Obj):
-            if BACKEND.handle_obj_line(cur_obj, l):
-                change = True
-                continue
-
-        print(line, end="")
-
-    res.wait()
-
-    if res.returncode == 0:
-        for obj in OBJECTS.values():
-            set_headers_and_last_cmd(obj)
-        for exe in EXECUTABLES.values():
-            set_last_cmd(exe)
-        for cmd in CUSTOMS.values():
-            set_last_cmd(cmd)
-
-        write_comp_cache()
-        
-        if change:
-            try:
-                with open(make, 'w') as file:
-                    file_open = True
-                    makefile(dest=file)
-            except Exception as e:
-                print(f"Failed generating makefile: {e}", file=sys.stderr)
+    res = subprocess.run([make_exe, '-f', str(make), *args])
     if res.returncode != 0:
         exit(res.returncode)
+    return
 
 def parse_gitmodules(file: pathlib.Path) -> List[Tuple[str, str, str]]:
     with open(file, 'r') as f:
@@ -1207,8 +905,6 @@ def find_cmake(src: pathlib.Path, build: pathlib.Path,
     else:
         args.append(f'-DCMAKE_C_COMPILER={GCC}')
         args.append(f'-DCMAKE_CXX_COMPILER={GPP}')
-        if sys.platform == 'win321':
-            args.append(f'-DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON')
     return (cmake, [cmake] + args)
 
 
