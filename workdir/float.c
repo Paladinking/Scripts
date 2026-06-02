@@ -6,6 +6,13 @@
 #include <string.h>
 #include <math.h>
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#define SCALBNF(v, exp) scalbnf(v, exp)
+#else
+#define SCALBNF(v, exp) __builtin_ldexpf(v, exp)
+#endif
+
 
 struct Pow5 {
     int16_t scale;
@@ -13,17 +20,6 @@ struct Pow5 {
     uint64_t value;
 };
 const static struct Pow5 pow5[] = {
-    {0, 1, 5}, // 5^1
-    {0, 2, 25}, // 5^2
-    {0, 4, 625}, // 5^4
-    {0, 8, 390625}, // 5^8
-    {0, 16, 152587890625}, // 5^16
-    {-11, 32, 11368683772161602973u}, // 5^32 >> 11
-    {-85, 64, 14012984643248170709u}, // 5^64 >> 85
-    {-234, 128, 10644899600020376799u}, // 5^128 >> 234
-};
-
-const static struct Pow5 invPow5[] = {
     {66,  -1, 14757395258967641293u}, // 5^-1 << 66
     {68,  -2, 11805916207174113035u}, // 5^-2 << 68
     {73,  -4, 15111572745182864684u}, // 5^-4 << 73
@@ -32,6 +28,14 @@ const static struct Pow5 invPow5[] = {
     {138, -32, 14965776766268445883u}, // 5^-32 << 138
     {212, -64, 12141680576410806694u}, // 5^-64 << 212
     {361, -128, 15983352577617880225u}, // 5^-128 << 361
+    {0, 1, 5}, // 5^1
+    {0, 2, 25}, // 5^2
+    {0, 4, 625}, // 5^4
+    {0, 8, 390625}, // 5^8
+    {0, 16, 152587890625}, // 5^16
+    {-11, 32, 11368683772161602973u}, // 5^32 >> 11
+    {-85, 64, 14012984643248170709u}, // 5^64 >> 85
+    {-234, 128, 10644899600020376799u}, // 5^128 >> 234
 };
 
 #define WBUF_SIZE 8
@@ -49,16 +53,14 @@ int multiply_by(uint32_t* mantissa, int length, uint16_t shift, uint64_t val, in
         int i = ix;
         do {
             lowp += res[i];
-            res[i] = lowp;
+            res[i++] = lowp;
             lowp = lowp >> 32;
-            ++i;
         } while (lowp > 0);
         i = ix + 1;
         do {
             highp += res[i];
-            res[i] = highp;
+            res[i++] = highp;
             highp = highp >> 32;
-            ++i;
         } while (highp > 0);
     }
     int l = sizeof(res) / sizeof(res[0]);
@@ -80,11 +82,20 @@ int multiply_by(uint32_t* mantissa, int length, uint16_t shift, uint64_t val, in
 }
 
 
-uint8_t round_to_pow2(uint32_t v) {
+int8_t get_pow5(int32_t v) {
+    if (v < 0) {
+        return get_pow5(-v) + 8;
+    }
     if (v >= 128) {
         return 7;
     }
+#ifdef _MSC_VER
+    unsigned long ix;
+    _BitScanReverse(&ix, v);
+    return ix;
+#else
     return (31 - __builtin_clz(v));
+#endif
 }
 
 int scale_by(uint32_t* mantissa, int length, int32_t decimals, int32_t* exp) {
@@ -92,16 +103,11 @@ int scale_by(uint32_t* mantissa, int length, int32_t decimals, int32_t* exp) {
     // Offset exponent by decimals to get correct value after multiplying 
     // mantissa by powers of 5 instead of powers of 10.
     *exp = -decimals;
-    while (decimals < 0) {
-        int ix = round_to_pow2(-decimals);
+
+    while (decimals != 0) {
+        int ix = get_pow5(decimals);
         decimals += pow5[ix].power;
         length = multiply_by(mantissa, length, pow5[ix].scale, pow5[ix].value, &e);
-        *exp += e;
-    }
-    while (decimals > 0) {
-        int ix = round_to_pow2(decimals);
-        decimals += invPow5[ix].power;
-        length = multiply_by(mantissa, length, invPow5[ix].scale, invPow5[ix].value, &e);
         *exp += e;
     }
     return length;
@@ -162,12 +168,10 @@ bool parse_float(const char* str, float* value) {
         ++str;
         bool negative_exp = false;
         if (*str == '-' || *str == '+') {
-            negative_exp = *str == '-';
-            ++str;
+            negative_exp = *(str++) == '-';
         }
         if (*str < '0' || *str > '9') {
-            // Digit is required
-            return false;
+            return false; // At least 1 digit is required
         }
         while (*str >= '0' && *str <= '9') {
             uint32_t v = *(str++) - '0';
@@ -197,9 +201,7 @@ bool parse_float(const char* str, float* value) {
     decimals -= pow10;
 
     int32_t exp = 0;
-    if (decimals != 0) {
-        length = scale_by(mantissa, length, decimals, &exp);
-    }
+    length = scale_by(mantissa, length, decimals, &exp);
 
     float res = 0.0;
     for (int ix = 0; ix < length; ++ix) {
@@ -208,10 +210,10 @@ bool parse_float(const char* str, float* value) {
         uint16_t low = mantissa[ix];
         uint16_t high = mantissa[ix] >> 16;
         if (low != 0) {
-            res += __builtin_ldexpf(low, ix * 32 + exp);
+            res += SCALBNF(low, ix * 32 + exp);
         }
         if (high != 0) {
-            res += __builtin_ldexpf(high, ix * 32 + exp + 16);
+            res += SCALBNF(high, ix * 32 + exp + 16);
         }
     }
     *value = negative ? -res : res;

@@ -123,3 +123,45 @@ ochar_t** parse_command_line(const ochar_t* args, int* argc);
  * Use get_arg and get_arg_len directly for that, look at quoted parameter.
  */
 ochar_t** parse_command_line_with(const ochar_t* args, int* argc, unsigned options);
+
+#ifndef NARROW_OCHAR
+    #define entrypoint(func) int main() {                \
+        wchar_t* cmd = GetCommandLineW();                \
+        int argc;                                        \
+        wchar_t** argv = parse_command_line(cmd, &argc); \
+        if (argv == NULL) {                              \
+            return ERROR_OUTOFMEMORY;                    \
+        } else {                                         \
+            int status = func(argv, argc);               \
+            Mem_free(argv);                              \
+            return status;                               \
+        }                                                \
+    }
+#else
+    #define entrypoint(func) int main() {                                             \
+        wchar_t* cmd = GetCommandLineW();                                             \
+        size_t count = wcslen(cmd);                                                   \
+        DWORD size = WideCharToMultiByte(65001, 0, cmd, count, NULL, 0, NULL, NULL);  \
+        char* buf = Mem_alloc(size + 1);                                              \
+        if (buf == NULL) {                                                            \
+            return ERROR_OUTOFMEMORY;                                                 \
+        }                                                                             \
+        size = WideCharToMultiByte(65001, 0, cmd, count, buf, size, NULL, NULL);      \
+        int status = 0;                                                               \
+        if (size != 0) {                                                              \
+            buf[size] = '\0';                                                         \
+            int argc;                                                                 \
+            char** argv = parse_command_line(buf, &argc);                             \
+            if (argv != NULL) {                                                       \
+                status = func(argv, argc);                                            \
+            } else {                                                                  \
+                status = ERROR_OUTOFMEMORY;                                           \
+            }                                                                         \
+            Mem_free(argv);                                                           \
+        } else {                                                                      \
+            status = GetLastError();                                                  \
+        }                                                                             \
+        Mem_free(buf);                                                                \
+        return status;                                                                \
+    }
+#endif
