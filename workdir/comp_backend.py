@@ -46,11 +46,9 @@ class Package:
 
 class Context:
     def __init__(self, directory: Optional[str]=None,
-                 group: Optional[str]=None,
                  defines: List[Union[str, Tuple[str, str]]]=[],
                  includes: List[str]=[],
                  namespace: Optional[str]=None) -> None:
-        self.group = group
         self.directory = directory and str(pathlib.PurePath(directory))
         self.defines = defines
         self.includes = includes
@@ -425,8 +423,8 @@ def Executable(name: str, *sources: Union[str, Obj, Cmd],
                defines: List[Union[str, Tuple[str, str]]]=[],
                includes: List[str]=[],
                directory: Optional[str]=None, 
-               group: Optional[str]=None,
                packages: List[Package]=[],
+               depends: List[Union[Product, str]]=[],
                context: Optional[Context]=None) -> Exe:
     if sys.platform == "win32" and not name.endswith('.exe') and not name.endswith('.dll'):
         if backend().mingw or backend().msvc:
@@ -451,9 +449,10 @@ def Executable(name: str, *sources: Union[str, Obj, Cmd],
     cmds = []
     for src in sources:
         if isinstance(src, str):
-            obj_name = str(pathlib.PurePath(src).with_suffix(f'.{backend().obj_suffix}').name)
+            obj_name = str(pathlib.PurePath(src).with_suffix(f'.{backend().obj_suffix}'))
+            obj_name = obj_name.replace('/', '_').replace('\\', '_')
             obj = Object(obj_name, src, cmp_flags, namespace, defines=defines,
-                         includes=includes, context=context)
+                         includes=includes, context=context, depends=depends)
         else:
             if isinstance(src, Cmd):
                 if src not in cmds:
@@ -470,9 +469,12 @@ def Executable(name: str, *sources: Union[str, Obj, Cmd],
             directory = str(BIN_DIR)
     else:
         directory = str(pathlib.PurePath(directory))
-    if group is None:
+
+    if namespace:
+        group = namespace
+    else:
         if context is not None:
-            group = context.group or "all"
+            group = context.namespace or "all"
         else:
             group = "all"
     exe = Exe(name, objs, cmds, link_flags, dll, directory)
@@ -489,15 +491,15 @@ def Executable(name: str, *sources: Union[str, Obj, Cmd],
 
 @overload
 def Command(output: List[str], cmd: str, *depends: Union[str, Product],
-            directory: Optional[str]=None) -> List[Cmd]:
+            directory: Optional[str]=None, namespace: str="") -> List[Cmd]:
     ...
 @overload
 def Command(output: str, cmd: str, *depends: Union[str, Product],
-            directory: Optional[str]=None) -> Cmd:
+            directory: Optional[str]=None, namespace: str="") -> Cmd:
     ...
 
 def Command(output: Union[str, List[str]], cmd: str, *depends: Union[str, Product],
-            directory: Optional[str]=None) -> Union[Cmd, List[Cmd]]:
+            directory: Optional[str]=None, namespace: str="") -> Union[Cmd, List[Cmd]]:
     if directory is None:
         directory = str(BUILD_DIR)
     else:
@@ -523,8 +525,14 @@ def Command(output: Union[str, List[str]], cmd: str, *depends: Union[str, Produc
     if command.product in CUSTOMS:
         raise RuntimeError(f"Duplicate command {command.product}")
     CUSTOMS[command.product] = command
-    if directory == str(BIN_DIR):
+    if namespace:
+        if namespace not in TARGET_GROUPS:
+            TARGET_GROUPS[namespace] = [command]
+        else:
+            TARGET_GROUPS[namespace].append(command)
+    elif directory == str(BIN_DIR):
         TARGET_GROUPS["all"].append(command)
+        
     return command
 
 def CopyToBin(*src: str) -> List[Cmd]:
@@ -646,10 +654,14 @@ def ninjafile(dest: TextIO = sys.stdout) -> None:
         deps = ' '.join(esc(d) for d in obj.depends)
         print(f"build {prods}: {rule} {deps}", file=dest)
 
-def compile_commands(dest: TextIO = sys.stdout) -> None:
+def compile_commands(dest: TextIO = sys.stdout, namespace: Optional[str]=None) -> None:
+    if namespace is None:
+        objs = OBJECTS.values()
+    else:
+        objs = [o for o in OBJECTS.values() if o.namespace == namespace]
     directory = str(WORKDIR.resolve())
     res = []
-    for obj in OBJECTS.values():
+    for obj in objs:
         json = dict()
         json["directory"] = directory
         json["command"] = BACKEND.compile_obj(obj)
@@ -774,10 +786,15 @@ def get_make() -> Tuple[str, List[str]]:
     return make, args
 
 def build(generate: Callable[[], None]=lambda: None,
-          deps: List[str]=[]) -> None:
+          deps: List[str]=[],
+          compile_commands_namespace: Optional[str]=None,
+          force_compile_commands: bool=False) -> None:
     import inspect
     caller_file = inspect.stack()[1].filename
     deps = deps + [__file__]
+
+    if get_args().compiledb:
+        force_compile_commands = True
 
     comp_stamp = os.path.getmtime(pathlib.Path(caller_file))
     for file in deps:
@@ -794,7 +811,7 @@ def build(generate: Callable[[], None]=lambda: None,
         if not BUILD_DIR.exists():
             os.mkdir(BUILD_DIR)
 
-        if not compiledb.exists() or os.path.getmtime(compiledb) < comp_stamp or get_args().compiledb:
+        if not compiledb.exists() or os.path.getmtime(compiledb) < comp_stamp or force_compile_commands:
             if not generated:
                 generate()
                 generated = True
@@ -803,7 +820,7 @@ def build(generate: Callable[[], None]=lambda: None,
             try:
                 with open(compiledb, 'w') as file:
                     file_open = True
-                    compile_commands(dest=file)
+                    compile_commands(dest=file, namespace=compile_commands_namespace)
             except:
                 if file_open:
                     compiledb.unlink()
