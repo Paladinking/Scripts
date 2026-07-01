@@ -66,11 +66,10 @@ bool parse_uint(const ochar_t* s, uint64_t* i, uint8_t base) {
         }
     } else { // Base 10
         while (*s != oL('\0')) {
-            ochar_t c = *s;
-            if (c < oL('0') || c > oL('9')) {
+            if (*s < oL('0') || *s > oL('9')) {
                 return false;
             }
-            uint64_t v = c - oL('0');
+            uint64_t v = *s - oL('0');
             if (n > 0x1999999999999999) {
                 return false;
             } else if (n == 0x1999999999999999) {
@@ -78,8 +77,7 @@ bool parse_uint(const ochar_t* s, uint64_t* i, uint8_t base) {
                     return false;
                 }
             }
-            n = n * 10;
-            n += v;
+            n = n * 10 + v;
             ++s;
         }
     }

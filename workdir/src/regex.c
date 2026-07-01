@@ -1,6 +1,5 @@
 #include "regex.h"
 #include "args.h"
-#include "assert.h"
 #include "mem.h"
 #include "unicode/unicode_utils.h"
 #include <stdlib.h>
@@ -424,6 +423,30 @@ bool repeat_last(ParseCtx *ctx, uint32_t min, uint32_t max,
     return true;
 }
 
+static bool parse_number(char* s, uint64_t* res) {
+    if (*s == '\0') {
+        return false;
+    }
+    uint64_t n = 0;
+    while (*s != '\0') {
+        if (*s < '0' || *s > '9') {
+            return false;
+        }
+        uint64_t v = *s - '0';
+        if (n > 0x1999999999999999) {
+            return false;
+        } else if (n == 0x1999999999999999) {
+            if (v > 5) {
+                return false;
+            }
+        }
+        n = n * 10 + v;
+        ++s;
+    }
+    *res = n;
+    return true;
+}
+
 // REGEX_ERROR = out of memory
 // REGEX_NO_MATCH = invalid pattern provided
 // REGEX_MATCH = success
@@ -469,8 +492,8 @@ RegexResult ast_parse(ParseCtx *ctx, const char *pattern) {
                 ix += 2;
                 uint64_t end_ix = ix;
                 uint64_t comma_ix = ix - 1;
-                wchar_t nbuf[25];
-                memset(nbuf, 0, 25 * sizeof(wchar_t));
+                char nbuf[25];
+                memset(nbuf, 0, 25);
                 while (1) {
                     if (end_ix >= len - 1 || end_ix - ix >= 24) {
                         parse_free(ctx);
@@ -482,7 +505,7 @@ RegexResult ast_parse(ParseCtx *ctx, const char *pattern) {
                             return REGEX_NO_MATCH;
                         }
                         comma_ix = end_ix;
-                        nbuf[end_ix] = L'\0';
+                        nbuf[end_ix] = '\0';
                     } else if (pattern[end_ix] == '\\') {
                         if (pattern[end_ix + 1] != '}' || end_ix == ix) {
                             parse_free(ctx);
@@ -498,7 +521,7 @@ RegexResult ast_parse(ParseCtx *ctx, const char *pattern) {
                     ++end_ix;
                 }
                 uint64_t minr, maxr;
-                if (!parse_uintw(nbuf, &minr, 10)) {
+                if (!parse_number(nbuf, &minr)) {
                     parse_free(ctx);
                     return REGEX_NO_MATCH;
                 }
@@ -509,7 +532,7 @@ RegexResult ast_parse(ParseCtx *ctx, const char *pattern) {
                 } else if (comma_ix < ix) {
                     maxr = minr;
                 } else {
-                    if (!parse_uintw(nbuf + (comma_ix - ix) + 1, &maxr, 10)) {
+                    if (!parse_number(nbuf + (comma_ix - ix) + 1, &maxr)) {
                         parse_free(ctx);
                         return REGEX_NO_MATCH;
                     }
