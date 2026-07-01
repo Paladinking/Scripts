@@ -176,12 +176,12 @@ def main():
                cmd_o, "src/subprocess.c",
                "src/glob.c", "src/match_node.c", ntdll)
 
-    with Context(group="tests", directory=f"{bin_dir()}/tests",
+    with Context(directory=f"{bin_dir()}/tests",
                  includes=["src"], namespace="tests"):
         Executable("test_regex.exe", "src/tests/test_regex.c", "src/regex.c", *unicode,
                    "src/printf.c", "src/dynamic_string.c", "src/args.c", ntdll)
 
-    with Context(group="compiler", includes=["src"], namespace="compiler",
+    with Context(includes=["src"], namespace="compiler",
                  defines=["NARROW_OCHAR"]):
         link = "WS2_32.lib" if backend().name == "msvc" else "-lws2_32"
 
