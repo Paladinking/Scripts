@@ -1,7 +1,7 @@
 #include "regex.h"
 #include "args.h"
 #include "assert.h"
-#include "dynamic_string.h"
+#include "mem.h"
 #include "unicode/unicode_utils.h"
 #include <stdlib.h>
 
@@ -139,7 +139,9 @@ typedef struct ParseCtx {
     uint32_t paren_stack_cap;
     uint32_t *paren_stack;
 
-    String pattern;
+    char* pattern;
+    uint32_t pattern_length;
+    uint32_t pattern_cap;
 } ParseCtx;
 
 #define DFA_REJECT_NODE ((uint32_t)-1)
@@ -205,6 +207,21 @@ typedef struct DFABuilder {
     uint32_t minlen;
 } DFABuilder;
 
+static bool reserve(void **ptr, uint32_t *cap, uint32_t size,
+                    size_t elem_size) {
+    if (size >= *cap) {
+        void *new_ptr = Mem_realloc(*ptr, (*cap) * 2 * elem_size);
+        if (new_ptr == NULL) {
+            return false;
+        }
+        *ptr = new_ptr;
+        *cap = *cap * 2;
+    }
+    return true;
+}
+#define RESERVE(ptr, cap, size, type)                                          \
+    reserve((void **)(ptr), cap, size, sizeof(type))
+
 bool parse_init(ParseCtx *ctx) {
     ctx->capacity = 4;
     ctx->ast = Mem_alloc(ctx->capacity * sizeof(RegexAst));
@@ -223,18 +240,24 @@ bool parse_init(ParseCtx *ctx) {
         Mem_free(ctx->ast);
         return false;
     }
-    if (!String_create(&ctx->pattern)) {
+
+    ctx->pattern = Mem_alloc(16);
+    if (ctx->pattern == NULL) {
         Mem_free(ctx->ast);
         Mem_free(ctx->paren_stack);
         return false;
     }
+    ctx->pattern[0] = '\0';
+    ctx->pattern_length = 0;
+    ctx->pattern_cap = 16;
+
     return true;
 }
 
 void parse_free(ParseCtx *ctx) {
     Mem_free(ctx->ast);
     Mem_free(ctx->paren_stack);
-    String_free(&ctx->pattern);
+    Mem_free(ctx->pattern);
 }
 
 bool parse_finalize(ParseCtx *ctx) {
@@ -316,7 +339,7 @@ bool literal_union_start(ParseCtx *ctx) {
     if (node == NULL) {
         return false;
     }
-    node->literal_union.str_ix = ctx->pattern.length;
+    node->literal_union.str_ix = ctx->pattern_length;
     node->literal_union.size = 0;
     node->literal_union.not = false;
     ctx->node_ix = node - ctx->ast;
@@ -324,17 +347,21 @@ bool literal_union_start(ParseCtx *ctx) {
 }
 
 bool literal_union_char(ParseCtx *ctx, char c) {
-    if (!String_append(&ctx->pattern, c)) {
+    if (!RESERVE(&ctx->pattern, &ctx->pattern_cap, ctx->pattern_length + 2, char)) {
         return false;
     }
+    ctx->pattern[ctx->pattern_length++] = c;
+    ctx->pattern[ctx->pattern_length] = '\0';
     ctx->ast[ctx->node_ix].literal_union.size += 1;
     return true;
 }
 
 bool append_char(ParseCtx *ctx, char c) {
-    if (!String_append(&ctx->pattern, c)) {
+    if (!RESERVE(&ctx->pattern, &ctx->pattern_cap, ctx->pattern_length + 2, char)) {
         return false;
     }
+    ctx->pattern[ctx->pattern_length++] = c;
+    ctx->pattern[ctx->pattern_length] = '\0';
     if (ctx->ast[ctx->node_ix].type == REGEX_LITERAL) {
         ctx->ast[ctx->node_ix].literal.size += 1;
     } else {
@@ -343,7 +370,7 @@ bool append_char(ParseCtx *ctx, char c) {
             return false;
         }
         node->literal.size = 1;
-        node->literal.str_ix = ctx->pattern.length - 1;
+        node->literal.str_ix = ctx->pattern_length - 1;
         ctx->node_ix = node - ctx->ast;
     }
     return true;
@@ -353,21 +380,21 @@ bool repeat_last(ParseCtx *ctx, uint32_t min, uint32_t max,
                  bool split_literal) {
     if (split_literal && ctx->ast[ctx->node_ix].type == REGEX_LITERAL &&
         ctx->ast[ctx->node_ix].literal.size > 1) {
-        uint32_t ix = ctx->pattern.length - 1;
+        uint32_t ix = ctx->pattern_length - 1;
         while (ix > ctx->ast[ctx->node_ix].literal.str_ix) {
-            uint8_t c = (uint8_t) ctx->pattern.buffer[ix];
+            uint8_t c = (uint8_t) ctx->pattern[ix];
             if (c < 0x80 || c > 0xBF) {
                 break;
             }
             --ix;
         }
-        uint8_t* s = (uint8_t*)ctx->pattern.buffer + ix;
-        if (!validate_utf8_seq(s, ctx->pattern.length - ix)) {
+        uint8_t* s = (uint8_t*)ctx->pattern + ix;
+        if (!validate_utf8_seq(s, ctx->pattern_length - ix)) {
             // invalid unicode
             return false;
         }
         uint8_t len = utf8_len_table[s[0]];
-        if (len != ctx->pattern.length - ix) {
+        if (len != ctx->pattern_length - ix) {
             // should never happen
             return false;
         }
@@ -378,7 +405,7 @@ bool repeat_last(ParseCtx *ctx, uint32_t min, uint32_t max,
             return false;
         }
         node->literal.size = len;
-        node->literal.str_ix = ctx->pattern.length - len;
+        node->literal.str_ix = ctx->pattern_length - len;
         ctx->node_ix = node - ctx->ast;
     }
     RegexAst *node = newnode(ctx, REGEX_REPEAT, false);
@@ -574,8 +601,9 @@ RegexResult ast_parse(ParseCtx *ctx, const char *pattern) {
                         break;
                     }
                     last_range = true;
-                    char start = ctx->pattern.buffer[ctx->pattern.length - 1];
-                    String_pop(&ctx->pattern, 1);
+                    char start = ctx->pattern[ctx->pattern_length - 1];
+                    ctx->pattern_length -= 1;
+                    ctx->pattern[ctx->pattern_length] = '\0';
                     ctx->ast[ctx->node_ix].literal_union.size -= 1;
 
                     char end = pattern[ix + 1];
@@ -623,21 +651,6 @@ RegexResult ast_parse(ParseCtx *ctx, const char *pattern) {
 
     return REGEX_MATCH;
 }
-
-static bool reserve(void **ptr, uint32_t *cap, uint32_t size,
-                    size_t elem_size) {
-    if (size >= *cap) {
-        void *new_ptr = Mem_realloc(*ptr, (*cap) * 2 * elem_size);
-        if (new_ptr == NULL) {
-            return false;
-        }
-        *ptr = new_ptr;
-        *cap = *cap * 2;
-    }
-    return true;
-}
-#define RESERVE(ptr, cap, size, type)                                          \
-    reserve((void **)(ptr), cap, size, sizeof(type))
 
 bool ast_to_nfa(ParseCtx *ctx, NFA *nfa) {
     uint32_t edge_count = 0;
@@ -1858,9 +1871,14 @@ Regex* Regex_compile_with(const char* pattern, bool casefold) {
     RegexResult res;
     if (casefold) {
         uint8_t utf8[4];
-        String buf;
         uint64_t len = strlen(pattern);
-        if (len >= 0xFFFFFFFF || !String_create_capacity(&buf, len)) {
+        if (len >= 0xFFFFFFFF) {
+            return NULL;
+        }
+        char* buf = Mem_alloc(len + 1);
+        uint32_t buf_cap = len + 1;
+        uint32_t buf_size = 0;
+        if (buf == NULL) {
             return NULL;
         }
         const uint8_t* bytes = (const uint8_t*)pattern;
@@ -1868,13 +1886,16 @@ Regex* Regex_compile_with(const char* pattern, bool casefold) {
             uint32_t l = get_utf8_seq(bytes + ix, len - ix);
             uint32_t l1 = unicode_case_fold_utf8(bytes + ix, l, utf8);
             ix += l;
-            if (!String_append_count(&buf, (const char*)utf8, l1)) {
-                String_free(&buf);
+            if (!RESERVE(&buf, &buf_cap, buf_size + l1 + 1, char)) {
+                Mem_free(buf);
                 return NULL;
             }
+            memcpy(buf + buf_size, utf8, l1);
+            buf_size += l1;
         }
-        res = ast_parse(&ctx, buf.buffer);
-        String_free(&buf);
+        buf[buf_size] = '\0';
+        res = ast_parse(&ctx, buf);
+        Mem_free(buf);
     } else {
         res = ast_parse(&ctx, pattern);
     }
@@ -1896,7 +1917,7 @@ Regex* Regex_compile_with(const char* pattern, bool casefold) {
     uint32_t minlen;
     uint32_t dfa_nodes;
     if (nfa_copy(&nfa, &nfa_cpy)) {
-        if (nfa_to_dfa(&nfa_cpy, ctx.pattern.buffer, &dfa, &dfa_nodes, &minlen, casefold) != REGEX_MATCH) {
+        if (nfa_to_dfa(&nfa_cpy, ctx.pattern, &dfa, &dfa_nodes, &minlen, casefold) != REGEX_MATCH) {
             dfa = NULL;
             minlen = UINT32_MAX;
             dfa_nodes = 0;
@@ -1908,12 +1929,12 @@ Regex* Regex_compile_with(const char* pattern, bool casefold) {
 
     Regex *regex = Mem_alloc(sizeof(Regex));
     if (regex == NULL) {
-        String_free(&ctx.pattern);
+        Mem_free(ctx.pattern);
         Mem_free(nfa.nodes);
         Mem_free(nfa.edges);
         return NULL;
     }
-    regex->chars = ctx.pattern.buffer;
+    regex->chars = ctx.pattern;
     regex->nfa = nfa;
     regex->dfa = dfa;
     regex->minlen = minlen;
@@ -1925,9 +1946,7 @@ Regex* Regex_compile_with(const char* pattern, bool casefold) {
 void Regex_free(Regex *regex) {
     Mem_free(regex->nfa.nodes);
     Mem_free(regex->nfa.edges);
-    String s;
-    s.buffer = regex->chars;
-    String_free(&s);
+    Mem_free(regex->chars);
     if (regex->dfa != NULL) {
         for (uint32_t i = 0; i < regex->dfa_nodes; ++i) {
             if (regex->dfa[i].literal_node) {
