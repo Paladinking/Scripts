@@ -176,14 +176,13 @@ typedef struct Amd64Op {
         symbol_ix symbol;
     };
     struct Amd64Op* next;
-    struct Amd64Op* prev;
 } Amd64Op;
 
 typedef struct LabelData {
     Amd64Op* op;
 } LabelData;
 
-typedef struct AsmCtx {
+typedef struct Amd64AsmCtx {
     Amd64Op* start;
     Amd64Op* end;
     Arena arena;
@@ -194,37 +193,37 @@ typedef struct AsmCtx {
     uint64_t label_count;
     uint64_t label_cap;
     LabelData* labels;
-} AsmCtx;
+} Amd64AsmCtx;
 
-void asm_ctx_create(AsmCtx* ctx, Object* object, section_ix code_section);
+void amd64_asm_ctx_create(Amd64AsmCtx* ctx, Object* object, section_ix code_section);
 
-void asm_instr(AsmCtx* ctx, enum Amd64Opcode op);
+void amd64_asm_instr(Amd64AsmCtx* ctx, enum Amd64Opcode op);
 
-void asm_genreg_var(AsmCtx* ctx, uint8_t size, uint8_t reg);
+void amd64_asm_genreg_var(Amd64AsmCtx* ctx, uint8_t size, uint8_t reg);
 
-void asm_xmmreg_var(AsmCtx* ctx, uint8_t size, uint8_t reg);
+void amd64_asm_xmmreg_var(Amd64AsmCtx* ctx, uint8_t size, uint8_t reg);
 
-void asm_label_var(AsmCtx* ctx, uint64_t ix);
+void amd64_asm_label_var(Amd64AsmCtx* ctx, uint64_t ix);
 
-void asm_symbol_label_var(AsmCtx* ctx, symbol_ix symbol);
+void amd64_asm_symbol_label_var(Amd64AsmCtx* ctx, symbol_ix symbol);
 
-void asm_mem_var(AsmCtx* ctx, uint8_t size, uint8_t reg, uint8_t scale,
+void amd64_asm_mem_var(Amd64AsmCtx* ctx, uint8_t size, uint8_t reg, uint8_t scale,
                  uint8_t scale_reg, int32_t offset);
 
-void asm_global_mem_var(AsmCtx* ctx, uint8_t size, symbol_ix symbol,
+void amd64_asm_global_mem_var(Amd64AsmCtx* ctx, uint8_t size, symbol_ix symbol,
                         int32_t offset);
 
-void asm_imm_var(AsmCtx* ctx, uint8_t size, const uint8_t* data);
+void amd64_asm_imm_var(Amd64AsmCtx* ctx, uint8_t size, const uint8_t* data);
 
-void asm_instr_end(AsmCtx* ctx);
+void amd64_asm_instr_end(Amd64AsmCtx* ctx);
 
-void asm_put_label(AsmCtx* ctx, uint64_t label);
+void amd64_asm_put_label(Amd64AsmCtx* ctx, uint64_t label);
 
-void asm_serialize(AsmCtx* ctx, String* dest);
+void amd64_asm_serialize(Amd64AsmCtx* ctx, String* dest);
 
-void asm_assemble(AsmCtx* ctx, symbol_ix symbol);
+void amd64_asm_assemble(Amd64AsmCtx* ctx, symbol_ix symbol);
 
-void asm_reset(AsmCtx* ctx);
+void amd64_asm_reset(Amd64AsmCtx* ctx);
 
 
 #endif

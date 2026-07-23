@@ -52,10 +52,17 @@ var_id create_typed_temp_var(ConflictGraph* graph, VarList* vars, FlowNode* node
 
 Object* Generate_code(Quads* quads, FunctionTable* functions, FunctionTable* externs,
                       NameTable* name_table, StringLiteral* literals, Arena* arena,
-                      bool serialze_asm);
+                      bool serialze_asm, enum BackendType);
 
-bool Backend_arg_is_ptr(AllocInfo info);
-
-bool Backend_return_as_ptr(AllocInfo info);
+typedef struct CodegenBackend {
+    enum BackendType type;
+    Object* (*generate_asm)(NameTable*, FunctionTable*,
+                    FunctionTable*, StringLiteral*,
+                    Arena*, bool);
+    void (*add_constraints)(ConflictGraph*, VarSet*, Quad*, VarList*, FlowNode*,
+                            Arena*);
+    void (*initial_constraints)(ConflictGraph*, VarList*);
+    uint64_t (*get_regs)();
+} CodegenBackend;
 
 #endif

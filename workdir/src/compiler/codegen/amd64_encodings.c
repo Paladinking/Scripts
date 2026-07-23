@@ -1,4 +1,4 @@
-#include "amd64.h"
+#include "amd64_asm.h"
 
 const Encoding NOP_ENCODING[] = {
     {

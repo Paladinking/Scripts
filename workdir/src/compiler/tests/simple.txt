@@ -1,0 +1,11 @@
+fn f(uint32 a, uint32 b) -> uint32 {
+    return a + b;
+}
+
+fn main() -> uint32 {
+    uint32 x = f(1, 2);
+
+    uint32 y = f(1, x);
+
+    return 0;
+}

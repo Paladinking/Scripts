@@ -1,5 +1,4 @@
 #include "regex.h"
-#include "args.h"
 #include "mem.h"
 #include "unicode/unicode_utils.h"
 #include <stdlib.h>
@@ -221,7 +220,7 @@ static bool reserve(void **ptr, uint32_t *cap, uint32_t size,
 #define RESERVE(ptr, cap, size, type)                                          \
     reserve((void **)(ptr), cap, size, sizeof(type))
 
-bool parse_init(ParseCtx *ctx) {
+static bool parse_init(ParseCtx *ctx) {
     ctx->capacity = 4;
     ctx->ast = Mem_alloc(ctx->capacity * sizeof(RegexAst));
     if (ctx->ast == NULL) {
@@ -253,13 +252,13 @@ bool parse_init(ParseCtx *ctx) {
     return true;
 }
 
-void parse_free(ParseCtx *ctx) {
+static void parse_free(ParseCtx *ctx) {
     Mem_free(ctx->ast);
     Mem_free(ctx->paren_stack);
     Mem_free(ctx->pattern);
 }
 
-bool parse_finalize(ParseCtx *ctx) {
+static bool parse_finalize(ParseCtx *ctx) {
     if (ctx->paren_stack_size > 0) {
         return false;
     }
@@ -268,7 +267,7 @@ bool parse_finalize(ParseCtx *ctx) {
     return true;
 }
 
-RegexAst *newnode(ParseCtx *ctx, enum RegexType type, bool replace_empty) {
+static RegexAst *newnode(ParseCtx *ctx, enum RegexType type, bool replace_empty) {
     if (ctx->size > 0 && replace_empty &&
         ctx->ast[ctx->size - 1].type == REGEX_EMPTY) {
         ctx->ast[ctx->size - 1].type = type;
@@ -289,7 +288,7 @@ RegexAst *newnode(ParseCtx *ctx, enum RegexType type, bool replace_empty) {
     return &ctx->ast[ctx->size - 1];
 }
 
-bool paren_open(ParseCtx *ctx) {
+static bool paren_open(ParseCtx *ctx) {
     if (ctx->paren_stack_size == ctx->paren_stack_cap) {
         uint32_t cap = ctx->paren_stack_cap * 2;
         uint32_t *new = Mem_realloc(ctx->paren_stack, cap * sizeof(uint32_t));
@@ -317,7 +316,7 @@ bool paren_open(ParseCtx *ctx) {
     return true;
 }
 
-bool paren_close(ParseCtx *ctx) {
+static bool paren_close(ParseCtx *ctx) {
     if (ctx->paren_stack_size == 0) {
         return false;
     }
@@ -333,7 +332,7 @@ bool paren_close(ParseCtx *ctx) {
     return true;
 }
 
-bool literal_union_start(ParseCtx *ctx) {
+static bool literal_union_start(ParseCtx *ctx) {
     RegexAst *node = newnode(ctx, REGEX_LITERAL_UNION, true);
     if (node == NULL) {
         return false;
@@ -345,7 +344,7 @@ bool literal_union_start(ParseCtx *ctx) {
     return true;
 }
 
-bool literal_union_char(ParseCtx *ctx, char c) {
+static bool literal_union_char(ParseCtx *ctx, char c) {
     if (!RESERVE(&ctx->pattern, &ctx->pattern_cap, ctx->pattern_length + 2, char)) {
         return false;
     }
@@ -355,7 +354,7 @@ bool literal_union_char(ParseCtx *ctx, char c) {
     return true;
 }
 
-bool append_char(ParseCtx *ctx, char c) {
+static bool append_char(ParseCtx *ctx, char c) {
     if (!RESERVE(&ctx->pattern, &ctx->pattern_cap, ctx->pattern_length + 2, char)) {
         return false;
     }
@@ -375,8 +374,8 @@ bool append_char(ParseCtx *ctx, char c) {
     return true;
 }
 
-bool repeat_last(ParseCtx *ctx, uint32_t min, uint32_t max,
-                 bool split_literal) {
+static bool repeat_last(ParseCtx *ctx, uint32_t min, uint32_t max,
+                        bool split_literal) {
     if (split_literal && ctx->ast[ctx->node_ix].type == REGEX_LITERAL &&
         ctx->ast[ctx->node_ix].literal.size > 1) {
         uint32_t ix = ctx->pattern_length - 1;
@@ -450,7 +449,7 @@ static bool parse_number(char* s, uint64_t* res) {
 // REGEX_ERROR = out of memory
 // REGEX_NO_MATCH = invalid pattern provided
 // REGEX_MATCH = success
-RegexResult ast_parse(ParseCtx *ctx, const char *pattern) {
+static RegexResult ast_parse(ParseCtx *ctx, const char *pattern) {
     uint64_t len = strlen(pattern);
     if (len > INT32_MAX) {
         return REGEX_NO_MATCH;
@@ -1984,8 +1983,8 @@ void Regex_free(Regex *regex) {
     Mem_free(regex);
 }
 
-bool matches_edge(Regex *regex, const char *str, uint64_t len, uint64_t *str_ix,
-                  uint64_t edge_ix) {
+static bool matches_edge(Regex *regex, const char *str, uint64_t len, uint64_t *str_ix,
+                         uint64_t edge_ix) {
     if (regex->nfa.edges[edge_ix].type == NFA_EDGE_ANY) {
         if (*str_ix < len) {
             ++(*str_ix);

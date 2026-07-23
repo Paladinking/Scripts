@@ -1,7 +1,8 @@
 #include "code_generation.h"
 #include "mem.h"
 #include "format.h"
-#include "amd64_asm.h"
+#include "codegen/amd64_codegen.h"
+#include "codegen/editor_codegen.h"
 #include <printf.h>
 #ifndef NO_TZCOUNT
 #include <intrin.h>
@@ -373,9 +374,10 @@ void create_live_in_out(FlowNode* nodes, uint64_t node_count, VarSet* work) {
     }
 }
 
-void create_conflict_graph(ConflictGraph* graph, FlowNode* nodes, uint64_t node_count,
-                           Quads* quads, VarList* vars, VarSet* live, Arena* arena) {
-    Backend_inital_contraints(graph, vars);
+void create_conflict_graph(ConflictGraph* graph, CodegenBackend* backend,
+                           FlowNode* nodes, uint64_t node_count, Quads* quads, 
+                           VarList* vars, VarSet* live, Arena* arena) {
+    backend->initial_constraints(graph, vars);
 
     VarSet_clearall(live);
 
@@ -386,7 +388,7 @@ void create_conflict_graph(ConflictGraph* graph, FlowNode* nodes, uint64_t node_
         ConflictGraph_update_for_live(graph, live);
         Quad* q = nodes[ix].end;
         while (1) {
-            Backend_add_constrains(graph, live, q, vars, &nodes[ix], arena);
+            backend->add_constraints(graph, live, q, vars, &nodes[ix], arena);
             Quad_update_live(q, live);
             ConflictGraph_update_for_live(graph, live);
             if (q == nodes[ix].start) {
@@ -429,7 +431,8 @@ bool can_allocate(ConflictGraph* graph, uint64_t to_alloc, var_id* stack) {
 }
 
 
-void allocate_registers(Quads* quads, Quad* start, Quad* end,
+void allocate_registers(CodegenBackend* backend, 
+                        Quads* quads, Quad* start, Quad* end,
                         uint64_t* label_map, VarList* vars, Arena* arena) {
     FlowNode* nodes = Mem_alloc(8 * sizeof(FlowNode));
     if (nodes == NULL) {
@@ -496,7 +499,7 @@ void allocate_registers(Quads* quads, Quad* start, Quad* end,
     VarSet_clearall(&work);
 
     ConflictGraph graph;
-    ConflictGraph_create(&graph, Backend_get_regs(), vars->size);
+    ConflictGraph_create(&graph, backend->get_regs(), vars->size);
 
     var_id* stack = Mem_alloc(vars->size * sizeof(var_id));
     if (stack == NULL) {
@@ -516,7 +519,8 @@ void allocate_registers(Quads* quads, Quad* start, Quad* end,
     // Save old variable count to make sure stack does not overflow
     uint64_t var_cap = vars->size;
     while (1) {
-        create_conflict_graph(&graph, nodes, node_count, quads, vars, &work, arena);
+        create_conflict_graph(&graph, backend, nodes, node_count, 
+                              quads, vars, &work, arena);
         if (vars->size > var_cap) {
             stack = Mem_realloc(stack, (vars->size + 10) * sizeof(var_id));
             if (stack == NULL) {
@@ -603,13 +607,30 @@ void allocate_registers(Quads* quads, Quad* start, Quad* end,
     Mem_free(stack);
 }
 
+static void populate_backend(CodegenBackend *b, enum BackendType type) {
+    b->type = type;
+    if (type == BACKEND_X64_WIN32) {
+        b->add_constraints = amd64_add_constrains;
+        b->initial_constraints = amd64_inital_contraints;
+        b->generate_asm = amd64_generate_asm;
+        b->get_regs = amd64_get_regs;
+    } else {
+        b->add_constraints = editor_add_constrains;
+        b->initial_constraints = editor_inital_contraints;
+        b->generate_asm = editor_generate_asm;
+        b->get_regs = editor_get_regs;
+    }
+}
+
 Object* Generate_code(Quads* quads, FunctionTable* functions, FunctionTable* externs,
                       NameTable* name_table, StringLiteral* literals, Arena* arena,
-                      bool serialze_asm) {
+                      bool serialze_asm, enum BackendType backend) {
     uint64_t* label_map = Mem_alloc(quads->label_count * sizeof(uint64_t));
     if (label_map == NULL) {
         out_of_memory(NULL);
     }
+    CodegenBackend b;
+    populate_backend(&b, backend);
 
     for (uint64_t ix = 0; ix < functions->size; ++ix) {
         if (functions->data[ix]->undefined) {
@@ -624,10 +645,10 @@ Object* Generate_code(Quads* quads, FunctionTable* functions, FunctionTable* ext
         var_id var_end = functions->data[ix]->vars.size;
         const char* name = name_table->data[functions->data[ix]->name].name;
         uint32_t name_len = name_table->data[functions->data[ix]->name].name_len;
-        allocate_registers(quads, start, end, label_map,
-                          &functions->data[ix]->vars, arena);
+        allocate_registers(&b, quads, start, end, label_map,
+                           &functions->data[ix]->vars, arena);
     }
     Mem_free(label_map);
-    return Backend_generate_asm(name_table, functions, externs, literals, 
-                                arena, serialze_asm);
+    return b.generate_asm(name_table, functions, externs, literals, 
+                          arena, serialze_asm);
 }

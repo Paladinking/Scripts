@@ -1,12 +1,11 @@
 #include "mem.h"
-#include "amd64.h"
+#include "amd64_asm.h"
 #include "../utils.h"
-#include "../log.h"
 #include <printf.h>
 #include <glob.h>
 #include <coff.h>
 
-void serialize_op(AsmCtx* ctx, String* dest, Amd64Op* op);
+void serialize_op(Amd64AsmCtx* ctx, String* dest, Amd64Op* op);
 
 static enum Amd64OperandType simple_operand(enum Amd64OperandType op) {
     switch (op) {
@@ -32,7 +31,7 @@ static enum Amd64OperandType simple_operand(enum Amd64OperandType op) {
 // Increments <offset> by the maximum size needed by <op>.
 // Note: RVA, not file offset
 // Also computes REX prefix
-static uint64_t max_op_offset(AsmCtx* ctx, Amd64Op* op, uint64_t* offset) {
+static uint64_t max_op_offset(Amd64AsmCtx* ctx, Amd64Op* op, uint64_t* offset) {
     assert(op->opcode < OPCODE_START);
     uint32_t count = ENCODINGS[op->opcode].count;
     const Encoding* encodings = ENCODINGS[op->opcode].encodings;
@@ -226,7 +225,7 @@ void AddrBuf_free(AddrBuf* buf) {
 }
 
 
-static uint64_t assemble_op(AsmCtx* ctx, Amd64Op* op, uint64_t* offset, AddrBuf* addrs) {
+static uint64_t assemble_op(Amd64AsmCtx* ctx, Amd64Op* op, uint64_t* offset, AddrBuf* addrs) {
     assert(op->opcode < OPCODE_START);
     Amd64Operand operands[OPERAND_MAX];
     for (uint32_t ix = 0; ix < op->count; ++ix) {
@@ -447,10 +446,9 @@ static uint64_t assemble_op(AsmCtx* ctx, Amd64Op* op, uint64_t* offset, AddrBuf*
     assert(false);
 }
 
-Amd64Op* create_op(AsmCtx* ctx, enum Amd64Opcode opcode) {
+static Amd64Op* create_op(Amd64AsmCtx* ctx, enum Amd64Opcode opcode) {
     Amd64Op* op = Arena_alloc_type(&ctx->arena, Amd64Op);
     op->next = NULL;
-    op->prev = NULL;
     op->opcode = opcode;
     op->count = 0;
     op->max_offset = 0;
@@ -460,7 +458,7 @@ Amd64Op* create_op(AsmCtx* ctx, enum Amd64Opcode opcode) {
 }
 
 
-void asm_ctx_create(AsmCtx* ctx, Object* object, section_ix code_section) {
+void amd64_asm_ctx_create(Amd64AsmCtx* ctx, Object* object, section_ix code_section) {
     const enum LogCatagory LOG_CATAGORY = LOG_CATAGORY_ASM_GENERATION;
     if (!Arena_create(&ctx->arena, 0xffffffff, out_of_memory, NULL)) {
         LOG_CRITICAL("Failed creating arena");
@@ -471,7 +469,6 @@ void asm_ctx_create(AsmCtx* ctx, Object* object, section_ix code_section) {
     ctx->end = create_op(ctx, OPCODE_END);
 
     ctx->start->next = ctx->end;
-    ctx->end->prev = ctx->start;
 
     ctx->label_count = 0;
     ctx->label_cap = 32;
@@ -484,12 +481,12 @@ void asm_ctx_create(AsmCtx* ctx, Object* object, section_ix code_section) {
     ctx->code_section = code_section;
 }
 
-void asm_instr(AsmCtx* ctx, enum Amd64Opcode opcode) {
+void amd64_asm_instr(Amd64AsmCtx* ctx, enum Amd64Opcode opcode) {
     Amd64Op* op = ctx->end;
     op->opcode = opcode;
 }
 
-void asm_genreg_var(AsmCtx* ctx, uint8_t size, uint8_t reg) {
+void amd64_asm_genreg_var(Amd64AsmCtx* ctx, uint8_t size, uint8_t reg) {
     assert(reg >= RAX && reg < RAX + GEN_REG_COUNT);
     Amd64Op* op = ctx->end;
     if (size == 1) {
@@ -505,14 +502,14 @@ void asm_genreg_var(AsmCtx* ctx, uint8_t size, uint8_t reg) {
     op->operands[op->count++].reg = reg;
 }
 
-void asm_xmmreg_var(AsmCtx *ctx, uint8_t size, uint8_t reg) {
+void amd64_asm_xmmreg_var(Amd64AsmCtx *ctx, uint8_t size, uint8_t reg) {
     assert(reg >= XMM0 && reg < XMM0 + XMM_COUNT);
     Amd64Op* op = ctx->end;
     op->operands[op->count].type = OPERAND_REGXMM;
     op->operands[op->count++].reg = reg - XMM0;
 }
 
-void asm_label_var(AsmCtx* ctx, uint64_t ix) {
+void amd64_asm_label_var(Amd64AsmCtx* ctx, uint64_t ix) {
     assert(ix <= UINT32_MAX);
     Amd64Op* op = ctx->end;
     op->operands[op->count].type = OPERAND_LABEL;
@@ -520,13 +517,13 @@ void asm_label_var(AsmCtx* ctx, uint64_t ix) {
 }
 
 
-void asm_symbol_label_var(AsmCtx* ctx, symbol_ix symbol) {
+void amd64_asm_symbol_label_var(Amd64AsmCtx* ctx, symbol_ix symbol) {
     Amd64Op* op = ctx->end;
     op->operands[op->count].type = OPERAND_SYMBOL_LABEL;
     op->operands[op->count++].symbol = symbol;
 }
 
-void asm_mem_var(AsmCtx* ctx, uint8_t size, uint8_t reg, uint8_t scale,
+void amd64_asm_mem_var(Amd64AsmCtx* ctx, uint8_t size, uint8_t reg, uint8_t scale,
                  uint8_t scale_reg, int32_t offset) {
     Amd64Op* op = ctx->end;
     if (size == 1) {
@@ -550,7 +547,7 @@ void asm_mem_var(AsmCtx* ctx, uint8_t size, uint8_t reg, uint8_t scale,
     op->operands[op->count++].offset = offset;
 }
 
-void asm_global_mem_var(AsmCtx* ctx, uint8_t size, symbol_ix symbol,
+void amd64_asm_global_mem_var(Amd64AsmCtx* ctx, uint8_t size, symbol_ix symbol,
                         int32_t offset) {
     Amd64Op* op = ctx->end;
     if (size == 1) {
@@ -572,7 +569,7 @@ void asm_global_mem_var(AsmCtx* ctx, uint8_t size, symbol_ix symbol,
     op->operands[op->count++].symbol = symbol;
 }
 
-void asm_imm_var(AsmCtx* ctx, uint8_t size, const uint8_t* data) {
+void amd64_asm_imm_var(Amd64AsmCtx* ctx, uint8_t size, const uint8_t* data) {
     Amd64Op* op = ctx->end;
     if (size == 1) {
         op->operands[op->count].type = OPERAND_IMM8;
@@ -587,16 +584,14 @@ void asm_imm_var(AsmCtx* ctx, uint8_t size, const uint8_t* data) {
     memcpy(op->operands[op->count++].imm, data, size);
 }
 
-void asm_instr_end(AsmCtx* ctx) {
+void amd64_asm_instr_end(Amd64AsmCtx* ctx) {
     Amd64Op* op = ctx->end;
 
     ctx->end = create_op(ctx, OPCODE_END);
-    ctx->end->prev = op;
-
     op->next = ctx->end;
 }
 
-void asm_put_label(AsmCtx* ctx, uint64_t label) {
+void amd64_asm_put_label(Amd64AsmCtx* ctx, uint64_t label) {
     assert(label < UINT32_MAX);
     if (label >= ctx->label_count) {
         if (label >= ctx->label_cap) {
@@ -616,9 +611,9 @@ void asm_put_label(AsmCtx* ctx, uint64_t label) {
     }
     ctx->labels[label].op = ctx->end;
 
-    asm_instr(ctx, OPCODE_LABEL);
+    amd64_asm_instr(ctx, OPCODE_LABEL);
     ctx->end->label = label;
-    asm_instr_end(ctx);
+    amd64_asm_instr_end(ctx);
 }
 
 const char* OP_NAMES[] = {
@@ -696,7 +691,7 @@ const char* regname(uint32_t reg, uint64_t size) {
     assert(false);
 }
 
-void serialize_operand(AsmCtx* ctx, String* dest, Amd64Operand operand) {
+void serialize_operand(Amd64AsmCtx* ctx, String* dest, Amd64Operand operand) {
     switch (operand.type) {
     case OPERAND_MEM8:
     case OPERAND_MEM16:
@@ -806,7 +801,7 @@ void serialize_operand(AsmCtx* ctx, String* dest, Amd64Operand operand) {
     }
 }
 
-void serialize_op(AsmCtx* ctx, String* dest, Amd64Op* op) {
+void serialize_op(Amd64AsmCtx* ctx, String* dest, Amd64Op* op) {
     if (op->opcode == OPCODE_START) {
         const uint8_t* name = ctx->object->symbols[op->symbol].name;
         uint32_t name_len = ctx->object->symbols[op->symbol].name_len;
@@ -830,7 +825,7 @@ void serialize_op(AsmCtx* ctx, String* dest, Amd64Op* op) {
     }
 }
 
-void asm_serialize(AsmCtx* ctx, String* dest) {
+void amd64_asm_serialize(Amd64AsmCtx* ctx, String* dest) {
     Amd64Op* op = ctx->start;
     for (; op != ctx->end; op = op->next) {
         serialize_op(ctx, dest, op);
@@ -838,7 +833,7 @@ void asm_serialize(AsmCtx* ctx, String* dest) {
     }
 }
 
-void asm_assemble(AsmCtx* ctx, symbol_ix symbol) {
+void amd64_asm_assemble(Amd64AsmCtx* ctx, symbol_ix symbol) {
     const enum LogCatagory LOG_CATAGORY = LOG_CATAGORY_ASSEMBLER;
 
     ctx->start->symbol = symbol;
@@ -898,10 +893,10 @@ void asm_assemble(AsmCtx* ctx, symbol_ix symbol) {
     LOG_INFO("Done assembly: %llu bytes", buf->size);
 }
 
-void asm_reset(AsmCtx* ctx) {
+void amd64_asm_reset(Amd64AsmCtx* ctx) {
     ctx->start = ctx->end;
 
-    asm_instr(ctx, OPCODE_START);
-    asm_instr_end(ctx);
+    amd64_asm_instr(ctx, OPCODE_START);
+    amd64_asm_instr_end(ctx);
 
 }

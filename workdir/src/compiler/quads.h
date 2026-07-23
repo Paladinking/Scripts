@@ -5,6 +5,7 @@
 
 #include "tables.h"
 #include "varset.h"
+#include "type_checker.h"
 
 enum QuadScale {
     QUADSCALE_NONE = 0,

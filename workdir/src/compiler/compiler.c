@@ -33,13 +33,14 @@ int compiler(char** argv, int argc) {
     FlagInfo flags[] = {
         {'s', "log-to-socket", NULL}, // 0
         {'\0', "show-ast"},           // 1
-        {'\0', "show-prossesed-ast"}, // 2
+        {'\0', "show-processed-ast"}, // 2
         {'\0', "show-quads"},         // 3
         {'\0', "show-asm"},           // 4
         {'\0', "show-object"},        // 5
         {'\0', "show-all"},           // 6
         {'c', NULL},                  // 7
         {'o', NULL, &outfile},        // 8
+        {'\0', "editor"}              // 9
     };
     const uint32_t flag_count = sizeof(flags) / sizeof(FlagInfo);
     ErrorInfo err;
@@ -59,6 +60,7 @@ int compiler(char** argv, int argc) {
     bool show_asm = flags[4].count > 0 || flags[6].count > 0;
     bool show_object = flags[5].count > 0 || flags[6].count > 0;
     bool compile_only = flags[7].count > 0;
+    bool editor_backend = flags[9].count > 0;
 
     if (argc < 2) {
         LOG_USER_ERROR("Missing argument");
@@ -66,7 +68,7 @@ int compiler(char** argv, int argc) {
     }
 
     Parser parser;
-    Parser_create(&parser);
+    Parser_create(&parser, editor_backend ? BACKEND_EDITOR : BACKEND_X64_WIN32);
 
     for (uint32_t ix = 1; ix < argc; ++ix) {
         if (!add_module(&parser, argv[ix], false)) {
@@ -75,35 +77,35 @@ int compiler(char** argv, int argc) {
         }
     }
 
-
-    for (uint32_t mod = 0; mod < parser.modules.count; ++mod) {
+    Module* mod = parser.first_module;
+    while (mod != NULL) {
         String s;
-        const char* filename = parser.modules.modules[mod].filename;
+        const char* filename = mod->filename;
         if (!read_text_file(&s, filename)) {
             LOG_USER_ERROR("Failed to read '%s'\n", filename);
             return 1;
         }
-        parser.modules.modules[mod].content = s;
+        mod->content = s;
         scan_program(&parser, &s, filename);
 
         if (parser.first_error != NULL) {
             dump_errors(&parser);
             return 1;
         }
+        mod = mod->next;
     }
     if (parser.first_error == NULL) {
-        for (uint32_t ix = 0; ix < parser.modules.count; ++ix) {
-            Module* mod = &parser.modules.modules[ix];
-
+        mod = parser.first_module;
+        while (mod != NULL) {
             parse_program(&parser, &mod->content, mod->filename, mod->import);
 
             if (parser.first_error != NULL) {
                 dump_errors(&parser);
                 return 1;
             }
+            mod = mod->next;
         }
     }
-
 
     for (int i = 0; i < parser.function_table.size; ++i) {
         String s;
@@ -147,7 +149,7 @@ int compiler(char** argv, int argc) {
                                     &parser.externs,
                                     &parser.name_table,
                                     parser.first_str, &parser.arena,
-                                    show_asm);
+                                    show_asm, parser.backend);
 
     if (compile_only) {
         const char* outname = outfile.str;
@@ -236,7 +238,6 @@ int main() {
 
 #else
 int main(char** argv, int argc) {
-    Log_Init();
     int status = compiler(argv, argc);
     Log_Shutdown();
     return status;

@@ -40,11 +40,6 @@ typedef struct RegexAllCtx {
     Regex* regex;
     const uint8_t* str;
     uint64_t len;
-
-    // Fields used for case insensitive match
-    uint64_t buffer_len;
-    uint64_t buffer_cap;
-    uint8_t* buffer;
 } RegexAllCtx;
 
 Regex* Regex_compile(const char* pattern);

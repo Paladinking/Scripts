@@ -1,5 +1,6 @@
 #include "type_checker.h"
-#include "code_generation.h"
+#include "codegen/amd64_codegen.h"
+#include "codegen/editor_codegen.h"
 #include "ast.h"
 #include <mem.h>
 
@@ -153,7 +154,7 @@ type_id typecheck_unop(Parser* parser, Expression* op) {
                 return type_ptr_of(&parser->type_table, op->unop.expr->type);
             }
         } else {
-            assert(op->unop.expr->kind == EXPRESSION_VARIABLE);
+            //assert(op->unop.expr->kind == EXPRESSION_VARIABLE);
             return type_ptr_of(&parser->type_table, op->unop.expr->type);
         }
     case UNOP_DEREF:
@@ -379,13 +380,13 @@ type_id typecheck_call(Parser* parser, Expression* e) {
             typecheck_cast(parser, e->call.args[ix].e);
         }
         AllocInfo i = type_allocation(&parser->type_table, t);
-        if (Backend_arg_is_ptr(i)) {
+        if (parser->type_table.backend.arg_is_ptr(i)) {
             addr_to(parser, e->call.args[ix].e);
             e->call.args[ix].ptr_copy = true;
         }
     }
     AllocInfo rec = type_allocation(&parser->type_table, func->return_type);
-    if (Backend_return_as_ptr(rec)) {
+    if (parser->type_table.backend.return_as_ptr(rec)) {
         e->call.ptr_return = true;
     }
 
@@ -600,6 +601,23 @@ void typecheck_assignment(Parser* parser, Statement* s) {
     assert(parser->type_table.data[src].kind == TYPE_NORMAL);
 
     TypeDef* def = parser->type_table.data[src].type_def;
+    if (def->kind == TYPEDEF_FUNCTION) {
+        add_error(parser, TYPE_ERROR_ILLEGAL_TYPE, 
+                  s->assignment.rhs->line);
+        return;
+    }
+
+    if (s->assignment.rhs->kind == EXPRESSION_CALL &&
+            s->assignment.rhs->call.ptr_return) {
+        // This is an assignment from a function returning via ptr
+        if (src == dst) {
+            addr_to(parser, s->assignment.lhs);
+            addr_to(parser, s->assignment.rhs);
+            s->assignment.ptr_copy = true;
+            return;
+        }
+    }
+
     if (def->kind == TYPEDEF_BUILTIN) {
         if (src != dst) {
             cast_to(parser, s->assignment.rhs, dst);
@@ -608,11 +626,6 @@ void typecheck_assignment(Parser* parser, Statement* s) {
         return;
     }
 
-    if (def->kind == TYPEDEF_FUNCTION) {
-        add_error(parser, TYPE_ERROR_ILLEGAL_TYPE, 
-                  s->assignment.rhs->line);
-        return;
-    }
     assert(def->kind == TYPEDEF_STRUCT);
 
     if (src != dst) {
@@ -643,7 +656,8 @@ Statement** add_statement(Parser* parser, Statement** stack, uint64_t* stack_siz
     return stack;
 }
 
-void typecheck_statements(Parser* parser, Statement** statements, uint64_t statement_count, type_id rettype) {
+void typecheck_statements(Parser* parser, Statement** statements, 
+                          uint64_t statement_count, type_id rettype) {
     Statement** stack = Mem_alloc((statement_count + 8) * sizeof(Statement*));
     if (stack == NULL) {
         out_of_memory(parser);
@@ -683,7 +697,7 @@ void typecheck_statements(Parser* parser, Statement** statements, uint64_t state
                 typecheck_cast(parser, top->return_.return_value);
             }
             AllocInfo i = type_allocation(&parser->type_table, rettype);
-            if (Backend_return_as_ptr(i)) {
+            if (parser->type_table.backend.return_as_ptr(i)) {
                 addr_to(parser, top->return_.return_value);
                 top->return_.ptr_return = true;
             }
@@ -721,11 +735,28 @@ void typecheck_statements(Parser* parser, Statement** statements, uint64_t state
     Mem_free(stack);
 }
 
+static TypeBackend get_backend(enum BackendType type) {
+    TypeBackend b;
+    b.type = type;
+    if (type == BACKEND_X64_WIN32) {
+        b.ptr_size = 8;
+        b.arg_is_ptr = amd64_arg_is_ptr;
+        b.return_as_ptr = amd64_return_as_ptr;
+    } else if (type == BACKEND_EDITOR) {
+        b.ptr_size = 4;
+        b.arg_is_ptr = editor_arg_is_ptr;
+        b.return_as_ptr = editor_return_as_ptr;
+    } else {
+        assert(false);
+    }
+    return b;
+}
 
 bool TypeChecker_run(Parser* parser) {
     if (!TypeChecker_resolve_structs(parser)) {
         return false;
     }
+    parser->type_table.backend = get_backend(parser->backend);
 
     NameTable* name_table = &parser->name_table;
     TypeTable* type_table = &parser->type_table;
@@ -736,7 +767,7 @@ bool TypeChecker_run(Parser* parser) {
         for (uint64_t arg = 0; arg < funcs->data[ix]->arg_count; ++arg) {
             type_id t = funcs->data[ix]->args[arg].type;
             AllocInfo i = type_allocation(&parser->type_table, t);
-            if (!Backend_arg_is_ptr(i)) {
+            if (!parser->type_table.backend.arg_is_ptr(i)) {
                 continue;
             }
             name_id name = funcs->data[ix]->args[arg].name;
@@ -756,7 +787,7 @@ bool TypeChecker_run(Parser* parser) {
         type_id rettype = funcs->data[ix]->return_type;
 
         typecheck_statements(parser, funcs->data[ix]->statements,
-                funcs->data[ix]->statement_count, rettype);
+                             funcs->data[ix]->statement_count, rettype);
     }
 
     return parser->first_error == NULL;
@@ -858,50 +889,41 @@ bool resolve_struct_or_union(Parser* parser, TypeDef* def) {
 
 
 bool TypeChecker_resolve_structs(Parser* parser) {
-    // Not realy a queue... just a list
-    TypeDef** queue = Mem_alloc(16 * sizeof(TypeDef*));
-    if (queue == NULL) {
-        out_of_memory(parser);
-    }
-    uint32_t queue_size = 0;
-    uint32_t queue_cap = 16;
-
-    for (uint64_t ix = 0; ix < parser->type_table.size; ++ix) {
-        if (parser->type_table.data[ix].kind != TYPE_NORMAL) {
-            continue;
-        }
-        TypeDef* def = parser->type_table.data[ix].type_def;
-        if (def->kind != TYPEDEF_STRUCT) {
-            continue;
-        }
-        if (!resolve_struct_or_union(parser, def)) {
-            //NOLINTNEXTLINE 
-            RESERVE32(queue, queue_size + 1, queue_cap);
-            queue[queue_size++] = def;
-        }
-    }
-
-    while (queue_size > 0) {
-        uint32_t last_queue_size = queue_size;
-        uint32_t ix = 0;
-        for (uint32_t ix = 0; ix < queue_size;) {
-            TypeDef* def = queue[ix];
+    uint32_t resolved = 0;
+    while (1) {
+        uint32_t last_resolved = resolved;
+        uint32_t unresolved = 0;
+        for (uint64_t ix = 0; ix < parser->type_table.size; ++ix) {
+            if (parser->type_table.data[ix].kind != TYPE_NORMAL) {
+                continue;
+            }
+            TypeDef* def = parser->type_table.data[ix].type_def;
+            if (def->kind != TYPEDEF_STRUCT || def->struct_.byte_alignment != 0) {
+                continue;
+            }
             if (resolve_struct_or_union(parser, def)) {
-                queue[ix] = queue[queue_size - 1];
-                --queue_size;
+                --unresolved;
             } else {
-                ++ix;
+                ++resolved;
             }
         }
-
-        if (last_queue_size == queue_size) {
-            // We have recursive structures...
-            for (uint32_t ix = 0; ix < queue_size; ++ix) {
-                add_error(parser, TYPE_ERROR_RECURSIVE_STRUCT, queue[ix]->struct_.line);
-            }
-            return false;
+        if (unresolved == 0) {
+            break;
+        } else if (last_resolved < resolved) {
+            continue;
         }
+        // We have recursive structures...
+        for (uint64_t ix = 0; ix < parser->type_table.size; ++ix) {
+            if (parser->type_table.data[ix].kind != TYPE_NORMAL) {
+                continue;
+            }
+            TypeDef* def = parser->type_table.data[ix].type_def;
+            if (def->kind != TYPEDEF_STRUCT || def->struct_.byte_alignment != 0) {
+                continue;
+            }
+            add_error(parser, TYPE_ERROR_RECURSIVE_STRUCT, def->struct_.line);
+        }
+        return false;
     }
-
     return true;
 }

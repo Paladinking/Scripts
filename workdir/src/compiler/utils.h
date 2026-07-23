@@ -5,6 +5,11 @@
 #include <stdint.h>
 #include "log.h"
 
+enum BackendType {
+    BACKEND_X64_WIN32 = 0,
+    BACKEND_EDITOR = 1
+};
+
 typedef struct StrWithLength {
     const uint8_t* str;
     uint32_t len;
@@ -18,8 +23,6 @@ typedef struct LineInfo {
 } LineInfo;
 
 extern const LineInfo LINE_INFO_NONE;
-
-#define PTR_SIZE 8
 
 #ifdef _MSC_VER
 #include <printf.h>

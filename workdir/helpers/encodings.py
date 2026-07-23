@@ -590,14 +590,14 @@ def main() -> None:
              for ix, (name, val, count) in enumerate(encodings)]
 
     if len(sys.argv) < 2:
-        print("#include \"amd64.h\"\n")
+        print("#include \"amd64_asm.h\"\n")
         print(s, end='\n\n')
         print('const Encodings ENCODINGS[] = {');
         print('\n'.join(parts))
         print('};')
     else:
         with open(sys.argv[1], 'w') as file:
-            print("#include \"amd64.h\"\n", file=file)
+            print("#include \"amd64_asm.h\"\n", file=file)
             print(s, end='\n\n', file=file)
             print('const Encodings ENCODINGS[] = {', file=file);
             print('\n'.join(parts), file=file)

@@ -15,6 +15,14 @@ void parser_add_keyword(Parser* parser, const char* keyword, name_id id) {
     }
 }
 
+void paraser_disable_builtin(Parser* parser, type_id id) {
+    parser->type_table.data[id].kind = TYPE_DISABLED;
+    parser->type_table.data[id].array_size = 0;
+    parser->type_table.data[id].parent = TYPE_ID_INVALID;
+    parser->type_table.data[id].type_def = NULL;
+    parser->type_table.data[id].ptr_type = TYPE_ID_INVALID;
+}
+
 void parser_add_builtin(Parser* parser, type_id id, uint32_t size, uint32_t align,
                         const char* name) {
     TypeDef* def = Arena_alloc_type(&parser->arena, TypeDef);
@@ -34,8 +42,6 @@ void parser_add_builtin(Parser* parser, type_id id, uint32_t size, uint32_t alig
 }
 
 bool add_module(Parser* parser, const char* filename, bool is_import) {
-    ModuleList* list = &parser->modules;
-
     String full;
     if (!String_create(&full)) {
         return false;
@@ -53,28 +59,37 @@ bool add_module(Parser* parser, const char* filename, bool is_import) {
     }
     String_free(&full);
 
-    for (uint32_t ix = 0; ix < list->count; ++ix) {
-        if (strcmp(file.buffer, list->modules[ix].filename) == 0) {
-            if (!is_import) {
-                list->modules[ix].import = false;
+    Module* mod = parser->first_module;
+    if (mod == NULL) {
+        mod = parser->first_module = Arena_alloc_type(&parser->arena, Module);
+    } else {
+        while (1) {
+            if (strcmp(file.buffer, mod->filename) == 0) {
+                if (!is_import) {
+                    mod->import = false;
+                }
+                return true;
             }
-            return true;
+            if (mod->next == NULL) {
+                break;
+            }
+            mod = mod->next;
         }
+        mod->next = Arena_alloc_type(&parser->arena, Module);
+        mod = mod->next;
     }
-    RESERVE32(list->modules, list->count + 1, list->capacity);
 
-    list->modules[list->count].filename = file.buffer;
-    list->modules[list->count].import = is_import;
-    list->modules[list->count].content.buffer = NULL;
-    list->modules[list->count].content.capacity = 0;
-    list->modules[list->count].content.length = 0;
-    ++list->count;
+    mod->filename = file.buffer;
+    mod->import = is_import;
+    mod->content.buffer = NULL;
+    mod->content.capacity = 0;
+    mod->content.length = 0;
 
-    LOG_INFO("Module: %s", parser->modules.modules[parser->modules.count - 1].filename);
+    LOG_INFO("Module: %s", mod->filename);
     return true;
 }
 
-void Parser_create(Parser* parser) {
+void Parser_create(Parser* parser, enum BackendType backend) {
     LOG_DEBUG("Creating parser");
     if (!Arena_create(&parser->arena, 0x7fffffff, out_of_memory,
                       parser)) {
@@ -85,6 +100,7 @@ void Parser_create(Parser* parser) {
         Arena_free(&parser->arena);
         out_of_memory(NULL);
     }
+    parser->backend = backend;
     parser->function_table.data = function_data;
     parser->function_table.size = 0;
     parser->function_table.capacity = 16;
@@ -108,6 +124,7 @@ void Parser_create(Parser* parser) {
         out_of_memory(NULL);
     }
 
+    parser->type_table.backend = (TypeBackend){0};
     parser->type_table.capacity = TYPE_ID_BUILTIN_COUNT + 16;
     parser->type_table.size = TYPE_ID_BUILTIN_COUNT;
     parser->type_table.data = type_data;
@@ -136,20 +153,7 @@ void Parser_create(Parser* parser) {
         Mem_free(name_data);
         out_of_memory(NULL);
     }
-
-    Module* modules = Mem_alloc(2 * sizeof(Module));
-    if (modules == NULL) {
-        Arena_free(&parser->arena);
-        Mem_free(function_data);
-        Mem_free(extern_data);
-        Mem_free(type_data);
-        Mem_free(name_data);
-        Mem_free(parser->name_table.scope_stack);
-        out_of_memory(NULL);
-    }
-    parser->modules.modules = modules;
-    parser->modules.count = 0;
-    parser->modules.capacity = 2;
+    parser->first_module = NULL;
 
     parser->name_table.scope_count = 1;
     parser->name_table.scope_capacity = 8;
@@ -187,8 +191,13 @@ void Parser_create(Parser* parser) {
     parser_add_builtin(parser, TYPE_ID_INT32, 4, 4, "int32");
     parser_add_builtin(parser, TYPE_ID_INT16, 2, 2, "int16");
     parser_add_builtin(parser, TYPE_ID_INT8, 1, 1, "int8");
-    parser_add_builtin(parser, TYPE_ID_FLOAT64, 8, 8, "float64");
-    parser_add_builtin(parser, TYPE_ID_FLOAT32, 4, 4, "float32");
+    if (backend != BACKEND_EDITOR) {
+        parser_add_builtin(parser, TYPE_ID_FLOAT64, 8, 8, "float64");
+        parser_add_builtin(parser, TYPE_ID_FLOAT32, 4, 4, "float32");
+    } else {
+        paraser_disable_builtin(parser, TYPE_ID_FLOAT64);
+        paraser_disable_builtin(parser, TYPE_ID_FLOAT32);
+    }
     parser_add_builtin(parser, TYPE_ID_NONE, 0, 1, "<None Type>");
     parser_add_builtin(parser, TYPE_ID_BOOL, 1, 1, "bool");
     parser_add_builtin(parser, TYPE_ID_NULL, 8, 8, "<Null Type>");
@@ -814,7 +823,17 @@ void parser_error(void *ctx, SyntaxError e) {
     struct Tokenizer* t = ctx;
     Parser* p = t->parser;
     LineInfo l = {p->filename, e.start, e.end};
-    add_error(p, PARSE_ERROR_INVALID_CHAR, l);
+    bool has_type_id = false;
+    for (uint64_t ix = 0; ix < e.expected_count; ++ix) {
+        if (e.expected[ix].id == TOKEN_TYPEID) {
+            has_type_id = true;
+        }
+    }
+    if (has_type_id) {
+        add_error(p, PARSE_ERROR_BAD_TYPE, l);
+    } else {
+        add_error(p, PARSE_ERROR_INVALID_CHAR, l);
+    }
 }
 
 void consume_token(void* ctx, uint64_t* start, uint64_t* end) {

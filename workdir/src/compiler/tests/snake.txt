@@ -103,7 +103,14 @@ fn randomize_apple(uint32* x, uint32* y, Part* snake, uint32 len) -> uint32 {
     }
 }
 
+fn test() -> uint64 {
+    return 0;
+}
+
 fn main() -> uint64 {
+    uint32 a = test();
+    a = test();
+
     Part[256] snake;
     uint32 ix = 0;
     while (ix < 50) {

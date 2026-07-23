@@ -213,15 +213,17 @@ def main():
         parser_o = Object("parser", "src/compiler/parser.c", includes=["src/compiler"],
                               depends=[parse_h.product])
 
-        encodings_c = Command("encodings.c", 
-                              f"python helpers/encodings.py src/compiler/asm/encodings.c",
-                              "helpers/encodings.py", directory="src/compiler/asm")
+        encodings_c = Command("amd64_encodings.c", 
+                              f"python helpers/encodings.py src/compiler/codegen/amd64_encodings.c",
+                              "helpers/encodings.py", directory="src/compiler/codegen")
 
-        comp_src = ["src/compiler/format.c", "src/compiler/asm/amd64.c",
+        comp_src = ["src/compiler/format.c", "src/compiler/codegen/amd64_asm.c",
+                    "src/compiler/codegen/editor_codegen.c",
                     "src/compiler/quads.c", "src/compiler/utils.c",
                     "src/compiler/linker/linker.c", "src/compiler/linker/pe_coff.c",
                     "src/compiler/tokenizer.c", encodings_c.product,
-                    "src/compiler/code_generation.c", "src/compiler/amd64_asm.c",
+                    "src/compiler/code_generation.c", "src/compiler/codegen/amd64_codegen.c",
+                    "src/compiler/codegen/codegen.c",
                     "src/compiler/log.c", "src/compiler/type_checker.c",
                     "src/compiler/tables.c", "src/printf.c",
                     "src/dynamic_string.c", "src/args.c", "src/path_utils.c",

@@ -228,7 +228,8 @@ typedef struct TypeDef {
 
 typedef struct TypeData {
     enum {
-        TYPE_NORMAL, TYPE_ARRAY, TYPE_PTR
+        TYPE_NORMAL, TYPE_ARRAY, TYPE_PTR, 
+        TYPE_DISABLED
     } kind;
     TypeDef* type_def;
     type_id parent;
@@ -236,7 +237,20 @@ typedef struct TypeData {
     uint64_t array_size;
 } TypeData;
 
+typedef struct AllocationInfo {
+    uint64_t size;
+    uint64_t alignment;
+} AllocInfo;
+
+typedef struct TypeBackend {
+    enum BackendType type;
+    uint32_t ptr_size;
+    bool (*arg_is_ptr)(AllocInfo info);
+    bool (*return_as_ptr)(AllocInfo info);
+} TypeBackend;
+
 typedef struct TypeTable {
+    TypeBackend backend;
     uint64_t size;
     uint64_t capacity;
     TypeData* data;
@@ -247,11 +261,6 @@ typedef struct FunctionTable {
     uint64_t capacity;
     FunctionDef** data;
 } FunctionTable;
-
-typedef struct AllocationInfo {
-    uint64_t size;
-    uint64_t alignment;
-} AllocInfo;
 
 typedef struct StringLiteral {
     const uint8_t* bytes;
@@ -264,15 +273,11 @@ typedef struct Module {
     const char* filename; // Null-terminated
     bool import; // True if no code should be generated for this module
     String content;
+    struct Module* next;
 } Module;
 
-typedef struct ModuleList {
-    uint32_t count;
-    uint32_t capacity;
-    Module* modules;
-} ModuleList;
-
 typedef struct Parser {
+    enum BackendType backend;
     FunctionTable function_table;
     TypeTable type_table;
     NameTable name_table;
@@ -284,7 +289,7 @@ typedef struct Parser {
     const char* filename;
     bool import_module;
 
-    ModuleList modules;
+    Module* first_module;
 
     uint64_t pos;
 

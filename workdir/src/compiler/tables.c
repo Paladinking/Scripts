@@ -247,7 +247,8 @@ AllocInfo type_allocation(TypeTable* type_table, type_id id) {
         root.size *= scale;
         return root;
     } else if (type_table->data[id].kind == TYPE_PTR) {
-        return (AllocInfo){PTR_SIZE, PTR_SIZE};
+        return (AllocInfo){type_table->backend.ptr_size,
+                           type_table->backend.ptr_size};
     } else {
         assert(false);
     }
