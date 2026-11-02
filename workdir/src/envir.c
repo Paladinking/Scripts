@@ -561,6 +561,154 @@ end:
     return res;
 }
 
+BOOL NextNameAndValue(wchar_t* env, size_t len, size_t* ix,
+                      wchar_t** var_name, size_t* var_name_len,
+                      wchar_t** var_val, size_t* var_val_len) {
+    *var_name_len = 0;
+    *var_val_len = 0;
+    *var_val = NULL;
+    if (*ix >= len) {
+        *var_name = NULL;
+        return FALSE;
+    }
+
+    *var_name = env + *ix;
+    while (*ix < len) {
+        if (env[*ix] == L'=') {
+            ++(*ix);
+            *var_val = env + *ix;
+            continue;
+        } else if (env[*ix] == L'\0') {
+            ++(*ix);
+            break;
+        }
+        if (*var_val == NULL) {
+            ++(*var_name_len);
+        } else {
+            ++(*var_val_len);
+        }
+        ++(*ix);
+    }
+    if (*var_val == NULL) {
+        *var_val = L"";
+    }
+    if (*var_name_len == 0 || (*var_name_len == 19 &&
+        memcmp(*var_name, L"ENV_STACK_FILE_NAME", 19 * sizeof(wchar_t)) == 0)) {
+        return NextNameAndValue(env, len, ix, var_name, var_name_len,
+                                var_val, var_val_len);
+    }
+    return TRUE;
+}
+
+
+DWORD DiffEnvFile(const wchar_t* file_name, const wchar_t* entry_name) {
+    HANDLE file = CreateFile(file_name,
+                             GENERIC_READ,
+                             FILE_SHARE_READ | FILE_SHARE_WRITE,
+                             NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file == NULL || file == INVALID_HANDLE_VALUE) {
+        return GetLastError();
+    }
+    OVERLAPPED o;
+    memset(&o, 0, sizeof(OVERLAPPED));
+    if (!LockFileEx(file, LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, &o)) {
+        CloseHandle(file);
+        return GetLastError();
+    }
+    wchar_t* data;
+    size_t len;
+    DWORD res = FindEnvFileEntry(file, entry_name, &len, &data);
+
+    UnlockFile(file, 0, 0, 1, 0);
+    CloseHandle(file);
+    if (res != ERROR_SUCCESS) {
+        return res;
+    }
+    // Compute number of characters in data
+    len = (len - sizeof(wchar_t) * (wcslen(entry_name) + 1) - sizeof(size_t)) / sizeof(wchar_t);
+
+    size_t own_len;
+    wchar_t* own_data = GetSizedEnvStrings(&own_len);
+    own_len = own_len / sizeof(wchar_t);
+
+    size_t ix = 0;
+    wchar_t* var_name = NULL;
+    size_t var_name_len = 0;
+    wchar_t* var_val = NULL;
+    size_t var_val_len = 0;
+
+    size_t last_ix = ix;
+
+    while (NextNameAndValue(data, len, &ix, &var_name, &var_name_len,
+                            &var_val, &var_val_len)) {
+        size_t ix2 = 0;
+        wchar_t* var_name2 = NULL;
+        size_t var_name2_len = 0;
+        wchar_t* var_val2 = NULL;
+        size_t var_val2_len = 0;
+
+        bool found = false;
+
+        while (NextNameAndValue(own_data, own_len, &ix2, &var_name2,
+                                &var_name2_len, &var_val2, &var_val2_len)) {
+            if (var_name_len != var_name2_len) {
+                continue;
+            }
+            if (memcmp(var_name, var_name2, var_name_len * sizeof(wchar_t)) != 0) {
+                continue;
+            }
+            if (var_val_len != var_val2_len ||
+                memcmp(var_val, var_val2, var_val_len * sizeof(wchar_t)) != 0) {
+                // Differ in value
+                _wprintf(L"\x1B[31m-%*.*s=%*.*s\n\x1B[32m+%*.*s=%*.*s\x1B[0m\n",
+                         var_name_len, var_name_len, var_name,
+                         var_val2_len, var_val2_len, var_val2,
+                         var_name_len, var_name_len, var_name,
+                         var_val_len, var_val_len, var_val);
+            }
+            found = true;
+            break;
+        }
+
+        if (!found) {
+            _wprintf(L"\x1B[32m+%*.*s=%*.*s\x1B[0m\n", var_name_len, var_name_len, var_name,
+                     var_val_len, var_val_len, var_val);
+        }
+    }
+
+    ix = 0;
+    while (NextNameAndValue(own_data, own_len, &ix, &var_name, &var_name_len,
+                            &var_val, &var_val_len)) {
+        size_t ix2 = 0;
+        wchar_t* var_name2 = NULL;
+        size_t var_name2_len = 0;
+        wchar_t* var_val2 = NULL;
+        size_t var_val2_len = 0;
+
+        bool found = false;
+
+        while (NextNameAndValue(data, len, &ix2, &var_name2,
+                                &var_name2_len, &var_val2, &var_val2_len)) {
+            if (var_name_len != var_name2_len) {
+                continue;
+            }
+            if (memcmp(var_name, var_name2, var_name_len * sizeof(wchar_t)) != 0) {
+                continue;
+            }
+            found = true;
+            break;
+        }
+        if (!found) {
+            _wprintf(L"\x1B[31m-%*.*s=%*.*s\x1B[0m\n", var_name_len, var_name_len, var_name,
+                     var_val_len, var_val_len, var_val);
+        }
+    }
+
+    FreeEnvironmentStringsW(own_data);
+    Mem_free(data);
+    return ERROR_SUCCESS;
+}
+
 
 DWORD ReadEnvFile(const wchar_t* file_name, const wchar_t* entry_name, HANDLE process) {
     HANDLE file = CreateFile(file_name,
@@ -615,7 +763,8 @@ end:
 
 typedef enum _Action {
     STACK_PUSH, STACK_POP, STACK_SAVE, STACK_LOAD, STACK_CLEAR, STACK_SIZE, STACK_ID,
-    STACK_FILE_LIST, STACK_FILE_SAVE, STACK_FILE_LOAD, STACK_FILE_REMOVE
+    STACK_FILE_LIST, STACK_FILE_SAVE, STACK_FILE_LOAD, STACK_FILE_REMOVE,
+    STACK_FILE_DIFF,
 } Action;
 
 const char* help_message  = "usage: envir [--help] <commnand> [<arg>]\n\n"
@@ -634,7 +783,8 @@ const char* help_message  = "usage: envir [--help] <commnand> [<arg>]\n\n"
                             "  size           Print the size of the stack\n"
                             "  id, i          Print the id of the stack\n"
                             "  remove <Entry> Remove global environment entry <Entry>\n"
-                            "  list [-q]      List all global environment entries\n\n"
+                            "  list [-q]      List all global environment entries\n"
+                            "  diff           Compares the current environment to global environment entry <Entry>\n"
                             "The size of the stack is limited to 64 entries, after that push will fail.\n"
                             "The id in generated based on the process id of the parent process.\n";
 
@@ -681,6 +831,8 @@ int main() {
         action = STACK_FILE_REMOVE;
     } else if (wcscmp(argv[1], L"list") == 0) {
         action = STACK_FILE_LIST;
+    } else if (wcscmp(argv[1], L"diff") == 0) {
+        action = STACK_FILE_DIFF;
     } else {
         _printf_h(err, "Invalid operation\n");
         status = ERROR_INVALID_OPERATION;
@@ -859,6 +1011,11 @@ int main() {
             } else if (status != 0) {
                 _printf_h(err, "Failed loading environment\n");
                 goto end;
+            }
+        } else if (action == STACK_FILE_DIFF) {
+            status = DiffEnvFile(env_file, argv[2]);
+            if (status == ERROR_HANDLE_EOF) {
+                _printf_h(err, "Entry '%S' not found\n", argv[2]);
             }
         } else {
             status = ListEnvFile(env_file, flag);
