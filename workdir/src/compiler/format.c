@@ -539,10 +539,10 @@ void fmt_statement(const Statement* statement, const Parser* parser, String* des
         return;
     case STATEMENT_WHILE:
         String_extend(dest, "while ");
-        fmt_expression(statement->if_.condition, parser, dest);
+        fmt_expression(statement->while_.condition, parser, dest);
         String_extend(dest, " {\n");
-        for (uint64_t ix = 0; ix < statement->if_.statement_count; ++ix) {
-            fmt_statement(statement->if_.statements[ix], parser, dest);
+        for (uint64_t ix = 0; ix < statement->while_.statement_count; ++ix) {
+            fmt_statement(statement->while_.statements[ix], parser, dest);
         }
         String_extend(dest, "}\n");
         return;

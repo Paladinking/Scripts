@@ -792,7 +792,7 @@ void output_literal_token(Rule* rule, HANDLE h) {
 }
 
 void output_header(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
-                   String* includes, const ochar_t* name) {
+                   String* includes, const ochar_t* name, const char* prefix) {
     if (name != NULL) {
         oprintf_h(h, "#ifndef ");
         output_include_guard(name, h);
@@ -850,11 +850,14 @@ void output_header(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
     _printf_h(h, "    uint64_t expected_count;\n");
     _printf_h(h, "} SyntaxError;\n\n");
 
-    _printf_h(h, "Token peek_token(void* ctx, uint64_t* start, uint64_t* end);\n\n");
-    _printf_h(h, "void consume_token(void* ctx, uint64_t* start, uint64_t* end);\n\n");
-    _printf_h(h, "void parser_error(void* ctx, SyntaxError e);\n\n");
-    _printf_h(h, "Token literal_token(const char* s, uint64_t len, uint64_t* ix);\n\n");
-    _printf_h(h, "bool parse(void* ctx);\n");
+    _printf_h(h, "Token %s_peek_token(void* ctx, uint64_t* start, uint64_t* end);\n\n",
+              prefix);
+    _printf_h(h, "void %s_consume_token(void* ctx, uint64_t* start, uint64_t* end);\n\n",
+              prefix);
+    _printf_h(h, "void %s_error(void* ctx, SyntaxError e);\n\n", prefix);
+    _printf_h(h, "Token %s_literal_token(const char* s, uint64_t len, uint64_t* ix);\n\n",
+              prefix);
+    _printf_h(h, "bool %s_parse(void* ctx);\n", prefix);
 
 
     for (uint32_t ix = 0; ix < rule_count - 1; ++ix) {
@@ -888,12 +891,13 @@ const static char* INDENTS[8] =  {
     "                        ", "                            "
 };
 
-void output_shift(NodeEdge* edge, HANDLE h, uint8_t indents) {
-    const char* i = INDENTS[indents];
+void output_shift(NodeEdge* edge, HANDLE h, uint8_t indents, const char* prefix) {
+    const char* indent = INDENTS[indents];
     uint32_t new_state = edge->dest->ix;
-    _printf_h(h, "%sn.state = %lu;\n", i, new_state);
-    _printf_h(h, "%sconsume_token(ctx, &n.start, &n.end);\n", i);
-    _printf_h(h, "%spush_state(&stack, n);\n", i);
+    _printf_h(h, "%sn.state = %lu;\n", indent, new_state);
+    _printf_h(h, "%s%s_consume_token(ctx, &n.start, &n.end);\n", indent,
+              prefix);
+    _printf_h(h, "%spush_state(&stack, n);\n", indent);
 }
 
 void output_reduce(rule_id r, Rule* rules, uint32_t* map_ix,
@@ -1082,7 +1086,8 @@ NodeEdge* get_error_shift(Node* n) {
     return NULL;
 }
 
-void output_error_shifts(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h) {
+void output_error_shifts(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
+                         const char* prefix) {
     _printf_h(h, "        while(1) {\n");
     _printf_h(h, "            uint32_t i = stack.size;\n");
     _printf_h(h, "            while (i > 0) {\n");
@@ -1167,8 +1172,8 @@ void output_error_shifts(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE 
     _printf_h(h, "                }\n");
     _printf_h(h, "            }\n");
     _printf_h(h, "            if (t.id != TOKEN_END) {\n");
-    _printf_h(h, "                consume_token(ctx, &n.start, &n.end);\n");
-    _printf_h(h, "                t = peek_token(ctx, &start, &end);\n");
+    _printf_h(h, "                %s_consume_token(ctx, &n.start, &n.end);\n", prefix);
+    _printf_h(h, "                t = %s_peek_token(ctx, &start, &end);\n", prefix);
     _printf_h(h, "                len = end - start;\n");
     _printf_h(h, "                continue;\n");
     _printf_h(h, "            }\n");
@@ -1286,8 +1291,10 @@ void output_syntax_error(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE 
     _printf_h(h, "}\n\n");
 }
 
-void output_get_literal_token(Rule* rules, uint32_t rule_count, HANDLE h) {
-    _printf_h(h, "Token literal_token(const char* s, uint64_t len, uint64_t* ix) {\n");
+void output_get_literal_token(Rule* rules, uint32_t rule_count, HANDLE h,
+                              const char* prefix) {
+    _printf_h(h, "Token %s_literal_token(const char* s, uint64_t len, uint64_t* ix) {\n",
+              prefix);
     uint32_t literals_count = 0;
     for (uint32_t ix = 0; ix < rule_count; ++ix) {
         if (rules[ix].type != RULE_LITERAL) {
@@ -1405,14 +1412,14 @@ void output_get_literal_token(Rule* rules, uint32_t rule_count, HANDLE h) {
 }
 
 void output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
-                 String* includes, const ochar_t* header) {
+                 String* includes, const ochar_t* header, const char* prefix) {
     if (header != NULL) {
         oprintf_h(h, "#include \"%s\"\n", header);
     }
     _printf_h(h, "#include \"mem.h\"\n\n");
 
     if (header == NULL) {
-        output_header(graph, rules, rule_count, h, includes, NULL);
+        output_header(graph, rules, rule_count, h, includes, NULL, prefix);
     }
 
     uint32_t mapping_count = 0;
@@ -1453,7 +1460,7 @@ void output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
 
     output_syntax_error(graph, rules, rule_count, h);
 
-    output_get_literal_token(rules, rule_count, h);
+    output_get_literal_token(rules, rule_count, h, prefix);
 
     _printf_h(h, "static void push_state(struct Stack* stack, struct StackEntry n) {\n");
     _printf_h(h, "    if (stack->size == stack->cap) {\n");
@@ -1469,7 +1476,7 @@ void output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
     _printf_h(h, "    stack->size += 1;\n");
     _printf_h(h, "}\n\n");
 
-    _printf_h(h, "bool parse(void* ctx) {\n");
+    _printf_h(h, "bool %s_parse(void* ctx) {\n", prefix);
     _printf_h(h, "    struct Stack stack;\n");
     _printf_h(h, "    stack.b = (struct StackEntry*)Mem_alloc(16 * sizeof(struct StackEntry));\n");
     _printf_h(h, "    stack.size = 1;\n");
@@ -1481,7 +1488,7 @@ void output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
     _printf_h(h, "    while (1) {\n");
     _printf_h(h, "loop:\n");
     _printf_h(h, "        uint64_t start, end;\n");
-    _printf_h(h, "        Token t = peek_token(ctx, &start, &end);\n");
+    _printf_h(h, "        Token t = %s_peek_token(ctx, &start, &end);\n", prefix);
     _printf_h(h, "        uint64_t len = end - start;\n");
     _printf_h(h, "        switch (n.state) {\n");
     for (uint32_t ix = 0; ix < graph->count; ++ix) {
@@ -1508,7 +1515,7 @@ void output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
             if (rules[id].type == RULE_ATOM && strcmp(rules[id].ctype, "void") != 0) {
                 _printf_h(h, "                n.m%lu = t.%s;\n", id, rules[id].name);
             }
-            output_shift(&n->edges[j], h, 4);
+            output_shift(&n->edges[j], h, 4, prefix);
             _printf_h(h, "                break;\n");
         }
         for (uint32_t j = 0; j < n->rows.count; ++j) {
@@ -1566,8 +1573,9 @@ void output_code(Graph* graph, Rule* rules, uint32_t rule_count, HANDLE h,
     _printf_h(h, "        }\n");
     _printf_h(h, "        continue;\n");
     _printf_h(h, "    failure:\n");
-    _printf_h(h, "        parser_error(ctx, get_syntax_error(n.state, t, start, end));\n");
-    output_error_shifts(graph, rules, rule_count, h);
+    _printf_h(h, "        %s_error(ctx, get_syntax_error(n.state, t, start, end));\n",
+              prefix);
+    output_error_shifts(graph, rules, rule_count, h, prefix);
     _printf_h(h, "    }\n");
     _printf_h(h, "accept:\n");
     _printf_h(h, "    Mem_free(stack.b);\n");
@@ -2072,13 +2080,15 @@ int generate(ochar_t** argv, int argc) {
     FlagValue startnode = {FLAG_STRING};
     FlagValue outfile = {FLAG_STRING};
     FlagValue header = {FLAG_STRING};
+    FlagValue fn_prefix = {FLAG_STRING};
     FlagInfo flags[] = {
         {oL('s'), oL("startnode"), &startnode},
         {oL('o'), oL("output"), &outfile},
-        {oL('H'), oL("header"), &header}
+        {oL('H'), oL("header"), &header},
+        {oL('p'), oL("prefix"), &fn_prefix},
     };
     ErrorInfo err;
-    if (!find_flags(argv, &argc, flags, 3, &err)) {
+    if (!find_flags(argv, &argc, flags, sizeof(flags) / sizeof(flags[0]), &err)) {
         ochar_t* e = format_error(&err, flags, 3);
         if (e != NULL) {
             oprintf_e("%s\n", e);
@@ -2154,18 +2164,27 @@ int generate(ochar_t** argv, int argc) {
     }
 
     Rule* start_rule;
+    const char* prefix = "parser";
 #ifdef NARROW_OCHAR
     start_rule = HashMap_Value(&rule_map, startnode.str);
+    if (flags[3].count > 0) {
+        prefix = fn_prefix.str;
+    }
 #else
     String s;
     String_create(&s);
     if (!String_from_utf16_str(&s, startnode.str)) {
-        String_free(&s);
         HashMap_Free(&rule_map);
         goto fail;
     }
     start_rule = HashMap_Value(&rule_map, s.buffer);
-    String_free(&s);
+    if (flags[3].count > 0) {
+        if (!String_from_utf16_str(&s, fn_prefix.str)) {
+            HashMap_Free(&rule_map);
+            goto fail;
+        }
+        prefix = s.buffer;
+    }
 #endif
     HashMap_Free(&rule_map);
 
@@ -2209,7 +2228,7 @@ int generate(ochar_t** argv, int argc) {
                 header.str = o + 1;
             }
 
-            output_header(g, rules, rule_count, out, &includes, header.str);
+            output_header(g, rules, rule_count, out, &includes, header.str, prefix);
         }
 
         if (flags[1].count == 0) {
@@ -2223,12 +2242,15 @@ int generate(ochar_t** argv, int argc) {
             }
         }
 
-        output_code(g, rules, rule_count, out, &includes, header.str);
+        output_code(g, rules, rule_count, out, &includes, header.str, prefix);
         if (flags[1].count > 0) {
             CloseHandle(out);
         }
         Graph_free(g);
     }
+#ifndef NARROW_OCHAR
+    String_free(&s);
+#endif
 
     String_free(&data);
     String_free(&includes);
@@ -2241,6 +2263,9 @@ int generate(ochar_t** argv, int argc) {
 
     return g != NULL ? 0 : 2;
 fail:
+#ifndef NARROW_OCHAR
+    String_free(&s);
+#endif
     String_free(&data);
     String_free(&includes);
     for (rule_id id = 0; id < rule_count; ++id) {
@@ -2265,6 +2290,6 @@ int main() {
 
 #else
 int main(char** argv, int argc) {
-    return compiler(argv, argc);
+    return generate(argv, argc);
 }
 #endif

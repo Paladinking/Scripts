@@ -188,7 +188,8 @@ def main():
         langdir = "src/compiler/language"
         scan_c, scan_h = Command(["scan.c", "scan.h"],
                                  f"{desc.product} {langdir}/scan.txt -o " +
-                                 f"{langdir}/scan.c -H {langdir}/scan.h -s PROGRAM",
+                                 f"{langdir}/scan.c -H {langdir}/scan.h -s PROGRAM " +
+                                 "--prefix scanner",
                                  desc, f"{langdir}/scan.txt",
                                  directory=langdir)
 
@@ -198,18 +199,13 @@ def main():
                                    desc, f"{langdir}/language.txt",
                                    directory=langdir)
 
-        scan_defs: List[Union[str, Tuple[str, str]]] = \
-                                [("parse", "scanner_parse"), ("parser_error", "scanner_error"),
-                                 ("peek_token", "scanner_peek_token"),
-                                 ("consume_token", "scanner_consume_token"),
-                                 ("literal_token", "scanner_literal_token")]
         scan_o = Object("scan", scan_c.product, depends=[scan_h.product],
-                        defines=scan_defs, includes=["src/compiler"])
+                        includes=["src/compiler"])
         parse_o = Object("parse", parse_c.product, depends=[parse_h.product],
                          includes=["src/compiler"])
 
         scanner_o = Object("scanner", "src/compiler/scanner.c", includes=["src/compiler"],
-                             depends=[scan_h.product], defines=scan_defs)
+                             depends=[scan_h.product])
         parser_o = Object("parser", "src/compiler/parser.c", includes=["src/compiler"],
                               depends=[parse_h.product])
 

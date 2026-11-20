@@ -803,7 +803,7 @@ Expression* OnUnop2(void* ctx, uint64_t start, uint64_t end,
 
 }
 
-Token peek_token(void *ctx, uint64_t *start, uint64_t *end) {
+Token parser_peek_token(void *ctx, uint64_t *start, uint64_t *end) {
     struct Tokenizer* t = ctx;
     *start = t->start;
     *end = t->end;
@@ -817,7 +817,7 @@ void parser_error(void *ctx, SyntaxError e) {
     add_error(p, PARSE_ERROR_INVALID_CHAR, l);
 }
 
-void consume_token(void* ctx, uint64_t* start, uint64_t* end) {
+void parser_consume_token(void* ctx, uint64_t* start, uint64_t* end) {
     struct Tokenizer* t = ctx;
     *start = t->start;
     *end = t->end;
@@ -853,6 +853,8 @@ void consume_token(void* ctx, uint64_t* start, uint64_t* end) {
                 TOKEN_KWRETURN, TOKEN_KWTRUE, TOKEN_KWFALSE, TOKEN_KWEXTERN,
                 TOKEN_KWNULL, TOKEN_KWIMPORT
             };
+            _STATIC_ASSERT(sizeof(map) / sizeof(map[0]) == NAME_ID_BUILTIN_COUNT);
+
             t->last_token.id = map[name];
         } else if (p->name_table.data[name].kind == NAME_TYPE) {
             t->last_token.id = TOKEN_TYPEID;
@@ -899,8 +901,8 @@ void consume_token(void* ctx, uint64_t* start, uint64_t* end) {
         t->end = p->pos;
         return;
     }
-    t->last_token = literal_token((const char*) p->indata,
-                                  p->input_size, &p->pos);
+    t->last_token = parser_literal_token((const char*) p->indata,
+                                         p->input_size, &p->pos);
     t->end = p->pos;
 }
 
@@ -911,9 +913,9 @@ void parse_program(Parser* parser, String *indata, const char* filename, bool is
     t.start = 0;
     t.end = 0;
     uint64_t start, end;
-    consume_token(&t, &start, &end);
+    parser_consume_token(&t, &start, &end);
 
-    parse(&t);
+    parser_parse(&t);
 }
 
 
